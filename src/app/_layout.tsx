@@ -12,7 +12,7 @@ import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
-import 'heroui-native/styles';
+import '../../global.css';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
