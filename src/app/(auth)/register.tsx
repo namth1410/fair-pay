@@ -12,6 +12,7 @@ import { Link } from 'expo-router';
 import { Button } from 'heroui-native';
 import { useAuthStore } from '../../stores/auth.store';
 import { colors } from '../../config/theme';
+import { getErrorMessage } from '../../utils/error';
 
 export default function RegisterScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -36,7 +37,7 @@ export default function RegisterScreen() {
     try {
       await signUpWithEmail(email, password, displayName);
     } catch (e: any) {
-      setError(e.message || 'Đăng ký thất bại');
+      setError(getErrorMessage(e));
     }
   };
 

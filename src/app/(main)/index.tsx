@@ -15,6 +15,7 @@ import { Button } from 'heroui-native';
 import { useGroupStore } from '../../stores/group.store';
 import { useAuthStore } from '../../stores/auth.store';
 import { colors } from '../../config/theme';
+import { getErrorMessage } from '../../utils/error';
 import type { GroupWithMemberCount } from '../../services/group.service';
 
 export default function HomeScreen() {
@@ -43,7 +44,7 @@ export default function HomeScreen() {
       setNewGroupName('');
       setShowCreate(false);
     } catch (e: any) {
-      Alert.alert('Lỗi', e.message);
+      Alert.alert('Lỗi', getErrorMessage(e));
     }
   };
 
@@ -54,7 +55,7 @@ export default function HomeScreen() {
       setInviteCode('');
       setShowJoin(false);
     } catch (e: any) {
-      Alert.alert('Lỗi', e.message);
+      Alert.alert('Lỗi', getErrorMessage(e));
     }
   };
 

@@ -43,3 +43,5 @@ play-store-key.json
 
 # Temporary
 *.log
+android/
+uniwind-types.d.ts

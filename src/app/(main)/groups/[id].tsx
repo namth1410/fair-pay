@@ -16,6 +16,7 @@ import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
 import { useAuthStore } from '../../../stores/auth.store';
 import { colors } from '../../../config/theme';
+import { getErrorMessage } from '../../../utils/error';
 import { supabase } from '../../../config/supabase';
 import type { GroupMember } from '../../../services/group.service';
 import type { Trip } from '../../../services/trip.service';
@@ -95,7 +96,7 @@ export default function GroupDetailScreen() {
       setNewTripName('');
       setShowCreateTrip(false);
     } catch (e: any) {
-      Alert.alert('Lỗi', e.message);
+      Alert.alert('Lỗi', getErrorMessage(e));
     }
   };
 

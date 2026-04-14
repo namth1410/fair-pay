@@ -13,6 +13,7 @@ import { Link } from 'expo-router';
 import { Button, Spinner } from 'heroui-native';
 import { useAuthStore } from '../../stores/auth.store';
 import { colors } from '../../config/theme';
+import { getErrorMessage } from '../../utils/error';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -32,7 +33,7 @@ export default function LoginScreen() {
     try {
       await signInWithEmail(email, password);
     } catch (e: any) {
-      setError(e.message || 'Đăng nhập thất bại');
+      setError(getErrorMessage(e));
     }
   };
 
@@ -41,7 +42,7 @@ export default function LoginScreen() {
     try {
       await signInWithGoogle();
     } catch (e: any) {
-      setError(e.message || 'Đăng nhập Google thất bại');
+      setError(getErrorMessage(e));
     }
   };
 

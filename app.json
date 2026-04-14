@@ -18,8 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F172A"
       },
-      "package": "com.splitvn.app",
-      "edgeToEdgeEnabled": true
+      "package": "com.splitvn.app"
     },
     "plugins": [
       [
@@ -32,6 +31,15 @@
       "expo-sqlite",
       "expo-web-browser",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "root": "./src/app"
+      },
+      "eas": {
+        "projectId": "82b24ff1-45df-4eee-b43a-dbec26962ddd"
+      }
+    },
+    "owner": "namth1410"
   }
 }

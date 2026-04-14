@@ -20,6 +20,7 @@ import { colors } from '../../../config/theme';
 import { formatVND, formatBalance } from '../../../utils/format';
 import { fetchAuditLogs, getActionLabel, type AuditLog } from '../../../services/audit.service';
 import { exportToImage } from '../../../utils/export';
+import { getErrorMessage } from '../../../utils/error';
 import { splitEqual, validateSplits } from '../../../utils/split';
 import type { ExpenseWithSplits } from '../../../services/expense.service';
 import type { Payment } from '../../../services/payment.service';
@@ -113,7 +114,7 @@ export default function TripDetailScreen() {
       });
       setTitle(''); setAmountStr(''); setNote(''); setCategory('food');
       setShowAddExpense(false);
-    } catch (e: any) { Alert.alert('Lỗi', e.message); }
+    } catch (e: any) { Alert.alert('Lỗi', getErrorMessage(e)); }
   };
 
   const handleAddPayment = async () => {
@@ -135,7 +136,7 @@ export default function TripDetailScreen() {
       });
       setPayAmountStr(''); setPayNote('');
       setShowAddPayment(false);
-    } catch (e: any) { Alert.alert('Lỗi', e.message); }
+    } catch (e: any) { Alert.alert('Lỗi', getErrorMessage(e)); }
   };
 
   const handleDeleteExpense = (expense: ExpenseWithSplits) => {
