@@ -13,6 +13,13 @@ import {
   calculateBalances,
   type ExpenseWithSplits,
 } from '../services/expense.service';
+import {
+  fetchPayments,
+  createPayment,
+  deletePayment,
+  calculateSettlements,
+  type Payment,
+} from '../services/payment.service';
 import type { SplitResult } from '../utils/split';
 
 interface BalanceEntry {
@@ -21,10 +28,20 @@ interface BalanceEntry {
   balance: number;
 }
 
+interface SettlementEntry {
+  from: string;
+  fromName: string;
+  to: string;
+  toName: string;
+  amount: number;
+}
+
 interface TripState {
   trips: Trip[];
   currentExpenses: ExpenseWithSplits[];
+  currentPayments: Payment[];
   balances: BalanceEntry[];
+  settlements: SettlementEntry[];
   isLoading: boolean;
 
   loadTrips: (groupId: string) => Promise<void>;
@@ -44,13 +61,27 @@ interface TripState {
     note?: string;
   }) => Promise<void>;
   removeExpense: (expenseId: string, tripId: string) => Promise<void>;
+
+  loadPayments: (tripId: string) => Promise<void>;
+  addPayment: (params: {
+    tripId: string;
+    groupId: string;
+    fromMemberId: string;
+    toMemberId: string;
+    amount: number;
+    note?: string;
+  }) => Promise<void>;
+  removePayment: (paymentId: string, tripId: string) => Promise<void>;
+
   loadBalances: (tripId: string) => Promise<void>;
 }
 
 export const useTripStore = create<TripState>((set, get) => ({
   trips: [],
   currentExpenses: [],
+  currentPayments: [],
   balances: [],
+  settlements: [],
   isLoading: false,
 
   loadTrips: async (groupId) => {
@@ -99,8 +130,26 @@ export const useTripStore = create<TripState>((set, get) => ({
     await get().loadBalances(tripId);
   },
 
+  loadPayments: async (tripId) => {
+    const payments = await fetchPayments(tripId);
+    set({ currentPayments: payments });
+  },
+
+  addPayment: async (params) => {
+    await createPayment(params);
+    await get().loadPayments(params.tripId);
+    await get().loadBalances(params.tripId);
+  },
+
+  removePayment: async (paymentId, tripId) => {
+    await deletePayment(paymentId);
+    await get().loadPayments(tripId);
+    await get().loadBalances(tripId);
+  },
+
   loadBalances: async (tripId) => {
     const balances = await calculateBalances(tripId);
-    set({ balances });
+    const settlements = calculateSettlements(balances);
+    set({ balances, settlements });
   },
 }));

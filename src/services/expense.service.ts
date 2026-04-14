@@ -107,7 +107,10 @@ export async function deleteExpense(expenseId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Calculate balance for each member in a trip */
+/**
+ * Calculate balance for each member in a trip.
+ * balance = (paid for expenses) - (owed from splits) + (received payments) - (sent payments)
+ */
 export async function calculateBalances(
   tripId: string
 ): Promise<{ memberId: string; memberName: string; balance: number }[]> {
@@ -119,6 +122,15 @@ export async function calculateBalances(
     .is('deleted_at', null);
 
   if (expErr) throw expErr;
+
+  // Fetch payments
+  const { data: payments, error: payErr } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('trip_id', tripId)
+    .is('deleted_at', null);
+
+  if (payErr) throw payErr;
 
   // Fetch trip to get group_id
   const { data: trip } = await supabase
@@ -137,24 +149,31 @@ export async function calculateBalances(
 
   if (!members) return [];
 
-  // Calculate: paid - owed
   const balanceMap: Record<string, number> = {};
   members.forEach((m) => {
     balanceMap[m.id] = 0;
   });
 
+  // Expenses: payer gets credit, split members owe
   (expenses || []).forEach((exp: any) => {
-    // Payer gets credit
     if (balanceMap[exp.paid_by] !== undefined) {
       balanceMap[exp.paid_by] += exp.amount;
     }
-
-    // Each split member owes
     (exp.expense_splits || []).forEach((split: ExpenseSplit) => {
       if (balanceMap[split.member_id] !== undefined) {
         balanceMap[split.member_id] -= split.amount;
       }
     });
+  });
+
+  // Payments: sender pays off debt, receiver loses credit
+  (payments || []).forEach((pay: any) => {
+    if (balanceMap[pay.from_member_id] !== undefined) {
+      balanceMap[pay.from_member_id] -= pay.amount; // sent money
+    }
+    if (balanceMap[pay.to_member_id] !== undefined) {
+      balanceMap[pay.to_member_id] += pay.amount; // received money
+    }
   });
 
   return members.map((m) => ({
