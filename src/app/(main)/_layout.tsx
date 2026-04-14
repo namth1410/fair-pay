@@ -33,6 +33,14 @@ export default function MainLayout() {
           title: 'Cài đặt',
         }}
       />
+      {/* Hide group detail from tab bar — accessed via push */}
+      <Tabs.Screen
+        name="groups/[id]"
+        options={{
+          href: null,
+          title: 'Nhóm',
+        }}
+      />
     </Tabs>
   );
 }
