@@ -10,6 +10,7 @@ import { useAppStore } from '../stores/app.store';
 import { initDatabase } from '../db/database';
 import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 import 'heroui-native/styles';
 
@@ -59,15 +60,17 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <HeroUINativeProvider>
-          <StatusBar style={isDark ? 'light' : 'dark'} />
-          <OfflineBanner />
-          <AuthGate>
-            <Slot />
-          </AuthGate>
-        </HeroUINativeProvider>
-      </SafeAreaProvider>
+      <ErrorBoundary>
+        <SafeAreaProvider>
+          <HeroUINativeProvider>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <OfflineBanner />
+            <AuthGate>
+              <Slot />
+            </AuthGate>
+          </HeroUINativeProvider>
+        </SafeAreaProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

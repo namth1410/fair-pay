@@ -37,5 +37,9 @@ expo-env.d.ts
 # TypeScript
 *.tsbuildinfo
 
+# Google / Firebase credentials
+google-services.json
+play-store-key.json
+
 # Temporary
 *.log
