@@ -1,0 +1,41 @@
+# Claude Code / AI tooling
+.claude/
+.agents/
+.mcp.json
+skills-lock.json
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native builds
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Environment variables
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary
+*.log

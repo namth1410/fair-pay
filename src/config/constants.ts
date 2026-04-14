@@ -1,0 +1,13 @@
+export const APP_NAME = 'SplitVN';
+export const APP_SCHEME = 'splitvn';
+
+// Supabase
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+// Database
+export const DB_NAME = 'splitvn.db';
+
+// Sync
+export const SYNC_RETRY_MAX = 3;
+export const SYNC_CLEANUP_AFTER_HOURS = 24;
