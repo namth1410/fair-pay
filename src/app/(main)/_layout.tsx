@@ -33,13 +33,14 @@ export default function MainLayout() {
           title: 'Cài đặt',
         }}
       />
-      {/* Hide group detail from tab bar — accessed via push */}
+      {/* Hidden from tab bar — accessed via push navigation */}
       <Tabs.Screen
         name="groups/[id]"
-        options={{
-          href: null,
-          title: 'Nhóm',
-        }}
+        options={{ href: null, title: 'Nhóm' }}
+      />
+      <Tabs.Screen
+        name="trips/[id]"
+        options={{ href: null, title: 'Chuyến đi' }}
       />
     </Tabs>
   );
