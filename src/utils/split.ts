@@ -8,17 +8,19 @@ export interface SplitResult {
   amount: number; // integer VND
 }
 
-/** Equal split: total ÷ N, remainder goes to first member */
+/** Equal split: round to nearest 1000đ, last person absorbs remainder */
 export function splitEqual(total: number, memberIds: string[]): SplitResult[] {
   const n = memberIds.length;
   if (n === 0) return [];
 
-  const base = Math.floor(total / n / 1000) * 1000; // round down to nearest 1000
-  const remainder = total - base * n;
+  // Round to nearest 1000đ (BR-01)
+  const perPerson = Math.round(total / n / 1000) * 1000;
+  // Last person gets whatever remains to ensure sum = total (BR-02)
+  const lastPerson = total - perPerson * (n - 1);
 
   return memberIds.map((memberId, i) => ({
     memberId,
-    amount: i === 0 ? base + remainder : base,
+    amount: i < n - 1 ? perPerson : lastPerson,
   }));
 }
 
