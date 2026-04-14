@@ -166,13 +166,14 @@ export async function calculateBalances(
     });
   });
 
-  // Payments: sender pays off debt, receiver loses credit
+  // Payments: sender settles debt (balance UP), receiver gets paid back (balance DOWN)
+  // When Binh pays An 120k: Binh's debt reduces (+120k), An's credit reduces (-120k)
   (payments || []).forEach((pay: any) => {
     if (balanceMap[pay.from_member_id] !== undefined) {
-      balanceMap[pay.from_member_id] -= pay.amount; // sent money
+      balanceMap[pay.from_member_id] += pay.amount; // debt settled
     }
     if (balanceMap[pay.to_member_id] !== undefined) {
-      balanceMap[pay.to_member_id] += pay.amount; // received money
+      balanceMap[pay.to_member_id] -= pay.amount; // credit settled
     }
   });
 
