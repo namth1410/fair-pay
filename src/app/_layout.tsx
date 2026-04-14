@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/auth.store';
 import { useAppStore } from '../stores/app.store';
 import { initDatabase } from '../db/database';
 import { LoadingScreen } from '../components/common/LoadingScreen';
+import { OfflineBanner } from '../components/common/OfflineBanner';
 
 import 'heroui-native/styles';
 
@@ -61,6 +62,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <HeroUINativeProvider>
           <StatusBar style={isDark ? 'light' : 'dark'} />
+          <OfflineBanner />
           <AuthGate>
             <Slot />
           </AuthGate>

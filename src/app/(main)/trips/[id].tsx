@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,11 +18,13 @@ import { useTripStore } from '../../../stores/trip.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { colors } from '../../../config/theme';
 import { formatVND, formatBalance } from '../../../utils/format';
+import { fetchAuditLogs, getActionLabel, type AuditLog } from '../../../services/audit.service';
+import { exportToImage } from '../../../utils/export';
 import { splitEqual, validateSplits } from '../../../utils/split';
 import type { ExpenseWithSplits } from '../../../services/expense.service';
 import type { Payment } from '../../../services/payment.service';
 
-type Tab = 'expenses' | 'balances' | 'settle';
+type Tab = 'expenses' | 'balances' | 'settle' | 'history';
 
 const CATEGORIES: { key: string; label: string }[] = [
   { key: 'food', label: 'Ăn uống' },
@@ -57,6 +59,12 @@ export default function TripDetailScreen() {
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
 
+  // Audit logs
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Export ref
+  const balanceRef = useRef<View>(null);
+
   // Add payment form
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [payFrom, setPayFrom] = useState('');
@@ -71,6 +79,7 @@ export default function TripDetailScreen() {
     loadExpenses(tripId);
     loadPayments(tripId);
     loadBalances(tripId);
+    fetchAuditLogs(tripId).then(setAuditLogs).catch(() => {});
   }, [tripId]);
 
   useEffect(() => {
@@ -186,6 +195,9 @@ export default function TripDetailScreen() {
         <Pressable style={tabStyle('settle')} onPress={() => setTab('settle')}>
           <Text style={tabText('settle')}>Quyết toán</Text>
         </Pressable>
+        <Pressable style={tabStyle('history')} onPress={() => setTab('history')}>
+          <Text style={tabText('history')}>Lịch sử</Text>
+        </Pressable>
       </View>
 
       {/* ══════ Tab: Expenses ══════ */}
@@ -252,20 +264,36 @@ export default function TripDetailScreen() {
 
       {/* ══════ Tab: Balances ══════ */}
       {tab === 'balances' && (
-        <FlatList
-          data={balances}
-          keyExtractor={(item) => item.memberId}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={[styles.card, { backgroundColor: cardBg }]}>
-              <Text style={[styles.cardTitle, { color: c.foreground, flex: 1 }]}>{item.memberName}</Text>
-              <Text style={[styles.balanceText, { color: item.balance >= 0 ? c.success : c.danger }]}>
-                {formatBalance(item.balance)}
-              </Text>
-            </View>
-          )}
-          ListEmptyComponent={<View style={styles.empty}><Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>Thêm khoản chi để xem số dư</Text></View>}
-        />
+        <View style={styles.tabContent}>
+          <View style={styles.sectionActions}>
+            <Button variant="outline" size="sm" onPress={() => exportToImage(balanceRef)}>
+              <Button.Label>Lưu ảnh số dư</Button.Label>
+            </Button>
+          </View>
+          <FlatList
+            data={balances}
+            keyExtractor={(item) => item.memberId}
+            contentContainerStyle={styles.list}
+            ListHeaderComponent={
+              <View ref={balanceRef} collapsable={false} style={{ backgroundColor: c.background }}>
+                <View style={[styles.summary, { backgroundColor: isDark ? '#1E293B' : '#F0F9FF', marginHorizontal: 0, marginBottom: 8 }]}>
+                  <Text style={[styles.summaryAmount, { color: c.primary, fontSize: 20 }]}>{trip?.name}</Text>
+                  <Text style={[styles.summaryMeta, { color: phColor }]}>Tổng chi: {formatVND(totalExpenses)}</Text>
+                </View>
+                {balances.map((item) => (
+                  <View key={item.memberId} style={[styles.card, { backgroundColor: cardBg }]}>
+                    <Text style={[styles.cardTitle, { color: c.foreground, flex: 1 }]}>{item.memberName}</Text>
+                    <Text style={[styles.balanceText, { color: item.balance >= 0 ? c.success : c.danger }]}>
+                      {formatBalance(item.balance)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            }
+            renderItem={() => null}
+            ListEmptyComponent={<View style={styles.empty}><Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>Thêm khoản chi để xem số dư</Text></View>}
+          />
+        </View>
       )}
 
       {/* ══════ Tab: Settlement ══════ */}
@@ -361,6 +389,36 @@ export default function TripDetailScreen() {
             )}
           </View>
         </ScrollView>
+      )}
+
+      {/* ══════ Tab: History (Audit Log) ══════ */}
+      {tab === 'history' && (
+        <FlatList
+          data={auditLogs}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={auditLogs.length === 0 ? styles.emptyContainer : styles.list}
+          renderItem={({ item }) => {
+            const time = new Date(item.created_at);
+            const timeStr = `${time.getDate()}/${time.getMonth() + 1} ${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`;
+            return (
+              <View style={[styles.card, { backgroundColor: cardBg }]}>
+                <View style={styles.cardContent}>
+                  <Text style={[styles.cardTitle, { color: c.foreground }]}>
+                    {item.actor_name} — {getActionLabel(item.action)}
+                  </Text>
+                  <Text style={[styles.cardMeta, { color: phColor }]}>{timeStr}</Text>
+                </View>
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>
+                Chưa có lịch sử thay đổi
+              </Text>
+            </View>
+          }
+        />
       )}
     </View>
   );
