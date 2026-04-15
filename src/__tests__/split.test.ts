@@ -4,6 +4,8 @@
  *
  * Ref: BR-01, BR-02, TC-01
  */
+import { computeBalancesSimple } from '../utils/balance';
+import { calculateSettlements } from '../utils/settlement';
 import {
   splitByRatio,
   splitByRatioWithExplanation,
@@ -13,8 +15,6 @@ import {
   validateAmount,
   validateSplits,
 } from '../utils/split';
-import { computeBalancesSimple } from '../utils/balance';
-import { calculateSettlements } from '../utils/settlement';
 
 describe('BR-01: Số tiền luôn là số nguyên, làm tròn đến 1.000đ', () => {
   it('TC-01: 500.000đ / 3 người → 167.000 + 167.000 + 166.000', () => {

@@ -1,6 +1,7 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { AppText } from './AppText';
 
 interface ChipOption<T extends string = string> {
   key: T;
@@ -12,6 +13,7 @@ interface ChipPickerProps<T extends string = string> {
   selected: T;
   onSelect: (key: T) => void;
   activeColor?: string;
+  activeSoft?: string;
 }
 
 export function ChipPicker<T extends string = string>({
@@ -19,9 +21,11 @@ export function ChipPicker<T extends string = string>({
   selected,
   onSelect,
   activeColor,
+  activeSoft,
 }: ChipPickerProps<T>) {
   const c = useAppTheme();
-  const active = activeColor || c.primary;
+  const active = activeColor || c.primaryStrong;
+  const activeBg = activeSoft || c.accentSoft;
 
   return (
     <View style={styles.row}>
@@ -37,19 +41,18 @@ export function ChipPicker<T extends string = string>({
             style={[
               styles.chip,
               {
-                backgroundColor: isSelected ? active : 'transparent',
+                backgroundColor: isSelected ? activeBg : 'transparent',
                 borderColor: isSelected ? active : c.divider,
               },
             ]}
           >
-            <Text
-              style={{
-                color: isSelected ? '#FFFFFF' : c.muted,
-                fontSize: 12,
-              }}
+            <AppText
+              variant="caption"
+              weight={isSelected ? 'semibold' : 'medium'}
+              style={{ color: isSelected ? active : c.muted }}
             >
               {opt.label}
-            </Text>
+            </AppText>
           </Pressable>
         );
       })}
@@ -60,9 +63,9 @@ export function ChipPicker<T extends string = string>({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
   },
 });

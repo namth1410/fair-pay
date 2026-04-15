@@ -11,14 +11,17 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Uniwind } from 'uniwind';
 
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
+import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { initDatabase } from '../db/database';
+import { useAppTheme, useIsDark } from '../hooks/useAppTheme';
+import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -47,9 +50,37 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Syncs the runtime theme (Uniwind) with the user's saved dark-mode preference.
+ * Runs whenever auth session changes — so on sign-in we apply the user's pref,
+ * and on sign-out we reset to follow system.
+ */
+function useThemeHydration() {
+  const userId = useAuthStore((s) => s.session?.user.id);
+
+  useEffect(() => {
+    if (!userId) {
+      Uniwind.setTheme('system');
+      return;
+    }
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((profile) => {
+        if (cancelled || !profile) return;
+        Uniwind.setTheme(profile.settings.dark_mode);
+      })
+      .catch((err) => {
+        console.warn('[Theme] Failed to load preference:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+}
+
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const isDark = useIsDark();
+  const c = useAppTheme();
   const initialize = useAuthStore((s) => s.initialize);
   const setDatabaseReady = useAppStore((s) => s.setDatabaseReady);
 
@@ -73,12 +104,14 @@ export default function RootLayout() {
     boot();
   }, []);
 
+  useThemeHydration();
+
   if (!fontsLoaded) {
     return <LoadingScreen />;
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: c.background }}>
       <ErrorBoundary>
         <SafeAreaProvider>
           <HeroUINativeProvider>
@@ -87,6 +120,7 @@ export default function RootLayout() {
             <AuthGate>
               <Slot />
             </AuthGate>
+            <ThemeTransitionOverlay />
           </HeroUINativeProvider>
         </SafeAreaProvider>
       </ErrorBoundary>

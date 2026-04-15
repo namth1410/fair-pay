@@ -1,70 +1,81 @@
-// Design tokens — HSL format cho HeroUI Native
+// Design tokens — Fair Pay Sakura palette (hồng nhạt dịu dàng)
 // Ref: docs/technical-specification.md Section 7.2
+//
+// Light: primary pink-300, surface pink-50 tint, foreground deep plum
+// Dark: primary saturate giảm (0.72 * chroma) để không chói trên nền plum đậm
 
 export const lightTheme = {
-  background: '0 0% 100%',             // #FFFFFF
-  surface: '210 40% 98%',              // #F8FAFC
-  'surface-2': '210 40% 96%',          // #F1F5F9
-  foreground: '207 24% 14%',           // #1A252F
-  'foreground-secondary': '215 16% 47%', // #64748B
-  primary: '204 70% 39%',              // #1D6FA8
-  success: '142 76% 36%',              // #16A34A
-  danger: '0 84% 51%',                 // #DC2626
-  warning: '32 95% 44%',               // #D97706
-  divider: '214 32% 91%',              // #E2E8F0
+  background: '0 0% 100%',              // #FFFFFF
+  surface: '340 100% 97%',              // #FDF2F8 — pink-50 tint
+  'surface-2': '340 78% 94%',           // pink-100
+  foreground: '328 40% 20%',            // #4A1F38 — deep plum
+  'foreground-secondary': '328 18% 45%',// #7A5F6E
+  primary: '328 80% 82%',               // #F9A8D4 — pink-300
+  success: '160 84% 39%',               // #10B981
+  danger: '350 86% 52%',                // #E11D48 — rose-600
+  warning: '32 95% 44%',                // #D97706 (giữ để đọc dễ)
+  divider: '340 50% 90%',               // pink-tinted divider
 };
 
 export const darkTheme = {
-  background: '222 47% 11%',           // #0F172A
-  surface: '217 33% 17%',              // #1E293B
-  'surface-2': '215 25% 27%',          // #334155
-  foreground: '210 40% 96%',           // #F1F5F9
-  'foreground-secondary': '215 20% 65%', // #94A3B8
-  primary: '199 89% 60%',              // #38BDF8
-  success: '142 69% 58%',              // #4ADE80
-  danger: '0 91% 71%',                 // #F87171
-  warning: '48 96% 60%',               // #FCD34D
-  divider: '215 25% 27%',              // #334155
+  background: '328 28% 10%',            // #1F1018 — deep plum bg
+  surface: '328 24% 15%',               // plum surface
+  'surface-2': '328 20% 22%',           // plum surface-2
+  foreground: '340 60% 94%',            // #FBE4EF — pink-tinted foreground
+  'foreground-secondary': '328 20% 70%',// #B29CA6
+  primary: '328 65% 75%',               // saturate giảm — dịu trên dark
+  success: '160 65% 55%',
+  danger: '350 75% 65%',
+  warning: '48 90% 60%',
+  divider: '328 18% 25%',
 };
 
-// Hex values — dùng qua hook useAppTheme()
+// Hex values — dùng qua hook useAppTheme() cho StyleSheet
 export const colors = {
   light: {
     background: '#FFFFFF',
-    surface: '#F8FAFC',
-    surfaceAlt: '#F0F9FF',
-    foreground: '#1A252F',
-    muted: '#64748B',
-    primary: '#1D6FA8',
-    success: '#16A34A',
-    danger: '#DC2626',
-    warning: '#D97706',
-    divider: '#E2E8F0',
-    // Soft variants (badge backgrounds)
-    successSoft: '#DCFCE7',
-    dangerSoft: '#FFE4E6',
-    accentSoft: '#EFF6FF',
-    successSoftDark: '#14532D',
+    surface: '#FDF2F8',         // pink-50 tint
+    surfaceAlt: '#FCE7F3',      // pink-100 — banner/hero bg
+    foreground: '#4A1F38',      // deep plum
+    muted: '#7A5F6E',           // plum muted
+    primary: '#F9A8D4',         // pink-300
+    primaryStrong: '#EC4899',   // pink-500 — dùng cho text on tint / badges
+    primarySoft: '#FBCFE8',     // pink-200 — soft bg
+    warmAccent: '#FDA4AF',      // rose-300 — complementary
+    tint: '#FDF2F8',            // pink-50
+    success: '#10B981',         // emerald-500
+    danger: '#E11D48',          // rose-600
+    warning: '#F59E0B',         // amber-500
+    divider: '#FBCFE8',         // pink-200 divider
+    // Soft variants (badge/banner backgrounds)
+    successSoft: '#D1FAE5',     // emerald-100
+    dangerSoft: '#FFE4E6',      // rose-100
+    accentSoft: '#FCE7F3',      // pink-100
+    successSoftDark: '#064E3B',
     dangerSoftDark: '#4C0519',
-    accentSoftDark: '#1E3A5F',
+    accentSoftDark: '#831843',  // pink-900
   },
   dark: {
-    background: '#0F172A',
-    surface: '#1E293B',
-    surfaceAlt: '#1E293B',
-    foreground: '#F1F5F9',
-    muted: '#94A3B8',
-    primary: '#38BDF8',
-    success: '#4ADE80',
-    danger: '#F87171',
-    warning: '#FCD34D',
-    divider: '#334155',
+    background: '#1F1018',      // deep plum
+    surface: '#2D1A25',         // plum surface
+    surfaceAlt: '#3D2433',      // plum surface elevated
+    foreground: '#FBE4EF',      // pink-tinted text
+    muted: '#B29CA6',           // plum muted
+    primary: '#F0B5D2',         // dịu trên dark
+    primaryStrong: '#F9A8D4',
+    primarySoft: '#6B2E50',     // muted plum-pink
+    warmAccent: '#E8879A',
+    tint: '#2D1A25',
+    success: '#34D399',
+    danger: '#FB7185',
+    warning: '#FBBF24',
+    divider: '#3D2433',
     // Soft variants (badge backgrounds)
-    successSoft: '#14532D',
+    successSoft: '#064E3B',
     dangerSoft: '#4C0519',
-    accentSoft: '#1E3A5F',
-    successSoftDark: '#14532D',
+    accentSoft: '#4D1E38',      // deep plum-pink
+    successSoftDark: '#064E3B',
     dangerSoftDark: '#4C0519',
-    accentSoftDark: '#1E3A5F',
+    accentSoftDark: '#4D1E38',
   },
 };

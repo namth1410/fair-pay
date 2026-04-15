@@ -17,7 +17,10 @@ export function FormReveal({ isOpen, children }: FormRevealProps) {
     <Animated.View
       entering={FadeInDown.duration(250).springify()}
       exiting={FadeOutUp.duration(200)}
-      style={[styles.container, { backgroundColor: c.surface }]}
+      style={[
+        styles.container,
+        { backgroundColor: c.surface, borderColor: c.divider },
+      ]}
     >
       {children}
     </Animated.View>
@@ -30,6 +33,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     padding: 12,
     borderRadius: 12,
+    borderWidth: 1,
     gap: 8,
   },
 });

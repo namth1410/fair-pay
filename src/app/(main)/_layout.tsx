@@ -1,5 +1,4 @@
-import { Tabs } from 'expo-router';
-import { Settings, Users } from 'lucide-react-native';
+import { Stack } from 'expo-router';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 
@@ -7,42 +6,25 @@ export default function MainLayout() {
   const c = useAppTheme();
 
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerStyle: { backgroundColor: c.background },
         headerTintColor: c.foreground,
-        tabBarStyle: {
-          backgroundColor: c.background,
-          borderTopColor: c.divider,
-        },
-        tabBarActiveTintColor: c.primary,
-        tabBarInactiveTintColor: c.muted,
+        contentStyle: { backgroundColor: c.background },
       }}
     >
-      <Tabs.Screen
+      <Stack.Screen
         name="index"
-        options={{
-          title: 'Nhóm',
-          headerTitle: 'SplitVN',
-          tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
-        }}
+        options={{ headerTitle: 'Fair Pay' }}
       />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Cài đặt',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
-        }}
-      />
-      {/* Hidden from tab bar — accessed via push navigation */}
-      <Tabs.Screen
+      <Stack.Screen
         name="groups/[id]"
-        options={{ href: null, title: 'Nhóm' }}
+        options={{ title: 'Nhóm' }}
       />
-      <Tabs.Screen
+      <Stack.Screen
         name="trips/[id]"
-        options={{ href: null, title: 'Chuyến đi' }}
+        options={{ title: 'Chuyến đi' }}
       />
-    </Tabs>
+    </Stack>
   );
 }

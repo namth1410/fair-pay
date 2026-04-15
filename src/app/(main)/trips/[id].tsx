@@ -9,13 +9,23 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { AppCard, AppTextField, ChipPicker, EmptyState, FormReveal, ListSkeleton, SectionTabs } from '../../../components/ui';
-import { fonts } from '../../../config/fonts';
+import {
+  AppCard,
+  AppText,
+  AppTextField,
+  CategoryIcon,
+  ChipPicker,
+  EmptyState,
+  FormReveal,
+  ListSkeleton,
+  Money,
+  SectionTabs,
+} from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { type AuditLog,fetchAuditLogs, getActionLabel } from '../../../services/audit.service';
 import type { ExpenseWithSplits } from '../../../services/expense.service';
@@ -24,7 +34,6 @@ import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
 import { getErrorMessage } from '../../../utils/error';
 import { exportToImage } from '../../../utils/export';
-import { formatBalance,formatVND } from '../../../utils/format';
 import { type RatioMember,splitByRatio, splitEqual, type SplitResult, validateAmount, validateSplits } from '../../../utils/split';
 
 type Tab = 'expenses' | 'balances' | 'settle' | 'history';
@@ -111,10 +120,8 @@ export default function TripDetailScreen() {
   const getMemberName = (id: string) =>
     currentGroupMembers.find((m) => m.id === id)?.display_name || '?';
 
-  // ── Derived data for ChipPicker ──
   const memberOptions = currentGroupMembers.map((m) => ({ key: m.id, label: m.display_name }));
 
-  // ── Handlers ──
   const handleAddExpense = async () => {
     if (!title.trim() || !amountStr.trim() || !paidBy || !trip) return;
     const amount = parseInt(amountStr, 10);
@@ -187,13 +194,12 @@ export default function TripDetailScreen() {
   };
 
   const handleDeletePayment = (payment: Payment) => {
-    Alert.alert('Xóa thanh toán', `Xóa ghi nhận ${formatVND(payment.amount)}?`, [
+    Alert.alert('Xóa thanh toán', `Xóa ghi nhận thanh toán này?`, [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Xóa', style: 'destructive', onPress: () => removePayment(payment.id, tripId!) },
     ]);
   };
 
-  // ── Shared styles for ratio/custom split raw TextInputs ──
   const splitInputStyle = [styles.splitInput, {
     color: c.foreground,
     borderColor: c.divider,
@@ -211,13 +217,30 @@ export default function TripDetailScreen() {
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
 
-      {/* Summary */}
-      <View style={[styles.summary, { backgroundColor: c.surfaceAlt }]}>
-        <Text style={[styles.summaryLabel, { color: c.muted }]}>Tổng chi</Text>
-        <Text style={[styles.summaryAmount, { color: c.primary }]}>{formatVND(totalExpenses)}</Text>
-        <Text style={[styles.summaryMeta, { color: c.muted }]}>
-          {currentExpenses.length} khoản · {currentPayments.length} thanh toán · {currentGroupMembers.length} người
-        </Text>
+      {/* Summary hero */}
+      <View style={styles.heroWrap}>
+        <Svg
+          width="100%"
+          height="100%"
+          style={StyleSheet.absoluteFill}
+          preserveAspectRatio="none"
+          viewBox="0 0 100 100"
+        >
+          <Defs>
+            <LinearGradient id="tripHeroGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={c.accentSoft} />
+              <Stop offset="100%" stopColor={c.tint} />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100" height="100" fill="url(#tripHeroGrad)" />
+        </Svg>
+        <View style={styles.heroInner}>
+          <AppText variant="label" tone="muted">TỔNG CHI</AppText>
+          <Money value={totalExpenses} variant="hero" tone="primary" animate />
+          <AppText variant="meta" tone="muted" style={{ marginTop: 2 }}>
+            {currentExpenses.length} khoản · {currentPayments.length} thanh toán · {currentGroupMembers.length} người
+          </AppText>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -245,25 +268,29 @@ export default function TripDetailScreen() {
                   <AppTextField placeholder="Tên khoản chi" value={title} onChangeText={setTitle} autoFocus />
                   <AppTextField placeholder="Số tiền (VND)" value={amountStr} onChangeText={setAmountStr} keyboardType="number-pad" />
                   <ChipPicker options={CATEGORIES} selected={category} onSelect={setCategory} />
-                  <Text style={[styles.fieldLabel, { color: c.muted }]}>Người trả:</Text>
+                  <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả</AppText>
                   <ChipPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
                   <AppTextField placeholder="Ghi chú (tùy chọn)" value={note} onChangeText={setNote} />
 
-                  {/* Split type picker — F-07 */}
-                  <Text style={[styles.fieldLabel, { color: c.muted }]}>Cách chia:</Text>
+                  <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Cách chia</AppText>
                   <ChipPicker options={SPLIT_TYPE_OPTIONS} selected={splitType} onSelect={setSplitType} />
 
-                  {/* Split details per mode */}
                   {splitType === 'equal' && (
-                    <Text style={[styles.splitInfo, { color: c.muted }]}>Chia đều cho {currentGroupMembers.length} người</Text>
+                    <AppText variant="caption" tone="muted" center>
+                      Chia đều cho {currentGroupMembers.length} người
+                    </AppText>
                   )}
 
                   {splitType === 'ratio' && (
                     <View>
-                      <Text style={[styles.splitInfo, { color: c.muted }]}>Nhập tỷ lệ cho mỗi người (VD: 2 = gấp đôi)</Text>
+                      <AppText variant="caption" tone="muted" center>
+                        Nhập tỷ lệ cho mỗi người (VD: 2 = gấp đôi)
+                      </AppText>
                       {currentGroupMembers.map((m) => (
                         <View key={m.id} style={styles.splitRow}>
-                          <Text style={[styles.splitMemberName, { color: c.foreground }]}>{m.display_name}</Text>
+                          <AppText variant="body" style={{ flex: 1 }}>
+                            {m.display_name}
+                          </AppText>
                           <TextInput
                             style={splitInputStyle}
                             placeholder="1"
@@ -273,15 +300,21 @@ export default function TripDetailScreen() {
                             keyboardType="number-pad"
                           />
                           {amountStr && (
-                            <Text style={[styles.splitPreview, { color: c.muted }]}>
-                              {(() => {
-                                const total = parseInt(amountStr, 10) || 0;
-                                const members = currentGroupMembers.map((mm) => ({ memberId: mm.id, ratio: parseInt(ratios[mm.id] || '1', 10) || 1 }));
-                                const splits = splitByRatio(total, members);
-                                const split = splits.find((s) => s.memberId === m.id);
-                                return split ? formatVND(split.amount) : '';
-                              })()}
-                            </Text>
+                            <View style={{ width: 80, alignItems: 'flex-end' }}>
+                              <Money
+                                value={
+                                  splitByRatio(
+                                    parseInt(amountStr, 10) || 0,
+                                    currentGroupMembers.map((mm) => ({
+                                      memberId: mm.id,
+                                      ratio: parseInt(ratios[mm.id] || '1', 10) || 1,
+                                    })),
+                                  ).find((s) => s.memberId === m.id)?.amount ?? 0
+                                }
+                                variant="compact"
+                                tone="muted"
+                              />
+                            </View>
                           )}
                         </View>
                       ))}
@@ -290,10 +323,14 @@ export default function TripDetailScreen() {
 
                   {splitType === 'custom' && (
                     <View>
-                      <Text style={[styles.splitInfo, { color: c.muted }]}>Nhập số tiền cụ thể cho mỗi người</Text>
+                      <AppText variant="caption" tone="muted" center>
+                        Nhập số tiền cụ thể cho mỗi người
+                      </AppText>
                       {currentGroupMembers.map((m) => (
                         <View key={m.id} style={styles.splitRow}>
-                          <Text style={[styles.splitMemberName, { color: c.foreground }]}>{m.display_name}</Text>
+                          <AppText variant="body" style={{ flex: 1 }}>
+                            {m.display_name}
+                          </AppText>
                           <TextInput
                             style={splitInputStyle}
                             placeholder="0"
@@ -304,15 +341,18 @@ export default function TripDetailScreen() {
                           />
                         </View>
                       ))}
-                      {amountStr && (
-                        <Text style={[styles.splitInfo, { color: (() => {
-                          const total = parseInt(amountStr, 10) || 0;
-                          const sum = currentGroupMembers.reduce((s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0), 0);
-                          return sum === total ? c.success : c.danger;
-                        })() }]}>
-                          Tổng chia: {formatVND(currentGroupMembers.reduce((s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0), 0))} / {formatVND(parseInt(amountStr, 10) || 0)}
-                        </Text>
-                      )}
+                      {amountStr && (() => {
+                        const total = parseInt(amountStr, 10) || 0;
+                        const sum = currentGroupMembers.reduce((s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0), 0);
+                        const balanced = sum === total;
+                        return (
+                          <View style={styles.customTotal}>
+                            <AppText variant="caption" tone={balanced ? 'success' : 'danger'} weight="medium" center>
+                              Tổng chia: {sum.toLocaleString('vi-VN')}₫ / {total.toLocaleString('vi-VN')}₫
+                            </AppText>
+                          </View>
+                        );
+                      })()}
                     </View>
                   )}
 
@@ -334,8 +374,9 @@ export default function TripDetailScreen() {
                 <AppCard
                   title={item.title}
                   subtitle={`${getMemberName(item.paid_by)} đã trả · ${CATEGORIES.find((ct) => ct.key === item.category)?.label}`}
+                  leading={<CategoryIcon kind="expense" value={item.category} size={40} />}
                   onLongPress={() => handleDeleteExpense(item)}
-                  trailing={<Text style={[styles.amountText, { color: c.primary }]}>{formatVND(item.amount)}</Text>}
+                  trailing={<Money value={item.amount} variant="default" tone="primary" />}
                 />
               )}
               contentContainerStyle={currentExpenses.length === 0 ? styles.emptyContainer : styles.list}
@@ -359,21 +400,32 @@ export default function TripDetailScreen() {
             contentContainerStyle={styles.list}
             ListHeaderComponent={
               <View ref={balanceRef} collapsable={false} style={{ backgroundColor: c.background }}>
-                <View style={[styles.summary, { backgroundColor: c.surfaceAlt, marginHorizontal: 0, marginBottom: 8 }]}>
-                  <Text style={[styles.summaryAmount, { color: c.primary, fontSize: 20 }]}>{trip?.name}</Text>
-                  <Text style={[styles.summaryMeta, { color: c.muted }]}>Tổng chi: {formatVND(totalExpenses)}</Text>
+                <View style={[styles.exportSummary, { backgroundColor: c.surfaceAlt }]}>
+                  <AppText variant="title" weight="bold" tone="primary">{trip?.name}</AppText>
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+                    <AppText variant="caption" tone="muted">Tổng chi:</AppText>
+                    <Money value={totalExpenses} variant="default" tone="primary" />
+                  </View>
                 </View>
-                {balances.map((item) => (
-                  <AppCard
-                    key={item.memberId}
-                    title={item.memberName}
-                    trailing={
-                      <Text style={[styles.balanceText, { color: item.balance >= 0 ? c.success : c.danger }]}>
-                        {formatBalance(item.balance)}
-                      </Text>
-                    }
-                  />
-                ))}
+                {balances.map((item) => {
+                  const positive = item.balance >= 0;
+                  return (
+                    <AppCard
+                      key={item.memberId}
+                      title={item.memberName}
+                      subtitle={positive ? 'Được nợ' : 'Đang nợ'}
+                      borderLeft={{ width: 3, color: positive ? c.success : c.danger }}
+                      trailing={
+                        <Money
+                          value={Math.abs(item.balance)}
+                          variant="default"
+                          tone={positive ? 'success' : 'danger'}
+                          showSign
+                        />
+                      }
+                    />
+                  );
+                })}
               </View>
             }
             renderItem={() => null}
@@ -385,48 +437,57 @@ export default function TripDetailScreen() {
       {/* ══════ Tab: Settlement ══════ */}
       {tab === 'settle' && (
         <ScrollView contentContainerStyle={styles.list}>
-          {/* Suggested settlements (BR-07: suggestions only) */}
           {settlements.length > 0 && (
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: c.foreground }]}>Đề xuất quyết toán</Text>
-              <Text style={[styles.sectionHint, { color: c.muted }]}>Gợi ý tối ưu — chỉ tham khảo</Text>
+              <AppText variant="subtitle" weight="semibold">Đề xuất quyết toán</AppText>
+              <AppText variant="caption" tone="muted" style={{ marginBottom: 8 }}>
+                Gợi ý tối ưu — chỉ tham khảo
+              </AppText>
               {settlements.map((s, i) => (
                 <AppCard
                   key={i}
                   title={`${s.fromName} → ${s.toName}`}
-                  trailing={<Text style={[styles.amountText, { color: c.danger }]}>{formatVND(s.amount)}</Text>}
+                  trailing={<Money value={s.amount} variant="default" tone="danger" />}
                 />
               ))}
             </View>
           )}
 
-          {/* Record payment */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: c.foreground }]}>Thanh toán thực tế</Text>
+            <AppText variant="subtitle" weight="semibold" style={{ marginBottom: 8 }}>
+              Thanh toán thực tế
+            </AppText>
             <Button variant="primary" size="sm" onPress={() => setShowAddPayment(!showAddPayment)}>
               <Button.Label>{showAddPayment ? 'Hủy' : 'Ghi nhận thanh toán'}</Button.Label>
             </Button>
 
             <FormReveal isOpen={showAddPayment}>
-              <Text style={[styles.fieldLabel, { color: c.muted }]}>Người trả tiền:</Text>
+              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả tiền</AppText>
               <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
 
-              <Text style={[styles.fieldLabel, { color: c.muted }]}>Người nhận tiền:</Text>
-              <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} />
+              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
+              <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
 
               <AppTextField placeholder="Số tiền (VND)" value={payAmountStr} onChangeText={setPayAmountStr} keyboardType="number-pad" />
               <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} />
 
-              {/* Balance preview */}
               {payFrom && payTo && payFrom !== payTo && (
                 <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>
-                  <Text style={[styles.previewLabel, { color: c.muted }]}>Số dư hiện tại:</Text>
-                  <Text style={{ color: c.foreground, fontSize: 13 }}>
-                    {getMemberName(payFrom)}: {formatBalance(balances.find((b) => b.memberId === payFrom)?.balance || 0)}
-                  </Text>
-                  <Text style={{ color: c.foreground, fontSize: 13 }}>
-                    {getMemberName(payTo)}: {formatBalance(balances.find((b) => b.memberId === payTo)?.balance || 0)}
-                  </Text>
+                  <AppText variant="meta" tone="muted" style={{ marginBottom: 4 }}>Số dư hiện tại</AppText>
+                  {[payFrom, payTo].map((memberId) => {
+                    const bal = balances.find((b) => b.memberId === memberId)?.balance || 0;
+                    return (
+                      <View key={memberId} style={styles.previewRow}>
+                        <AppText variant="caption">{getMemberName(memberId)}</AppText>
+                        <Money
+                          value={Math.abs(bal)}
+                          variant="compact"
+                          tone={bal >= 0 ? 'success' : 'danger'}
+                          showSign
+                        />
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
@@ -435,14 +496,13 @@ export default function TripDetailScreen() {
               </Button>
             </FormReveal>
 
-            {/* Payment history */}
             {currentPayments.map((pay) => (
               <AppCard
                 key={pay.id}
                 title={`${getMemberName(pay.from_member_id)} → ${getMemberName(pay.to_member_id)}`}
                 subtitle={pay.note || undefined}
                 onLongPress={() => handleDeletePayment(pay)}
-                trailing={<Text style={[styles.amountText, { color: c.success }]}>{formatVND(pay.amount)}</Text>}
+                trailing={<Money value={pay.amount} variant="default" tone="success" />}
               />
             ))}
 
@@ -478,25 +538,34 @@ export default function TripDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  summary: { alignItems: 'center', paddingVertical: 16, marginHorizontal: 16, borderRadius: 12, marginTop: 8 },
-  summaryLabel: { fontSize: 13 },
-  summaryAmount: { fontSize: 28, fontWeight: '700', fontFamily: fonts.bold, marginVertical: 2 },
-  summaryMeta: { fontSize: 13 },
+  heroWrap: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  heroInner: {
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    gap: 2,
+  },
   tabContent: { flex: 1 },
   sectionActions: { paddingHorizontal: 16, paddingBottom: 8 },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 17, fontWeight: '600', fontFamily: fonts.semibold, marginBottom: 4 },
-  sectionHint: { fontSize: 13, marginBottom: 8 },
-  fieldLabel: { fontSize: 13, marginTop: 4 },
-  splitInfo: { fontSize: 13, textAlign: 'center' },
-  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 3 },
-  splitMemberName: { flex: 1, fontSize: 14 },
+  fieldLabel: { marginTop: 8, marginBottom: 2 },
+  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 4 },
   splitInput: { width: 70, textAlign: 'center' },
-  splitPreview: { fontSize: 12, width: 80, textAlign: 'right' },
-  previewBox: { padding: 10, borderRadius: 8, gap: 2 },
-  previewLabel: { fontSize: 12, marginBottom: 2 },
+  customTotal: { marginTop: 8, paddingVertical: 6 },
+  previewBox: { padding: 10, borderRadius: 10, gap: 2 },
+  previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
-  amountText: { fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold },
-  balanceText: { fontSize: 16, fontWeight: '700', fontFamily: fonts.bold },
   emptyContainer: { flex: 1, justifyContent: 'center' },
+
+  exportSummary: {
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
 });

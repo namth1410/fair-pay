@@ -4,3 +4,128 @@
 @import 'heroui-native/styles';
 
 @source './node_modules/heroui-native/lib';
+
+/* ─────────────────────────────────────────────────────────────
+   Fair Pay — Sakura theme (hồng nhạt dịu dàng)
+   Override HeroUI Native CSS variables (OKLCH)
+   ───────────────────────────────────────────────────────────── */
+@layer theme {
+  @variant light {
+    /* Base */
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.26 0.07 350);
+
+    /* Surface (cards, accordions) */
+    --surface: oklch(0.97 0.018 350);
+    --surface-foreground: oklch(0.28 0.07 350);
+    --surface-secondary: oklch(0.94 0.03 350);
+    --surface-secondary-foreground: oklch(0.28 0.07 350);
+    --surface-tertiary: oklch(0.9 0.05 350);
+    --surface-tertiary-foreground: oklch(0.28 0.07 350);
+
+    /* Overlay (dialogs, popovers) */
+    --overlay: oklch(0.99 0.008 350);
+    --overlay-foreground: oklch(0.28 0.07 350);
+    --backdrop: oklch(0% 0 0 / 20%);
+
+    --muted: oklch(0.53 0.04 350);
+
+    --default: oklch(0.94 0.02 350);
+    --default-foreground: oklch(0.4 0.06 350);
+
+    /* Accent — Pink-300 #F9A8D4 */
+    --accent: oklch(0.78 0.14 350);
+    --accent-foreground: oklch(0.98 0.01 350);
+
+    /* Form field */
+    --field-background: oklch(0.97 0.018 350);
+    --field-foreground: oklch(0.28 0.07 350);
+    --field-placeholder: var(--muted);
+    --field-border: transparent;
+
+    /* Status */
+    --success: oklch(0.68 0.16 160);
+    --success-foreground: oklch(0.98 0.005 160);
+    --warning: oklch(0.78 0.16 75);
+    --warning-foreground: oklch(0.3 0.08 75);
+    --danger: oklch(0.6 0.22 15);
+    --danger-foreground: oklch(0.98 0.005 15);
+
+    /* Segment */
+    --segment: oklch(0.97 0.018 350);
+    --segment-foreground: oklch(0.28 0.07 350);
+
+    /* Misc */
+    --border: oklch(0 0 0 / 0%);
+    --separator: oklch(0.9 0.04 350);
+    --focus: var(--accent);
+    --link: oklch(0.62 0.18 350);
+
+    /* Shadow */
+    --surface-shadow:
+      0 1px 2px 0 rgba(249, 168, 212, 0.08), 0 2px 6px 0 rgba(74, 31, 56, 0.06),
+      0 0 1px 0 rgba(74, 31, 56, 0.08);
+    --overlay-shadow:
+      0 2px 8px 0 rgba(74, 31, 56, 0.04), 0 -6px 12px 0 rgba(74, 31, 56, 0.02),
+      0 14px 28px 0 rgba(74, 31, 56, 0.06);
+    --field-shadow:
+      0 1px 2px 0 rgba(249, 168, 212, 0.06), 0 0 1px 0 rgba(74, 31, 56, 0.05);
+  }
+
+  @variant dark {
+    /* Base — deep plum */
+    --background: oklch(0.18 0.04 350);
+    --foreground: oklch(0.94 0.04 350);
+
+    /* Surface */
+    --surface: oklch(0.24 0.045 350);
+    --surface-foreground: oklch(0.92 0.03 350);
+    --surface-secondary: oklch(0.28 0.05 350);
+    --surface-secondary-foreground: oklch(0.92 0.03 350);
+    --surface-tertiary: oklch(0.32 0.055 350);
+    --surface-tertiary-foreground: oklch(0.92 0.03 350);
+
+    /* Overlay */
+    --overlay: oklch(0.26 0.048 350);
+    --overlay-foreground: oklch(0.92 0.03 350);
+    --backdrop: oklch(0% 0 0 / 25%);
+
+    --muted: oklch(0.62 0.03 350);
+
+    --default: oklch(0.3 0.05 350);
+    --default-foreground: oklch(0.9 0.03 350);
+
+    /* Accent — saturate giảm để không chói trên dark */
+    --accent: oklch(0.82 0.1 350);
+    --accent-foreground: oklch(0.2 0.05 350);
+
+    /* Form field */
+    --field-background: var(--default);
+    --field-foreground: var(--foreground);
+    --field-placeholder: var(--muted);
+    --field-border: transparent;
+
+    /* Status */
+    --success: oklch(0.72 0.16 160);
+    --success-foreground: oklch(0.14 0.04 160);
+    --warning: oklch(0.82 0.14 80);
+    --warning-foreground: oklch(0.2 0.04 80);
+    --danger: oklch(0.72 0.2 15);
+    --danger-foreground: oklch(0.14 0.04 15);
+
+    /* Segment */
+    --segment: oklch(0.26 0.048 350);
+    --segment-foreground: oklch(0.92 0.03 350);
+
+    /* Misc */
+    --border: oklch(0 0 0 / 0%);
+    --separator: oklch(0.32 0.055 350);
+    --focus: var(--accent);
+    --link: oklch(0.78 0.12 350);
+
+    /* Shadow */
+    --surface-shadow: 0 0 0 0 transparent inset;
+    --overlay-shadow: 0 0 1px 0 rgba(251, 207, 232, 0.2) inset;
+    --field-shadow: 0 0 0 0 transparent inset;
+  }
+}

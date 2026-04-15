@@ -1,8 +1,17 @@
-import { useColorScheme } from 'react-native';
+import { useUniwind } from 'uniwind';
+
 import { colors } from '../config/theme';
 
+/**
+ * Returns true when the effective UI theme is dark. Reads from Uniwind's
+ * runtime theme so it stays in sync with both system preference and
+ * manual overrides (e.g. user toggling dark mode in settings).
+ */
+export function useIsDark(): boolean {
+  const { theme } = useUniwind();
+  return theme === 'dark';
+}
+
 export function useAppTheme() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return isDark ? colors.dark : colors.light;
+  return useIsDark() ? colors.dark : colors.light;
 }

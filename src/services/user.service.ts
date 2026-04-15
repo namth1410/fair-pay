@@ -21,7 +21,10 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notify_reminder: true,
 };
 
-/** Fetch current user profile from users table */
+/** Fetch current user profile, falling back to auth metadata if the users
+ *  row is missing or RLS-blocked — so the UI never shows "Đang tải..." forever
+ *  just because the DB query failed.
+ */
 export async function fetchCurrentUser(): Promise<UserProfile | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -29,18 +32,29 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .eq('id', user.id)
-    .single();
+    .eq('auth_id', user.id)
+    .maybeSingle();
 
-  if (error || !data) return null;
+  if (error && __DEV__) {
+    console.warn('[fetchCurrentUser] users table query failed:', error.message);
+  }
+
+  // Build display_name with priority: DB row → auth metadata → email local-part
+  const meta = (user.user_metadata ?? {}) as Record<string, any>;
+  const fallbackName =
+    meta.display_name ||
+    meta.full_name ||
+    meta.name ||
+    user.email?.split('@')[0] ||
+    'Bạn';
 
   return {
-    id: data.id,
-    email: data.email || user.email || '',
-    display_name: data.display_name || 'Chưa đặt tên',
-    photo_url: data.photo_url || null,
-    fcm_token: data.fcm_token || null,
-    settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
+    id: user.id,
+    email: data?.email || user.email || '',
+    display_name: data?.display_name || fallbackName,
+    photo_url: data?.photo_url || meta.avatar_url || null,
+    fcm_token: data?.fcm_token || null,
+    settings: { ...DEFAULT_SETTINGS, ...(data?.settings || {}) },
   };
 }
 
@@ -55,7 +69,7 @@ export async function updateDisplayName(name: string): Promise<void> {
   const { error } = await supabase
     .from('users')
     .update({ display_name: trimmed })
-    .eq('id', user.id);
+    .eq('auth_id', user.id);
 
   if (error) throw error;
 
@@ -73,7 +87,7 @@ export async function updateSettings(settings: UserSettings): Promise<void> {
   const { error } = await supabase
     .from('users')
     .update({ settings })
-    .eq('id', user.id);
+    .eq('auth_id', user.id);
 
   if (error) throw error;
 }
@@ -86,7 +100,7 @@ export async function updateFcmToken(token: string): Promise<void> {
   const { error } = await supabase
     .from('users')
     .update({ fcm_token: token })
-    .eq('id', user.id);
+    .eq('auth_id', user.id);
 
   if (error) console.warn('[User] Failed to update FCM token:', error.message);
 }

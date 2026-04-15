@@ -1,202 +1,206 @@
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Users } from 'lucide-react-native';
+import { Plus, Users } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { AnimatedEntrance, AppCard, AppTextField, EmptyState, FormReveal, ListSkeleton } from '../../components/ui';
-import { fonts } from '../../config/fonts';
+import { CreateJoinSheet } from '../../components/common/CreateJoinSheet';
+import { SettingsSheet } from '../../components/common/SettingsSheet';
+import {
+  AnimatedEntrance,
+  AppCard,
+  AppText,
+  Avatar,
+  EmptyState,
+  ListSkeleton,
+  Money,
+} from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupWithMemberCount } from '../../services/group.service';
+import { useAuthStore } from '../../stores/auth.store';
 import { useGroupStore } from '../../stores/group.store';
-import { getErrorMessage } from '../../utils/error';
-import { formatVND } from '../../utils/format';
 
 export default function HomeScreen() {
   const router = useRouter();
   const c = useAppTheme();
+  const user = useAuthStore((s) => s.user);
 
-  const { groups, balanceSummary, isLoading, loadGroups, createGroup, joinByCode } =
-    useGroupStore();
+  const { groups, balanceSummary, isLoading, loadGroups } = useGroupStore();
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [showJoin, setShowJoin] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
   const [joinPendingGroup, setJoinPendingGroup] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [createJoinOpen, setCreateJoinOpen] = useState(false);
 
   useEffect(() => {
     loadGroups();
   }, []);
 
-  const handleCreate = async () => {
-    if (!newGroupName.trim()) return;
-    try {
-      await createGroup(newGroupName.trim());
-      setNewGroupName('');
-      setShowCreate(false);
-    } catch (e: any) {
-      Alert.alert('L\u1ed7i', getErrorMessage(e));
-    }
-  };
+  // ── Hero debt card (BR-10) ──
+  // Always rendered when user has at least one group — shows owed / owing /
+  // settled variants. Previously hid when total=0, causing layout jumps that
+  // felt like the UI was "reacting" to the user settling up.
+  const renderHeroDebt = () => {
+    if (groups.length === 0) return null;
 
-  const handleJoin = async () => {
-    if (!inviteCode.trim()) return;
-    try {
-      const result = await joinByCode(inviteCode.trim());
-      setInviteCode('');
-      setShowJoin(false);
-      // Lu\u00f4n l\u00e0 type: 'pending' \u2014 hi\u1ec7n banner th\u00f4ng b\u00e1o ch\u1edd duy\u1ec7t
-      setJoinPendingGroup(result.group.name);
-    } catch (e: any) {
-      Alert.alert('L\u1ed7i', getErrorMessage(e));
-    }
-  };
-
-  // \u2500\u2500 Badge t\u1ed5ng n\u1ee3 (BR-10) \u2500\u2500
-  const renderTotalBadge = () => {
     const { total } = balanceSummary;
-    if (total === 0) return null;
-
+    const isSettled = total === 0;
     const isPositive = total > 0;
-    const badgeBg = isPositive ? c.successSoft : c.dangerSoft;
-    const badgeColor = isPositive ? c.success : c.danger;
-    const label = isPositive ? 'B\u1ea1n \u0111ang \u0111\u01b0\u1ee3c n\u1ee3' : 'B\u1ea1n \u0111ang n\u1ee3';
-    const amount = formatVND(Math.abs(total));
+
+    let label: string;
+    let tone: 'success' | 'danger' | undefined;
+    let gradFrom: string;
+    if (isSettled) {
+      label = 'Đã thanh toán đầy đủ';
+      tone = undefined;
+      gradFrom = c.accentSoft;
+    } else if (isPositive) {
+      label = 'Bạn đang được nợ';
+      tone = 'success';
+      gradFrom = c.successSoft;
+    } else {
+      label = 'Bạn đang nợ';
+      tone = 'danger';
+      gradFrom = c.dangerSoft;
+    }
+    const gradTo = c.tint ?? c.surface;
+    const footnote = isSettled ? 'Không còn khoản nào cần thanh toán' : 'trên tất cả các nhóm';
 
     return (
       <AnimatedEntrance delay={0}>
-        <View
-          style={[styles.totalBadge, { backgroundColor: badgeBg }]}
-          accessibilityLabel={`${label} ${amount} trên tất cả các nhóm`}
-        >
-          <Text style={[styles.totalBadgeLabel, { color: badgeColor }]}>
-            {label}
-          </Text>
-          <Text style={[styles.totalBadgeAmount, { color: badgeColor }]}>
-            {amount}
-          </Text>
-          <Text style={[styles.totalBadgeHint, { color: badgeColor, opacity: 0.7 }]}>
-          tr\u00ean t\u1ea5t c\u1ea3 c\u00e1c nh\u00f3m
-          </Text>
+        <View style={styles.heroWrap}>
+          <Svg
+            width="100%"
+            height="100%"
+            style={StyleSheet.absoluteFill}
+            preserveAspectRatio="none"
+            viewBox="0 0 100 100"
+          >
+            <Defs>
+              <LinearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0%" stopColor={gradFrom} />
+                <Stop offset="100%" stopColor={gradTo} />
+              </LinearGradient>
+            </Defs>
+            <Rect width="100" height="100" rx="6" fill="url(#heroGrad)" />
+          </Svg>
+          <View style={styles.heroInner}>
+            <AppText variant="label" tone="muted">
+              {label}
+            </AppText>
+            <View style={styles.heroAmount}>
+              <Money value={Math.abs(total)} variant="hero" tone={tone} animate />
+            </View>
+            <AppText variant="meta" tone="muted">
+              {footnote}
+            </AppText>
+          </View>
         </View>
       </AnimatedEntrance>
     );
   };
 
-  //\u2500\u2500 S\u1ed1 d\u01b0 user trong 1 group (BR-10) \u2500\u2500
+  // ── Per-group balance pill ──
   const renderGroupBalance = (groupId: string) => {
     const balance = balanceSummary.groupBalances[groupId];
     if (balance === undefined || balance === 0) return null;
-
     const isPositive = balance > 0;
-    const color = isPositive ? c.success : c.danger;
-    const sign = isPositive ? '+' : '';
     return (
-      <Text style={[styles.groupBalance, { color }]}>
-        {sign}{formatVND(balance)}
-      </Text>
+      <Money
+        value={Math.abs(balance)}
+        variant="compact"
+        tone={isPositive ? 'success' : 'danger'}
+        showSign
+      />
     );
   };
 
-  const renderGroup = ({ item, index }: { item: GroupWithMemberCount; index: number }) => (
-    <AnimatedEntrance delay={Math.min(index * 50, 500)}>
-      <AppCard
-        title={item.name}
-        subtitle={`${item.member_count} th\u00e0nh vi\u00ean \u00b7 #${item.invite_code}`}
-        onPress={() => router.push(`/(main)/groups/${item.id}`)}
-        trailing={renderGroupBalance(item.id)}
-      />
-    </AnimatedEntrance>
-  );
+  const getBorderColor = (bal: number): string | undefined => {
+    if (bal > 0) return c.success;
+    if (bal < 0) return c.danger;
+    return undefined;
+  };
+
+  const renderGroup = ({ item, index }: { item: GroupWithMemberCount; index: number }) => {
+    const balance = balanceSummary.groupBalances[item.id] ?? 0;
+    const borderColor = getBorderColor(balance);
+
+    return (
+      <AnimatedEntrance delay={Math.min(index * 50, 500)}>
+        <AppCard
+          title={item.name}
+          subtitle={`${item.member_count} thành viên`}
+          onPress={() => router.push(`/(main)/groups/${item.id}`)}
+          leading={<Avatar seed={item.id} label={item.name} size={44} />}
+          trailing={renderGroupBalance(item.id)}
+          borderLeft={borderColor ? { width: 3, color: borderColor } : undefined}
+        />
+      </AnimatedEntrance>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
-      {/* Badge t\u1ed5ng n\u1ee3 \u2014 ch\u1ec9 hi\u1ec7n khi c\u00f3 n\u1ee3 (BR-10) */}
-      {renderTotalBadge()}
+      <Stack.Screen
+        options={{
+          headerLeft: () => (
+            <Pressable
+              onPress={() => setCreateJoinOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Tạo hoặc tham gia nhóm"
+              android_ripple={{ color: c.divider, borderless: true, radius: 22 }}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && { opacity: 0.45, backgroundColor: c.divider, borderRadius: 22 },
+              ]}
+            >
+              <Plus size={22} color={c.foreground} strokeWidth={2.2} />
+            </Pressable>
+          ),
+          headerRight: () => (
+            <Pressable
+              onPress={() => setSettingsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Mở cài đặt & hồ sơ"
+              android_ripple={{ color: c.divider, borderless: true, radius: 22 }}
+              style={({ pressed }) => [
+                styles.headerButton,
+                pressed && { opacity: 0.55 },
+              ]}
+            >
+              <Avatar seed={user?.id ?? 'guest'} label={user?.email} size={32} />
+            </Pressable>
+          ),
+        }}
+      />
 
-      {/* Action buttons */}
-      <View style={styles.actions}>
-        <Button
-          variant="primary"
-          size="sm"
-          onPress={() => { setShowCreate(true); setShowJoin(false); }}
-        >
-          <Button.Label>T\u1ea1o nh\u00f3m</Button.Label>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onPress={() => { setShowJoin(true); setShowCreate(false); }}
-        >
-          <Button.Label>Nh\u1eadp m\u00e3 m\u1eddi</Button.Label>
-        </Button>
-      </View>
+      {/* Hero: owed / owing / settled — luôn hiện khi có nhóm */}
+      {renderHeroDebt()}
 
-      {/* Create group form */}
-      <FormReveal isOpen={showCreate}>
-        <AppTextField
-          placeholder="T\u00ean nh\u00f3m m\u1edbi"
-          value={newGroupName}
-          onChangeText={setNewGroupName}
-          autoFocus
-        />
-        <View style={styles.formActions}>
-          <Button variant="ghost" size="sm" onPress={() => setShowCreate(false)}>
-            <Button.Label>H\u1ee7y</Button.Label>
-          </Button>
-          <Button variant="primary" size="sm" onPress={handleCreate}>
-            <Button.Label>T\u1ea1o</Button.Label>
-          </Button>
-        </View>
-      </FormReveal>
-
-      {/* Join group form */}
-      <FormReveal isOpen={showJoin}>
-        <AppTextField
-          placeholder="Nh\u1eadp m\u00e3 m\u1eddi (VD: a1b2c3)"
-          value={inviteCode}
-          onChangeText={setInviteCode}
-          autoCapitalize="none"
-          autoFocus
-        />
-        <View style={styles.formActions}>
-          <Button variant="ghost" size="sm" onPress={() => setShowJoin(false)}>
-            <Button.Label>H\u1ee7y</Button.Label>
-          </Button>
-          <Button variant="primary" size="sm" onPress={handleJoin}>
-            <Button.Label>Tham gia</Button.Label>
-          </Button>
-        </View>
-      </FormReveal>
-
-      {/* Pending banner \u2014 hi\u1ec7n khi user v\u1eeba g\u1eedi join request (BR-09) */}
+      {/* Pending banner — khi user vừa gửi join request (BR-09) */}
       {joinPendingGroup && (
         <View style={[styles.pendingBanner, { backgroundColor: c.accentSoft }]}>
-          <Text style={[styles.pendingTitle, { color: c.primary }]}>
-            Y\u00eau c\u1ea7u \u0111\u00e3 g\u1eedi \u2014 ch\u1edd duy\u1ec7t
-          </Text>
-          <Text style={[styles.pendingMeta, { color: c.muted }]}>
-            Nh\u00f3m "{joinPendingGroup}" c\u1ea7n x\u00e9t duy\u1ec7t tr\u01b0\u1edbc khi b\u1ea1n tr\u1edf th\u00e0nh th\u00e0nh vi\u00ean.
-          </Text>
-          <Pressable
-            onPress={() => setJoinPendingGroup(null)}
-            accessibilityRole="button"
-            accessibilityLabel="Đã hiểu"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={{ color: c.primary, fontSize: 13, marginTop: 6 }}>
-              \u0110\u00e3 hi\u1ec3u
-            </Text>
-          </Pressable>
+          <AppText variant="body" weight="semibold" tone="primary">
+            Yêu cầu đã gửi — chờ duyệt
+          </AppText>
+          <AppText variant="caption" tone="muted" style={styles.pendingHint}>
+            Nhóm "{joinPendingGroup}" cần xét duyệt trước khi bạn trở thành thành viên.
+          </AppText>
+          <View style={styles.pendingAction}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={() => setJoinPendingGroup(null)}
+            >
+              <Button.Label>Đã hiểu</Button.Label>
+            </Button>
+          </View>
         </View>
       )}
 
@@ -210,18 +214,25 @@ export default function HomeScreen() {
           renderItem={renderGroup}
           contentContainerStyle={groups.length === 0 ? styles.emptyContainer : styles.list}
           refreshControl={
-            <RefreshControl refreshing={isLoading} onRefresh={loadGroups} />
+            <RefreshControl refreshing={isLoading} onRefresh={loadGroups} tintColor={c.primaryStrong} />
           }
           ListEmptyComponent={
             <EmptyState
               icon={Users}
-              title="Ch\u01b0a c\u00f3 nh\u00f3m n\u00e0o"
-              subtitle="T\u1ea1o nh\u00f3m m\u1edbi ho\u1eb7c nh\u1eadp m\u00e3 m\u1eddi \u0111\u1ec3 b\u1eaft \u0111\u1ea7u"
-              action={{ label: "T\u1ea1o nh\u00f3m", onPress: () => { setShowCreate(true); setShowJoin(false); } }}
+              title="Chưa có nhóm nào"
+              subtitle="Tạo nhóm mới hoặc nhập mã mời để bắt đầu"
+              action={{ label: 'Tạo nhóm', onPress: () => setCreateJoinOpen(true) }}
             />
           }
         />
       )}
+
+      <CreateJoinSheet
+        isOpen={createJoinOpen}
+        onOpenChange={setCreateJoinOpen}
+        onJoinPending={setJoinPendingGroup}
+      />
+      <SettingsSheet isOpen={settingsOpen} onOpenChange={setSettingsOpen} />
     </View>
   );
 }
@@ -229,41 +240,46 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Badge t\u1ed5ng n\u1ee3
-  totalBadge: {
+  headerButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+
+  // Hero debt card
+  heroWrap: {
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  heroInner: {
+    paddingVertical: 18,
+    paddingHorizontal: 20,
     alignItems: 'center',
+    gap: 4,
   },
-  totalBadgeLabel: { fontSize: 13, fontWeight: '500', fontFamily: fonts.medium },
-  totalBadgeAmount: { fontSize: 26, fontWeight: '700', fontFamily: fonts.bold, marginTop: 2 },
-  totalBadgeHint: { fontSize: 12, marginTop: 1 },
+  heroAmount: {
+    marginVertical: 2,
+  },
 
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  formActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
-  groupBalance: { fontSize: 15, fontWeight: '700', fontFamily: fonts.bold },
+  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+
   pendingBanner: {
     marginHorizontal: 16,
     marginBottom: 8,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
   },
-  pendingTitle: { fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold },
-  pendingMeta: { fontSize: 13, marginTop: 4 },
+  pendingHint: {
+    marginTop: 4,
+  },
+  pendingAction: {
+    marginTop: 8,
+    alignSelf: 'flex-end',
+  },
   emptyContainer: { flex: 1, justifyContent: 'center' },
 });

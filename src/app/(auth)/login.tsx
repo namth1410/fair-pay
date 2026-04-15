@@ -5,12 +5,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 
-import { AnimatedEntrance, AppTextField } from '../../components/ui';
-import { fonts } from '../../config/fonts';
+import { BrandDecoration } from '../../components/brand/BrandDecoration';
+import { Wordmark } from '../../components/brand/Wordmark';
+import { AnimatedEntrance, AppText, AppTextField } from '../../components/ui';
+import { APP_SLOGAN } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
@@ -46,17 +47,23 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // Android: windowSoftInputMode=adjustResize (Expo default) already
+      // handles resize natively. Using behavior='height' here double-resizes
+      // and leaves a gap at the bottom when the keyboard dismisses.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.container, { backgroundColor: c.background }]}
     >
+      <BrandDecoration />
       <View style={styles.content}>
         <AnimatedEntrance delay={0}>
-          <Text style={[styles.title, { color: c.foreground }]}>SplitVN</Text>
+          <View style={styles.brand}>
+            <Wordmark size="lg" />
+          </View>
         </AnimatedEntrance>
         <AnimatedEntrance delay={80}>
-          <Text style={[styles.subtitle, { color: c.foreground, opacity: 0.6 }]}>
-            Chia tiền nhóm dễ dàng
-          </Text>
+          <AppText variant="subtitle" tone="muted" style={styles.slogan}>
+            {APP_SLOGAN}
+          </AppText>
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={150}>
@@ -83,8 +90,10 @@ export default function LoginScreen() {
         </AnimatedEntrance>
 
         {error && email && password ? (
-          <View style={styles.errorBox}>
-            <Text style={{ color: c.danger }}>{error}</Text>
+          <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+            <AppText variant="caption" tone="danger">
+              {error}
+            </AppText>
           </View>
         ) : null}
 
@@ -105,7 +114,9 @@ export default function LoginScreen() {
         <AnimatedEntrance delay={360}>
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: c.divider }]} />
-            <Text style={[styles.dividerText, { color: c.muted }]}>hoặc</Text>
+            <AppText variant="caption" tone="muted" style={styles.dividerText}>
+              hoặc
+            </AppText>
             <View style={[styles.dividerLine, { backgroundColor: c.divider }]} />
           </View>
 
@@ -121,9 +132,9 @@ export default function LoginScreen() {
 
           <View style={styles.footer}>
             <Link href="/(auth)/register">
-              <Text style={{ color: c.primary }}>
+              <AppText variant="caption" tone="primary" weight="semibold">
                 Chưa có tài khoản? Đăng ký
-              </Text>
+              </AppText>
             </Link>
           </View>
         </AnimatedEntrance>
@@ -142,21 +153,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 4,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+  brand: {
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 16,
+  slogan: {
     marginBottom: 24,
   },
   errorBox: {
+    marginTop: 4,
     marginBottom: 8,
     padding: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderRadius: 10,
   },
   button: {
     width: '100%',
@@ -172,7 +179,6 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     marginHorizontal: 12,
-    fontSize: 14,
   },
   footer: {
     marginTop: 24,

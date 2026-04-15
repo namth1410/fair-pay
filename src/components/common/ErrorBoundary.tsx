@@ -1,7 +1,8 @@
 import { Component, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { AppText } from '../ui/AppText';
 
 interface Props {
   children: ReactNode;
@@ -21,18 +22,25 @@ function ErrorFallback({ error, onReset }: ErrorFallbackProps) {
   const c = useAppTheme();
 
   return (
-    <View accessibilityRole="alert" style={[styles.container, { backgroundColor: c.background }]}>
-      <Text style={[styles.title, { color: c.foreground }]}>Đã xảy ra lỗi</Text>
-      <Text style={[styles.message, { color: c.muted }]}>
+    <View
+      accessibilityRole="alert"
+      style={[styles.container, { backgroundColor: c.background }]}
+    >
+      <AppText variant="title" weight="bold" center>
+        Đã xảy ra lỗi
+      </AppText>
+      <AppText variant="body" tone="muted" center style={styles.message}>
         {error?.message || 'Lỗi không xác định'}
-      </Text>
+      </AppText>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Thử lại"
-        style={[styles.button, { backgroundColor: c.primary }]}
+        style={[styles.button, { backgroundColor: c.primaryStrong }]}
         onPress={onReset}
       >
-        <Text style={styles.buttonText}>Thử lại</Text>
+        <AppText weight="semibold" style={{ color: '#FFFFFF' }}>
+          Thử lại
+        </AppText>
       </Pressable>
     </View>
   );
@@ -66,24 +74,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
   message: {
-    fontSize: 14,
-    textAlign: 'center',
+    marginTop: 8,
     marginBottom: 24,
   },
   button: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    borderRadius: 12,
   },
 });

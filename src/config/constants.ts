@@ -1,4 +1,5 @@
-export const APP_NAME = 'SplitVN';
+export const APP_NAME = 'Fair Pay';
+export const APP_SLOGAN = 'Chia tiền · Không chia rẽ';
 export const APP_SCHEME = 'splitvn';
 
 // Supabase

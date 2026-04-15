@@ -1,7 +1,8 @@
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Switch } from 'heroui-native';
+import { StyleSheet, View } from 'react-native';
+import { Pressable } from 'react-native-gesture-handler';
 
-import { fonts } from '../../config/fonts';
-import { useAppTheme } from '../../hooks/useAppTheme';
+import { AppText } from './AppText';
 
 interface SettingRowProps {
   label: string;
@@ -11,23 +12,32 @@ interface SettingRowProps {
 }
 
 export function SettingRow({ label, hint, value, onValueChange }: SettingRowProps) {
-  const c = useAppTheme();
-
+  // Whole row is the tap target — heroui Switch doesn't reliably receive
+  // taps when nested inside @gorhom BottomSheetScrollView (gesture-handler
+  // intercepts). The Switch becomes a visual indicator (pointerEvents="none")
+  // and a single Pressable from react-native-gesture-handler drives the toggle.
   return (
-    <View style={styles.row}>
+    <Pressable
+      style={styles.row}
+      onPress={() => onValueChange(!value)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+    >
       <View style={styles.info}>
-        <Text style={[styles.label, { color: c.foreground }]}>{label}</Text>
+        <AppText variant="body" weight="medium">
+          {label}
+        </AppText>
         {hint ? (
-          <Text style={[styles.hint, { color: c.muted }]}>{hint}</Text>
+          <AppText variant="meta" tone="muted" style={styles.hint}>
+            {hint}
+          </AppText>
         ) : null}
       </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: c.divider, true: c.primary + '80' }}
-        thumbColor={value ? c.primary : c.muted}
-      />
-    </View>
+      <View pointerEvents="none">
+        <Switch isSelected={value} onSelectedChange={onValueChange} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -39,6 +49,5 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   info: { flex: 1, marginRight: 12 },
-  label: { fontSize: 15, fontWeight: '500', fontFamily: fonts.medium },
-  hint: { fontSize: 12, marginTop: 2 },
+  hint: { marginTop: 2 },
 });

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SplitVN",
+    "name": "Fair Pay",
     "slug": "splitvn",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,12 +11,12 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F172A"
+      "backgroundColor": "#FDF2F8"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F172A"
+        "backgroundColor": "#FDF2F8"
       },
       "package": "com.splitvn.app"
     },

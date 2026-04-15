@@ -5,12 +5,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 
-import { AnimatedEntrance, AppTextField } from '../../components/ui';
-import { fonts } from '../../config/fonts';
+import { BrandDecoration } from '../../components/brand/BrandDecoration';
+import { Wordmark } from '../../components/brand/Wordmark';
+import { AnimatedEntrance, AppText, AppTextField } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
@@ -42,22 +42,28 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // Android adjustResize handles this natively; see login.tsx for details.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[styles.container, { backgroundColor: c.background }]}
     >
+      <BrandDecoration />
       <View style={styles.content}>
         <AnimatedEntrance delay={0}>
-          <Text style={[styles.title, { color: c.foreground }]}>Đăng ký</Text>
+          <View style={styles.brand}>
+            <Wordmark size="md" />
+          </View>
         </AnimatedEntrance>
         <AnimatedEntrance delay={80}>
-          <Text style={[styles.subtitle, { color: c.foreground, opacity: 0.6 }]}>
-            Tạo tài khoản SplitVN
-          </Text>
+          <AppText variant="subtitle" tone="muted" style={styles.subtitle}>
+            Tạo tài khoản Fair Pay
+          </AppText>
         </AnimatedEntrance>
 
         {error ? (
-          <View style={styles.errorBox}>
-            <Text style={{ color: c.danger }}>{error}</Text>
+          <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+            <AppText variant="caption" tone="danger">
+              {error}
+            </AppText>
           </View>
         ) : null}
 
@@ -106,9 +112,9 @@ export default function RegisterScreen() {
 
           <View style={styles.footer}>
             <Link href="/(auth)/login">
-              <Text style={{ color: c.primary }}>
+              <AppText variant="caption" tone="primary" weight="semibold">
                 Đã có tài khoản? Đăng nhập
-              </Text>
+              </AppText>
             </Link>
           </View>
         </AnimatedEntrance>
@@ -127,21 +133,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 4,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: fonts.bold,
+  brand: {
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
     marginBottom: 24,
   },
   errorBox: {
     marginBottom: 8,
     padding: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+    borderRadius: 10,
   },
   button: {
     width: '100%',
