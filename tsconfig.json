@@ -5,7 +5,23 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+
+    /* Bắt biến / tham số không dùng */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    /* Bắt switch case thiếu break */
+    "noFallthroughCasesInSwitch": true,
+
+    /* Bắt lỗi case-sensitive trên Windows vs Linux */
+    "forceConsistentCasingInFileNames": true,
+
+    /* Bắt truy cập index có thể undefined — tránh runtime crash */
+    "noUncheckedIndexedAccess": true,
+
+    /* Bắt buộc dùng override keyword khi ghi đè method */
+    "noImplicitOverride": true
   },
   "include": ["**/*.ts", "**/*.tsx", "src/**/*"]
 }

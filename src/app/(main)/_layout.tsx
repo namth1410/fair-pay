@@ -1,11 +1,10 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme } from 'react-native';
-import { colors } from '../../config/theme';
+import { Settings, Users } from 'lucide-react-native';
+
+import { useAppTheme } from '../../hooks/useAppTheme';
 
 export default function MainLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const c = isDark ? colors.dark : colors.light;
+  const c = useAppTheme();
 
   return (
     <Tabs
@@ -14,10 +13,10 @@ export default function MainLayout() {
         headerTintColor: c.foreground,
         tabBarStyle: {
           backgroundColor: c.background,
-          borderTopColor: isDark ? '#334155' : '#E2E8F0',
+          borderTopColor: c.divider,
         },
         tabBarActiveTintColor: c.primary,
-        tabBarInactiveTintColor: isDark ? '#94A3B8' : '#64748B',
+        tabBarInactiveTintColor: c.muted,
       }}
     >
       <Tabs.Screen
@@ -25,12 +24,14 @@ export default function MainLayout() {
         options={{
           title: 'Nhóm',
           headerTitle: 'SplitVN',
+          tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Cài đặt',
+          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
         }}
       />
       {/* Hidden from tab bar — accessed via push navigation */}

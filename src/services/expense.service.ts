@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
 import type { SplitResult } from '../utils/split';
 
 export interface Expense {
@@ -109,7 +110,7 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 
 /**
  * Calculate balance for each member in a trip.
- * balance = (paid for expenses) - (owed from splits) + (received payments) - (sent payments)
+ * Fetches data from Supabase, then delegates to pure function in utils/balance.ts.
  */
 export async function calculateBalances(
   tripId: string
@@ -149,39 +150,29 @@ export async function calculateBalances(
 
   if (!members) return [];
 
-  const balanceMap: Record<string, number> = {};
-  members.forEach((m) => {
-    balanceMap[m.id] = 0;
-  });
-
-  // Expenses: payer gets credit, split members owe
-  (expenses || []).forEach((exp: any) => {
-    if (balanceMap[exp.paid_by] !== undefined) {
-      balanceMap[exp.paid_by] += exp.amount;
-    }
-    (exp.expense_splits || []).forEach((split: ExpenseSplit) => {
-      if (balanceMap[split.member_id] !== undefined) {
-        balanceMap[split.member_id] -= split.amount;
-      }
-    });
-  });
-
-  // Payments: sender settles debt (balance UP), receiver gets paid back (balance DOWN)
-  // When Binh pays An 120k: Binh's debt reduces (+120k), An's credit reduces (-120k)
-  (payments || []).forEach((pay: any) => {
-    if (balanceMap[pay.from_member_id] !== undefined) {
-      balanceMap[pay.from_member_id] += pay.amount; // debt settled
-    }
-    if (balanceMap[pay.to_member_id] !== undefined) {
-      balanceMap[pay.to_member_id] -= pay.amount; // credit settled
-    }
-  });
-
-  return members.map((m) => ({
-    memberId: m.id,
-    memberName: m.display_name,
-    balance: balanceMap[m.id] || 0,
+  // Transform to pure function format
+  const expenseData: ExpenseData[] = (expenses || []).map((exp: any) => ({
+    paidBy: exp.paid_by,
+    amount: exp.amount,
+    splits: (exp.expense_splits || []).map((s: any) => ({
+      memberId: s.member_id,
+      amount: s.amount,
+    })),
   }));
+
+  const paymentData: PaymentData[] = (payments || []).map((pay: any) => ({
+    fromMemberId: pay.from_member_id,
+    toMemberId: pay.to_member_id,
+    amount: pay.amount,
+  }));
+
+  const memberList = members.map((m) => ({
+    id: m.id,
+    displayName: m.display_name,
+  }));
+
+  // Delegate to shared pure function (same code as tests use)
+  return computeBalancesPure(memberList, expenseData, paymentData);
 }
 
 // ── Helper ──────────────────────────────────

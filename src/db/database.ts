@@ -1,6 +1,8 @@
 import * as SQLite from 'expo-sqlite';
-import { CREATE_TABLES, SCHEMA_VERSION } from './schema';
+
 import { DB_NAME } from '../config/constants';
+import { runMigrations } from './migrations';
+import { CREATE_TABLES, SCHEMA_VERSION } from './schema';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -28,6 +30,9 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       'INSERT INTO _schema_version (version) VALUES (?)',
       SCHEMA_VERSION
     );
+  } else {
+    // Run any pending migrations for existing installs
+    await runMigrations(db, versionResult.version);
   }
 
   console.log(`[DB] Initialized — schema v${SCHEMA_VERSION}`);

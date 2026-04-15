@@ -27,20 +27,44 @@ export const darkTheme = {
   divider: '215 25% 27%',              // #334155
 };
 
-// Hex values for non-HeroUI usage (StatusBar, system components)
+// Hex values — dùng qua hook useAppTheme()
 export const colors = {
   light: {
     background: '#FFFFFF',
+    surface: '#F8FAFC',
+    surfaceAlt: '#F0F9FF',
     foreground: '#1A252F',
+    muted: '#64748B',
     primary: '#1D6FA8',
     success: '#16A34A',
     danger: '#DC2626',
+    warning: '#D97706',
+    divider: '#E2E8F0',
+    // Soft variants (badge backgrounds)
+    successSoft: '#DCFCE7',
+    dangerSoft: '#FFE4E6',
+    accentSoft: '#EFF6FF',
+    successSoftDark: '#14532D',
+    dangerSoftDark: '#4C0519',
+    accentSoftDark: '#1E3A5F',
   },
   dark: {
     background: '#0F172A',
+    surface: '#1E293B',
+    surfaceAlt: '#1E293B',
     foreground: '#F1F5F9',
+    muted: '#94A3B8',
     primary: '#38BDF8',
     success: '#4ADE80',
     danger: '#F87171',
+    warning: '#FCD34D',
+    divider: '#334155',
+    // Soft variants (badge backgrounds)
+    successSoft: '#14532D',
+    dangerSoft: '#4C0519',
+    accentSoft: '#1E3A5F',
+    successSoftDark: '#14532D',
+    dangerSoftDark: '#4C0519',
+    accentSoftDark: '#1E3A5F',
   },
 };

@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { useAppTheme } from '../../hooks/useAppTheme';
 
 interface Props {
   children: ReactNode;
@@ -10,8 +12,34 @@ interface State {
   error: Error | null;
 }
 
+interface ErrorFallbackProps {
+  error: Error | null;
+  onReset: () => void;
+}
+
+function ErrorFallback({ error, onReset }: ErrorFallbackProps) {
+  const c = useAppTheme();
+
+  return (
+    <View accessibilityRole="alert" style={[styles.container, { backgroundColor: c.background }]}>
+      <Text style={[styles.title, { color: c.foreground }]}>Đã xảy ra lỗi</Text>
+      <Text style={[styles.message, { color: c.muted }]}>
+        {error?.message || 'Lỗi không xác định'}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Thử lại"
+        style={[styles.button, { backgroundColor: c.primary }]}
+        onPress={onReset}
+      >
+        <Text style={styles.buttonText}>Thử lại</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null };
+  override state: State = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -21,18 +49,10 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: null });
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.container}>
-          <Text style={styles.title}>Đã xảy ra lỗi</Text>
-          <Text style={styles.message}>
-            {this.state.error?.message || 'Lỗi không xác định'}
-          </Text>
-          <Pressable style={styles.button} onPress={this.handleReset}>
-            <Text style={styles.buttonText}>Thử lại</Text>
-          </Pressable>
-        </View>
+        <ErrorFallback error={this.state.error} onReset={this.handleReset} />
       );
     }
     return this.props.children;
@@ -45,22 +65,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#0F172A',
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#F1F5F9',
     marginBottom: 8,
   },
   message: {
     fontSize: 14,
-    color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 24,
   },
   button: {
-    backgroundColor: '#1D6FA8',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,

@@ -4,41 +4,13 @@
  *
  * Balance = "số dư" = nhóm đang nợ bạn bao nhiêu (dương) / bạn đang nợ nhóm (âm).
  * Payment quyết toán nợ: người trả (from) balance tăng, người nhận (to) balance giảm.
+ *
+ * *** IMPORTANT: Tests dùng chung computeBalancesSimple() từ utils/balance.ts
+ * *** đảm bảo test và production dùng CÙNG code — no drift.
  */
 
-interface ExpenseData {
-  paidBy: string;
-  amount: number;
-  splits: { memberId: string; amount: number }[];
-}
-
-interface PaymentData {
-  fromMemberId: string;
-  toMemberId: string;
-  amount: number;
-}
-
-/** Pure function mirroring expense.service.ts calculateBalances */
-function computeBalances(
-  memberIds: string[],
-  expenses: ExpenseData[],
-  payments: PaymentData[]
-): Record<string, number> {
-  const b: Record<string, number> = {};
-  memberIds.forEach((id) => (b[id] = 0));
-
-  for (const exp of expenses) {
-    b[exp.paidBy] += exp.amount;
-    for (const s of exp.splits) {
-      b[s.memberId] -= s.amount;
-    }
-  }
-  for (const pay of payments) {
-    b[pay.fromMemberId] += pay.amount; // debt settled
-    b[pay.toMemberId] -= pay.amount;   // credit settled
-  }
-  return b;
-}
+import type { ExpenseData, PaymentData } from '../utils/balance';
+import { computeBalancesSimple } from '../utils/balance';
 
 // ═══════════════════════════════════════════════════
 // TC-02: Số dư sau expense
@@ -58,14 +30,14 @@ describe('TC-02: Số dư sau expense', () => {
   };
 
   it('An trả 300k, chia đều 3 → An: +200k, Bình: -100k, Chi: -100k', () => {
-    const b = computeBalances(members, [expense], []);
+    const b = computeBalancesSimple(members, [expense], []);
     expect(b['An']).toBe(200000);
     expect(b['Binh']).toBe(-100000);
     expect(b['Chi']).toBe(-100000);
   });
 
   it('nhiều expenses: An trả 300k, Binh trả 150k, chia đều', () => {
-    const b = computeBalances(members, [
+    const b = computeBalancesSimple(members, [
       expense,
       {
         paidBy: 'Binh', amount: 150000, splits: [
@@ -102,7 +74,7 @@ describe('TC-03: Payment tự do, trả dư', () => {
   };
 
   it('Bình trả An 120k (nợ 100k) → An: +80k, Bình: +20k, Chi: -100k', () => {
-    const b = computeBalances(members, [expense], [
+    const b = computeBalancesSimple(members, [expense], [
       { fromMemberId: 'Binh', toMemberId: 'An', amount: 120000 },
     ]);
     expect(b['An']).toBe(80000);
@@ -111,7 +83,7 @@ describe('TC-03: Payment tự do, trả dư', () => {
   });
 
   it('Bình trả An đúng 100k → An: +100k, Bình: 0, Chi: -100k', () => {
-    const b = computeBalances(members, [expense], [
+    const b = computeBalancesSimple(members, [expense], [
       { fromMemberId: 'Binh', toMemberId: 'An', amount: 100000 },
     ]);
     expect(b['An']).toBe(100000);
@@ -120,7 +92,7 @@ describe('TC-03: Payment tự do, trả dư', () => {
   });
 
   it('tất cả trả hết → tất cả balance = 0', () => {
-    const b = computeBalances(members, [expense], [
+    const b = computeBalancesSimple(members, [expense], [
       { fromMemberId: 'Binh', toMemberId: 'An', amount: 100000 },
       { fromMemberId: 'Chi', toMemberId: 'An', amount: 100000 },
     ]);
@@ -131,7 +103,7 @@ describe('TC-03: Payment tự do, trả dư', () => {
 
   it('BR-03: Payment không bị ràng buộc — trả nhiều hơn nợ vẫn ghi nhận', () => {
     // Bình nợ 100k nhưng trả 500k → Bình giờ được nợ 400k
-    const b = computeBalances(members, [expense], [
+    const b = computeBalancesSimple(members, [expense], [
       { fromMemberId: 'Binh', toMemberId: 'An', amount: 500000 },
     ]);
     expect(b['Binh']).toBe(400000);  // overpaid massively
@@ -147,10 +119,7 @@ describe('TC-03: Payment tự do, trả dư', () => {
 describe('TC-04: Payment tự do, trả không đúng người gợi ý', () => {
   it('An trả Chi 50k thay vì trả Bình → Bình không đổi', () => {
     const members = ['An', 'Binh', 'Chi'];
-    // Sau expense: An +200k, Binh -100k, Chi -100k
-    // Thuật toán gợi ý: Binh→An, Chi→An
-    // Thực tế: An trả Chi 50k (sai hoàn toàn so với gợi ý)
-    const b = computeBalances(members, [
+    const b = computeBalancesSimple(members, [
       {
         paidBy: 'An', amount: 300000, splits: [
           { memberId: 'An', amount: 100000 },
@@ -162,27 +131,6 @@ describe('TC-04: Payment tự do, trả không đúng người gợi ý', () => 
       { fromMemberId: 'An', toMemberId: 'Chi', amount: 50000 },
     ]);
 
-    // An: +200k +50k (paid out, debt increases) = +250k
-    // Binh: -100k (unchanged!)
-    // Chi: -100k -50k (received, credit settled) = -150k
-    // Wait — this doesn't make sense semantically either.
-    //
-    // Actually: "An trả Chi 50k" means An gives real money to Chi.
-    // An's balance: was +200k (owed by group). An gives money away → balance increases
-    // (group now owes An even more because he gave out more cash).
-    // Chi's balance: was -100k (owes group). Chi receives money → balance decreases
-    // (Chi got free money, now owes even more???)
-    //
-    // Hmm, this is where the formula gets tricky for "wrong direction" payments.
-    // But per the formula: from += amount, to -= amount.
-    // An: 200k + 50k = 250k (An is owed more)
-    // Chi: -100k - 50k = -150k (Chi owes more)
-    //
-    // This is correct in the sense that An spent 50k more of his own money,
-    // and Chi received 50k she didn't earn through the group's expense system.
-    // The NET effect is neutral (total still = 0).
-    //
-    // The spec just says "Số dư B không đổi" — that's the key assertion.
     expect(b['Binh']).toBe(-100000); // B unchanged ✓
     // Total still = 0
     const total = Object.values(b).reduce((sum, v) => sum + v, 0);
@@ -197,7 +145,7 @@ describe('TC-04: Payment tự do, trả không đúng người gợi ý', () => 
 
 describe('TC-05: Tổng số dư nhóm luôn = 0', () => {
   it('1 expense, 0 payment', () => {
-    const b = computeBalances(['A', 'B', 'C'], [
+    const b = computeBalancesSimple(['A', 'B', 'C'], [
       { paidBy: 'A', amount: 300000, splits: [
         { memberId: 'A', amount: 100000 },
         { memberId: 'B', amount: 100000 },
@@ -209,7 +157,7 @@ describe('TC-05: Tổng số dư nhóm luôn = 0', () => {
 
   it('nhiều expenses, 0 payment', () => {
     const m = ['A', 'B', 'C', 'D', 'E'];
-    const b = computeBalances(m, [
+    const b = computeBalancesSimple(m, [
       { paidBy: 'A', amount: 2000000, splits: m.map((id) => ({ memberId: id, amount: 400000 })) },
       { paidBy: 'B', amount: 500000, splits: m.map((id) => ({ memberId: id, amount: 100000 })) },
       { paidBy: 'C', amount: 250000, splits: m.map((id) => ({ memberId: id, amount: 50000 })) },
@@ -219,7 +167,7 @@ describe('TC-05: Tổng số dư nhóm luôn = 0', () => {
 
   it('expenses + payments hỗn hợp', () => {
     const m = ['A', 'B', 'C', 'D', 'E'];
-    const b = computeBalances(m, [
+    const b = computeBalancesSimple(m, [
       { paidBy: 'A', amount: 1000000, splits: m.map((id) => ({ memberId: id, amount: 200000 })) },
       { paidBy: 'B', amount: 500000, splits: m.map((id) => ({ memberId: id, amount: 100000 })) },
     ], [
@@ -231,7 +179,7 @@ describe('TC-05: Tổng số dư nhóm luôn = 0', () => {
   });
 
   it('chỉ có payments, 0 expense', () => {
-    const b = computeBalances(['A', 'B', 'C'], [], [
+    const b = computeBalancesSimple(['A', 'B', 'C'], [], [
       { fromMemberId: 'A', toMemberId: 'B', amount: 100000 },
       { fromMemberId: 'B', toMemberId: 'C', amount: 50000 },
     ]);
@@ -240,7 +188,7 @@ describe('TC-05: Tổng số dư nhóm luôn = 0', () => {
 
   it('tất cả đã quyết toán xong → mọi balance = 0', () => {
     const m = ['A', 'B', 'C'];
-    const b = computeBalances(m, [
+    const b = computeBalancesSimple(m, [
       { paidBy: 'A', amount: 300000, splits: m.map((id) => ({ memberId: id, amount: 100000 })) },
     ], [
       { fromMemberId: 'B', toMemberId: 'A', amount: 100000 },
@@ -268,19 +216,13 @@ describe('Kịch bản thực tế: Đà Lạt 5 người', () => {
       // Ngày 3: Chi trả vé 250k, chia đều 5
       { paidBy: 'Chi', amount: 250000, splits: m.map((id) => ({ memberId: id, amount: 50000 })) },
     ];
-    // Balance sau expenses:
-    // An:   2000k - 400k - 100k - 50k = +1.450.000
-    // Binh: -400k + 500k - 100k - 50k = -50.000
-    // Chi:  -400k - 100k + 250k - 50k = -300.000
-    // Dung: -400k - 100k - 50k        = -550.000
-    // Em:   -400k - 100k - 50k        = -550.000
 
     const payments: PaymentData[] = [
       { fromMemberId: 'Dung', toMemberId: 'An', amount: 550000 }, // Dung trả hết
       { fromMemberId: 'Em', toMemberId: 'An', amount: 400000 },   // Em trả thiếu 150k
     ];
 
-    const b = computeBalances(m, expenses, payments);
+    const b = computeBalancesSimple(m, expenses, payments);
 
     expect(b['An']).toBe(500000);     // 1450k - 550k - 400k = 500k (còn được nợ)
     expect(b['Binh']).toBe(-50000);   // unchanged
@@ -301,10 +243,7 @@ describe('Kịch bản thực tế: Đà Lạt 5 người', () => {
 describe('BR-05: Payment trên chuyến đã đóng vẫn cập nhật balance', () => {
   it('expense trước khi đóng + payment sau khi đóng → balance đúng', () => {
     const m = ['A', 'B'];
-    // Chuyến mở: A trả 200k, chia đều
-    // Chuyến đóng
-    // B vẫn ghi nhận payment 100k cho A
-    const b = computeBalances(m, [
+    const b = computeBalancesSimple(m, [
       { paidBy: 'A', amount: 200000, splits: [
         { memberId: 'A', amount: 100000 },
         { memberId: 'B', amount: 100000 },

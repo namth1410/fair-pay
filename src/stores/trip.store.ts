@@ -1,25 +1,27 @@
 import { create } from 'zustand';
+
+import { logAction } from '../services/audit.service';
 import {
-  fetchTrips,
-  createTrip,
+  calculateBalances,
+  createExpense,
+  deleteExpense,
+  type ExpenseWithSplits,
+  fetchExpenses,
+} from '../services/expense.service';
+import {
+  calculateSettlements,
+  createPayment,
+  deletePayment,
+  fetchPayments,
+  type Payment,
+} from '../services/payment.service';
+import {
   closeTrip,
+  createTrip,
+  fetchTrips,
   reopenTrip,
   type Trip,
 } from '../services/trip.service';
-import {
-  fetchExpenses,
-  createExpense,
-  deleteExpense,
-  calculateBalances,
-  type ExpenseWithSplits,
-} from '../services/expense.service';
-import {
-  fetchPayments,
-  createPayment,
-  deletePayment,
-  calculateSettlements,
-  type Payment,
-} from '../services/payment.service';
 import type { SplitResult } from '../utils/split';
 
 interface BalanceEntry {
@@ -119,13 +121,31 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   addExpense: async (params) => {
-    await createExpense(params);
+    const result = await createExpense(params);
+    await logAction({
+      groupId: params.groupId,
+      tripId: params.tripId,
+      action: 'expense.create',
+      targetId: result?.id || 'unknown',
+      afterData: { title: params.title, amount: params.amount, category: params.category, paidBy: params.paidByMemberId },
+    });
     await get().loadExpenses(params.tripId);
     await get().loadBalances(params.tripId);
   },
 
   removeExpense: async (expenseId, tripId) => {
+    // Get data before deleting for audit log
+    const expense = get().currentExpenses.find((e) => e.id === expenseId);
     await deleteExpense(expenseId);
+    if (expense) {
+      await logAction({
+        groupId: expense.group_id,
+        tripId,
+        action: 'expense.delete',
+        targetId: expenseId,
+        beforeData: { title: expense.title, amount: expense.amount },
+      });
+    }
     await get().loadExpenses(tripId);
     await get().loadBalances(tripId);
   },
@@ -136,13 +156,30 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   addPayment: async (params) => {
-    await createPayment(params);
+    const result = await createPayment(params);
+    await logAction({
+      groupId: params.groupId,
+      tripId: params.tripId,
+      action: 'payment.create',
+      targetId: result?.id || 'unknown',
+      afterData: { from: params.fromMemberId, to: params.toMemberId, amount: params.amount },
+    });
     await get().loadPayments(params.tripId);
     await get().loadBalances(params.tripId);
   },
 
   removePayment: async (paymentId, tripId) => {
+    const payment = get().currentPayments.find((p) => p.id === paymentId);
     await deletePayment(paymentId);
+    if (payment) {
+      await logAction({
+        groupId: payment.group_id,
+        tripId,
+        action: 'payment.delete',
+        targetId: paymentId,
+        beforeData: { from: payment.from_member_id, to: payment.to_member_id, amount: payment.amount },
+      });
+    }
     await get().loadPayments(tripId);
     await get().loadBalances(tripId);
   },

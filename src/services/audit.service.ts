@@ -19,7 +19,9 @@ const ACTION_LABELS: Record<string, string> = {
   'expense.delete': 'Xóa khoản chi',
   'payment.create': 'Ghi nhận thanh toán',
   'payment.delete': 'Xóa thanh toán',
-  'member.role_change': 'Thay đổi vai trò',
+  'member.role_change':    'Thay đổi vai trò',
+  'member.join_approved':  'Duyệt yêu cầu tham gia',
+  'member.join_rejected':  'Từ chối yêu cầu tham gia',
 };
 
 export function getActionLabel(action: string): string {
@@ -53,4 +55,35 @@ export async function fetchAuditLogs(tripId: string): Promise<AuditLog[]> {
     ...log,
     actor_name: nameMap[log.actor_id] || 'Ẩn danh',
   }));
+}
+
+/**
+ * Write an audit log entry.
+ * Called after expense/payment create/delete operations.
+ */
+export async function logAction(params: {
+  groupId: string;
+  tripId?: string;
+  action: string;
+  targetId: string;
+  beforeData?: any;
+  afterData?: any;
+}): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.from('audit_logs').insert({
+      group_id: params.groupId,
+      trip_id: params.tripId || null,
+      action: params.action,
+      actor_id: user.id,
+      target_id: params.targetId,
+      before_data: params.beforeData || null,
+      after_data: params.afterData || null,
+    });
+  } catch {
+    // Audit log failures should not break the main flow
+    console.warn('[Audit] Failed to log action:', params.action);
+  }
 }

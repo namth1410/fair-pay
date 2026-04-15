@@ -31,6 +31,7 @@ export const CREATE_TABLES = [
     role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','admin','member')),
     is_virtual INTEGER DEFAULT 0,
     joined_at TEXT DEFAULT (datetime('now')),
+    left_at TEXT,
     FOREIGN KEY (group_id) REFERENCES groups(id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE(group_id, user_id)

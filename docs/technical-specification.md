@@ -143,11 +143,32 @@ CREATE TABLE groups (
   name TEXT NOT NULL,
   avatar_url TEXT,
   owner_id UUID NOT NULL REFERENCES users(id),
-  invite_code TEXT UNIQUE NOT NULL DEFAULT substring(gen_random_uuid()::text, 1, 6),
+  invite_code TEXT UNIQUE NOT NULL, -- 6 ký tự alphanumeric, sinh bằng function
   created_at TIMESTAMPTZ DEFAULT now(),
   deleted_at TIMESTAMPTZ -- Soft delete
 );
 ```
+
+> **Sinh mã mời (BR-08):**
+> - Mã 6 ký tự từ bảng chữ cái `a-z, 0-9` (36^6 = ~2.1 tỷ tổ hợp)
+> - Sinh bằng PostgreSQL function `generate_invite_code()` với retry loop (tối đa 10 lần)
+> - Nếu collision (UNIQUE violation) → sinh lại. Không dùng UUID hex nữa.
+> - Mã được sinh 1 lần khi tạo nhóm, không thể đổi.
+>
+> ```sql
+> CREATE OR REPLACE FUNCTION generate_invite_code() RETURNS TEXT AS $$
+> DECLARE
+>   chars TEXT := 'abcdefghijklmnopqrstuvwxyz0123456789';
+>   result TEXT := '';
+>   i INTEGER;
+> BEGIN
+>   FOR i IN 1..6 LOOP
+>     result := result || substr(chars, floor(random() * 36 + 1)::int, 1);
+>   END LOOP;
+>   RETURN result;
+> END;
+> $$ LANGUAGE plpgsql;
+> ```
 
 ### 3.3 Table: `group_members`
 
@@ -160,9 +181,48 @@ CREATE TABLE group_members (
   role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member')) DEFAULT 'member',
   is_virtual BOOLEAN DEFAULT false,
   joined_at TIMESTAMPTZ DEFAULT now(),
+  left_at TIMESTAMPTZ, -- Soft-remove: NULL = active, NOT NULL = đã rời nhóm
   UNIQUE(group_id, user_id) -- Mỗi user chỉ join 1 lần
 );
 ```
+
+> **Soft-remove (`left_at`):** Khi member rời nhóm hoặc bị kick, set `left_at = NOW()` thay vì xóa row.
+> Data lịch sử (expense_splits, payments) vẫn trỏ đúng về member cũ.
+> Khi rejoin qua invite code → reset `left_at = NULL`, giữ nguyên member ID → kế thừa toàn bộ data cũ.
+
+### 3.4a Table: `join_requests` (BR-09) — Yêu cầu tham gia nhóm
+
+```sql
+CREATE TABLE join_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES groups(id),
+  user_id UUID NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+  reviewed_by UUID REFERENCES users(id), -- Owner/Admin đã duyệt
+  created_at TIMESTAMPTZ DEFAULT now(),
+  reviewed_at TIMESTAMPTZ,
+  UNIQUE(group_id, user_id, status) -- Mỗi user chỉ có 1 pending request / group
+);
+```
+
+> **Luồng:** User nhập mã mời → INSERT `join_requests` (pending) → Owner/Admin nhận notification → approve → INSERT `group_members` + UPDATE status = approved. Reject → UPDATE status = rejected.
+
+### 3.4b Table: `group_invitations` (BR-11) — Lời mời qua email
+
+```sql
+CREATE TABLE group_invitations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES groups(id),
+  invited_user_id UUID NOT NULL REFERENCES users(id),
+  invited_by UUID NOT NULL REFERENCES users(id), -- Owner/Admin gửi lời mời
+  status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined')) DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  responded_at TIMESTAMPTZ,
+  UNIQUE(group_id, invited_user_id, status)
+);
+```
+
+> **Luồng:** Owner/Admin tìm user theo email → INSERT `group_invitations` (pending) → user nhận notification → accept = INSERT `group_members`, decline = UPDATE status.
 
 ### 3.4 Table: `trips`
 
@@ -188,7 +248,8 @@ CREATE TABLE expenses (
   trip_id UUID NOT NULL REFERENCES trips(id),
   group_id UUID NOT NULL REFERENCES groups(id), -- Denormalized
   title TEXT NOT NULL,
-  amount BIGINT NOT NULL CHECK (amount > 0), -- Số tiền (đồng), luôn integer
+  raw_amount BIGINT NOT NULL CHECK (raw_amount > 0), -- Số tiền gốc người dùng nhập (đồng)
+  amount BIGINT NOT NULL CHECK (amount > 0), -- Số tiền sau khi làm tròn (đồng), luôn bội 1000đ
   category TEXT NOT NULL CHECK (category IN ('food', 'transport', 'accommodation', 'fun', 'shopping', 'other')),
   paid_by UUID[] NOT NULL, -- Mảng member IDs (hỗ trợ nhiều người trả)
   split_type TEXT NOT NULL CHECK (split_type IN ('equal', 'ratio', 'custom')),
@@ -336,6 +397,28 @@ LEFT JOIN expenses e ON e.group_id = gm.group_id AND e.deleted_at IS NULL
 LEFT JOIN expense_splits es ON es.expense_id = e.id AND es.member_id = gm.id
 GROUP BY gm.id, gm.group_id, e.trip_id, gm.display_name;
 ```
+
+### 4.4 Giải thích bước chia tiền (F-21 — Nice to have)
+
+Tính năng cho phép người dùng xem **từng bước** thuật toán chia tiền, giúp hiểu rõ tại sao họ phải trả số tiền cụ thể.
+
+#### Luồng hoạt động
+
+1. User tạo expense → app chia tiền tự động
+2. User nhấn "Xem chi tiết chia" trên khoản chi
+3. App hiển thị:
+   - **Bước 1:** Tổng X đồng ÷ N người = Y đồng/người
+   - **Bước 2:** Làm tròn Y → Z đồng (bội 1.000đ)
+   - **Bước 3:** Phần dư K đồng → gán cho người cuối
+   - **Kiểm tra:** Z₁ + Z₂ + ... + Zₙ = X đồng ✓
+
+#### Lưu trữ minh bạch
+
+DB lưu cả 2 giá trị:
+- `raw_amount`: số tiền gốc người dùng nhập
+- `amount`: số tiền thực tế sau khi chia (đã round)
+
+User có thể xem cả 2 để kiểm chứng tính minh bạch.
 
 ---
 
@@ -659,6 +742,141 @@ const exportToImage = async (viewRef: React.RefObject<View>) => {
 | Đang sync | Spinner nhỏ bên cạnh tên chuyến | Khi sync queue đang xử lý pending changes |
 | Sync conflict | Banner warning trong màn hình | "Có thay đổi mới từ [tên người]. Dữ liệu của bạn đã được cập nhật." |
 | Sync lỗi | Snackbar đỏ | "Không thể đồng bộ. Kiểm tra kết nối mạng." |
+
+### 11.4 Design Tokens & Theme
+
+Hệ thống màu sắc tập trung tại `src/config/theme.ts`. Mọi screen và component truy cập qua hook `useAppTheme()` — **không hardcode hex**.
+
+| Token | Light | Dark | Công dụng |
+|-------|-------|------|-----------|
+| `background` | `#FFFFFF` | `#0F172A` | Nền chính |
+| `surface` | `#F8FAFC` | `#1E293B` | Nền card, form |
+| `surfaceAlt` | `#F0F9FF` | `#1E293B` | Nền summary banner |
+| `foreground` | `#1A252F` | `#F1F5F9` | Text chính |
+| `muted` | `#64748B` | `#94A3B8` | Text phụ, placeholder |
+| `primary` | `#1D6FA8` | `#38BDF8` | Accent chính |
+| `success` | `#16A34A` | `#4ADE80` | Được nợ, thành công |
+| `danger` | `#DC2626` | `#F87171` | Đang nợ, lỗi |
+| `warning` | `#D97706` | `#FCD34D` | Cảnh báo, offline |
+| `divider` | `#E2E8F0` | `#334155` | Đường kẻ, border |
+| `successSoft` | `#DCFCE7` | `#14532D` | Badge nền xanh nhạt |
+| `dangerSoft` | `#FFE4E6` | `#4C0519` | Badge nền đỏ nhạt |
+| `accentSoft` | `#EFF6FF` | `#1E3A5F` | Banner nền xanh nhạt |
+
+```tsx
+// Cách dùng trong mọi screen/component:
+import { useAppTheme } from '../hooks/useAppTheme';
+
+const c = useAppTheme();
+// c.background, c.surface, c.foreground, c.muted, c.primary, ...
+```
+
+**Quy tắc:** Không dùng `isDark ? '#hex' : '#hex'` trong screen files. Tất cả ternary màu phải qua theme tokens.
+
+### 11.5 Component Library
+
+Shared components tại `src/components/ui/`. Ưu tiên dùng component có sẵn, không tạo pattern inline.
+
+| Component | File | Props chính | Thay thế cho |
+|-----------|------|-------------|-------------|
+| `AppTextField` | `ui/AppTextField.tsx` | `placeholder, value, onChangeText, error?, secureTextEntry?` | Raw `<TextInput>` |
+| `AppCard` | `ui/AppCard.tsx` | `title, subtitle?, onPress?, trailing?, borderLeft?` | Card row pattern |
+| `ChipPicker` | `ui/ChipPicker.tsx` | `options: {key, label}[], selected, onSelect, activeColor?` | Chip selector rows |
+| `SectionTabs` | `ui/SectionTabs.tsx` | `items: {key, label, badge?, hidden?}[], selected, onSelect` | Custom tab bars |
+| `FormReveal` | `ui/FormReveal.tsx` | `isOpen, children` | `{show && <View>...}` pattern |
+| `EmptyState` | `ui/EmptyState.tsx` | `title, subtitle?, icon?, action?` | Empty list text |
+| `SettingRow` | `ui/SettingRow.tsx` | `label, hint?, value, onValueChange` | Switch setting rows |
+| `AnimatedEntrance` | `ui/AnimatedEntrance.tsx` | `children, delay?, direction?` | Staggered entrance |
+| `ListSkeleton` | `ui/ListSkeleton.tsx` | `count?` | Loading placeholder |
+
+HeroUI Native components dùng trực tiếp: `Button`, `Skeleton`, `TextField`, `Input`, `Label`, `FieldError`.
+
+### 11.6 Typography
+
+| Thuộc tính | Giá trị |
+|-----------|---------|
+| Font family | **Be Vietnam Pro** (Google Font, thiết kế cho tiếng Việt) |
+| Package | `@expo-google-fonts/be-vietnam-pro` |
+| Weights loaded | 400 Regular, 500 Medium, 600 SemiBold, 700 Bold |
+| Config file | `src/config/fonts.ts` |
+
+```tsx
+// Mapping fontWeight → fontFamily:
+import { fonts } from '../config/fonts';
+
+// fonts.regular  = 'BeVietnamPro_400Regular'   → body text
+// fonts.medium   = 'BeVietnamPro_500Medium'     → labels, card titles
+// fonts.semibold = 'BeVietnamPro_600SemiBold'   → headings, section titles
+// fonts.bold     = 'BeVietnamPro_700Bold'       → amounts, emphasis
+```
+
+Font được load trong `src/app/_layout.tsx` qua `useFonts()`. App hiển thị `LoadingScreen` cho đến khi font sẵn sàng.
+
+### 11.7 Iconography
+
+| Thuộc tính | Giá trị |
+|-----------|---------|
+| Library | `lucide-react-native` |
+| Style | Stroke-based, nhất quán |
+| Tree-shaking | Có — chỉ bundle icon import |
+
+**Quy ước kích thước:**
+
+| Context | Size | Ví dụ |
+|---------|------|-------|
+| Button inline | 18-20px | `LogOut` trong nút đăng xuất |
+| Tab bar | System default | `Users`, `Settings` |
+| Empty state | 48px | `Receipt`, `MapPin`, `Clock` |
+
+**Mapping feature → icon:**
+
+| Feature | Icon |
+|---------|------|
+| Tab Nhóm | `Users` |
+| Tab Cài đặt | `Settings` |
+| Empty nhóm | `Users` |
+| Empty chuyến đi | `MapPin` |
+| Empty khoản chi | `Receipt` |
+| Empty số dư | `Scale` |
+| Empty thanh toán | `Wallet` |
+| Empty lịch sử | `Clock` |
+| Đăng xuất | `LogOut` |
+
+### 11.8 Animation Guidelines
+
+| Thuộc tính | Giá trị |
+|-----------|---------|
+| Library | `react-native-reanimated` v4.2.1 |
+| Babel plugin | `react-native-reanimated/plugin` (cuối cùng trong plugins) |
+
+**Patterns:**
+
+| Pattern | Cách dùng | Duration |
+|---------|-----------|----------|
+| Staggered entrance | `<AnimatedEntrance delay={index * 50}>` (max 500ms) | 350ms + spring |
+| Form reveal | `FormReveal` tự động: `FadeInDown` entering, `FadeOutUp` exiting | 250ms / 200ms |
+| Auth screens | Cascade: title→subtitle→fields→button (0→80→150→220→290→360ms) | 350ms mỗi element |
+
+**Quy tắc:**
+- Mọi animation dùng `springify()` cho cảm giác tự nhiên
+- Cap stagger delay ở 500ms để không chậm scroll
+- Tôn trọng Reduce Motion setting (Reanimated tự xử lý)
+
+### 11.9 Accessibility Standards
+
+**Checklist bắt buộc cho mọi interactive element:**
+
+| Thuộc tính | Khi nào dùng | Ví dụ |
+|-----------|-------------|-------|
+| `accessibilityRole` | Mọi Pressable, Button | `"button"`, `"radio"`, `"alert"` |
+| `accessibilityLabel` | Mọi element cần mô tả | `"Đổi tên hiển thị"` |
+| `accessibilityState` | Chip/radio selection | `{ selected: true }` |
+| `accessibilityLiveRegion` | Alert/banner | `"polite"` |
+| `hitSlop` | Pressable < 44pt | `{ top: 8, bottom: 8, left: 8, right: 8 }` |
+
+**Touch target:** Tối thiểu 44pt. Dùng `hitSlop` nếu visual size nhỏ hơn.
+
+**Screen reader testing:** Bật TalkBack trên Android emulator, navigate toàn bộ app, đảm bảo mọi action đọc được.
 
 ---
 

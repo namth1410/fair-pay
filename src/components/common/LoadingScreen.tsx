@@ -1,22 +1,22 @@
-import { View, ActivityIndicator, useColorScheme } from 'react-native';
-import { colors } from '../../config/theme';
+import { ActivityIndicator, View } from 'react-native';
+
+import { useAppTheme } from '../../hooks/useAppTheme';
 
 export function LoadingScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const bg = isDark ? colors.dark.background : colors.light.background;
-  const fg = isDark ? colors.dark.primary : colors.light.primary;
+  const c = useAppTheme();
 
   return (
     <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Đang tải"
       style={{
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: bg,
+        backgroundColor: c.background,
       }}
     >
-      <ActivityIndicator size="large" color={fg} />
+      <ActivityIndicator size="large" color={c.primary} />
     </View>
   );
 }

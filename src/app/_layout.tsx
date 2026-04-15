@@ -1,18 +1,26 @@
+import '../../global.css';
+
+import {
+  BeVietnamPro_400Regular,
+  BeVietnamPro_500Medium,
+  BeVietnamPro_600SemiBold,
+  BeVietnamPro_700Bold,
+  useFonts,
+} from '@expo-google-fonts/be-vietnam-pro';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { HeroUINativeProvider } from 'heroui-native';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { HeroUINativeProvider } from 'heroui-native';
-import { Slot, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useAuthStore } from '../stores/auth.store';
-import { useAppStore } from '../stores/app.store';
-import { initDatabase } from '../db/database';
+
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
-import { ErrorBoundary } from '../components/common/ErrorBoundary';
-
-import '../../global.css';
+import { initDatabase } from '../db/database';
+import { useAppStore } from '../stores/app.store';
+import { useAuthStore } from '../stores/auth.store';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
@@ -45,6 +53,13 @@ export default function RootLayout() {
   const initialize = useAuthStore((s) => s.initialize);
   const setDatabaseReady = useAppStore((s) => s.setDatabaseReady);
 
+  const [fontsLoaded] = useFonts({
+    BeVietnamPro_400Regular,
+    BeVietnamPro_500Medium,
+    BeVietnamPro_600SemiBold,
+    BeVietnamPro_700Bold,
+  });
+
   useEffect(() => {
     async function boot() {
       try {
@@ -57,6 +72,10 @@ export default function RootLayout() {
     }
     boot();
   }, []);
+
+  if (!fontsLoaded) {
+    return <LoadingScreen />;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

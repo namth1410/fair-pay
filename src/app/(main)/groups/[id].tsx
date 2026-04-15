@@ -1,25 +1,36 @@
-import { useEffect, useState } from 'react';
+import { Stack, useFocusEffect,useLocalSearchParams, useRouter } from 'expo-router';
+import { Button } from 'heroui-native';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
+  Alert,
   FlatList,
   Pressable,
-  TextInput,
-  useColorScheme,
-  StyleSheet,
-  Alert,
   Share,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Button } from 'heroui-native';
+
+import { MapPin } from 'lucide-react-native';
+
+import {
+  AppCard,
+  AppTextField,
+  ChipPicker,
+  EmptyState,
+  FormReveal,
+  ListSkeleton,
+  SectionTabs,
+} from '../../../components/ui';
+import { fonts } from '../../../config/fonts';
+import { supabase } from '../../../config/supabase';
+import { useAppTheme } from '../../../hooks/useAppTheme';
+import type { GroupMember, JoinRequest } from '../../../services/group.service';
+import type { Trip } from '../../../services/trip.service';
+import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
-import { useAuthStore } from '../../../stores/auth.store';
-import { colors } from '../../../config/theme';
 import { getErrorMessage } from '../../../utils/error';
-import { supabase } from '../../../config/supabase';
-import type { GroupMember } from '../../../services/group.service';
-import type { Trip } from '../../../services/trip.service';
 
 type Tab = 'trips' | 'members' | 'settings';
 
@@ -42,15 +53,23 @@ const TRIP_TYPE_LABELS: Record<string, string> = {
   other: 'Khác',
 };
 
+const TRIP_TYPE_OPTIONS = [
+  { key: 'travel' as const, label: 'Du lịch' },
+  { key: 'meal' as const, label: 'Ăn uống' },
+  { key: 'event' as const, label: 'Sự kiện' },
+  { key: 'other' as const, label: 'Khác' },
+];
+
 export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const c = isDark ? colors.dark : colors.light;
+  const c = useAppTheme();
 
-  const { groups, currentGroupMembers, loadMembers, changeRole, kickMember, removeGroup } =
-    useGroupStore();
+  const {
+    groups, currentGroupMembers, pendingJoinRequests,
+    loadMembers, loadPendingRequests, approveRequest, rejectRequest,
+    changeRole, kickMember, removeGroup,
+  } = useGroupStore();
   const { trips, isLoading: tripsLoading, loadTrips, addTrip, toggleTripStatus } =
     useTripStore();
   const { user } = useAuthStore();
@@ -89,6 +108,16 @@ export default function GroupDetailScreen() {
   const isAdmin = myRole === 'owner' || myRole === 'admin';
   const isOwner = myRole === 'owner';
 
+  // Kiểm tra nhóm đã có admin chưa (max 1 admin rule)
+  const hasAdmin = currentGroupMembers.some((m) => m.role === 'admin' && !m.left_at);
+
+  // Load pending requests khi admin vào màn hình (F-23)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAdmin && id) loadPendingRequests(id);
+    }, [isAdmin, id])
+  );
+
   const handleCreateTrip = async () => {
     if (!newTripName.trim() || !id) return;
     try {
@@ -123,6 +152,20 @@ export default function GroupDetailScreen() {
     ]);
   };
 
+  const handleApprove = (req: JoinRequest) => {
+    Alert.alert('Duyệt yêu cầu', `Cho phép ${req.display_name} tham gia nhóm?`, [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Duyệt', onPress: () => approveRequest(req.id, id!) },
+    ]);
+  };
+
+  const handleReject = (req: JoinRequest) => {
+    Alert.alert('Từ chối', `Từ chối ${req.display_name}?`, [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Từ chối', style: 'destructive', onPress: () => rejectRequest(req.id, id!) },
+    ]);
+  };
+
   const handleDeleteGroup = () => {
     Alert.alert('Xóa nhóm', `Bạn có chắc muốn xóa nhóm "${group?.name}"?`, [
       { text: 'Hủy', style: 'cancel' },
@@ -139,85 +182,84 @@ export default function GroupDetailScreen() {
 
   // ── Render helpers ──
   const renderTrip = ({ item }: { item: Trip }) => (
-    <Pressable
+    <AppCard
+      title={item.name}
+      subtitle={`${TRIP_TYPE_LABELS[item.type]} · ${item.status === 'open' ? 'Đang mở' : 'Đã đóng'}`}
       onPress={() => router.push(`/(main)/trips/${item.id}`)}
-      style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }]}
-    >
-      <View style={styles.cardContent}>
-        <Text style={[styles.cardTitle, { color: c.foreground }]}>{item.name}</Text>
-        <Text style={[styles.cardMeta, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-          {TRIP_TYPE_LABELS[item.type]} · {item.status === 'open' ? 'Đang mở' : 'Đã đóng'}
-        </Text>
-      </View>
-      {isAdmin && (
-        <Pressable onPress={() => toggleTripStatus(item)}>
-          <Text style={{ color: item.status === 'open' ? c.danger : c.success, fontSize: 13 }}>
-            {item.status === 'open' ? 'Đóng' : 'Mở lại'}
-          </Text>
-        </Pressable>
-      )}
-    </Pressable>
+      trailing={
+        isAdmin ? (
+          <Pressable
+            onPress={() => toggleTripStatus(item)}
+            accessibilityRole="button"
+            accessibilityLabel={item.status === 'open' ? 'Đóng' : 'Mở lại'}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ color: item.status === 'open' ? c.danger : c.success, fontSize: 13 }}>
+              {item.status === 'open' ? 'Đóng' : 'Mở lại'}
+            </Text>
+          </Pressable>
+        ) : undefined
+      }
+    />
   );
 
   const renderMember = ({ item }: { item: GroupMember }) => (
-    <View style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }]}>
-      <View style={styles.cardContent}>
-        <Text style={[styles.cardTitle, { color: c.foreground }]}>
-          {item.display_name}{item.is_virtual ? ' (ảo)' : ''}
-        </Text>
-        <Text style={[styles.roleBadge, { color: ROLE_COLORS[item.role] }]}>
-          {ROLE_LABELS[item.role]}
-        </Text>
-      </View>
-      {isAdmin && item.role !== 'owner' && (
-        <View style={styles.memberActions}>
-          {isOwner && (
-            <Pressable onPress={() => handleChangeRole(item)}>
-              <Text style={{ color: c.primary, fontSize: 13 }}>
-                {item.role === 'admin' ? 'Hạ quyền' : 'Lên admin'}
-              </Text>
+    <AppCard
+      title={`${item.display_name}${item.is_virtual ? ' (ảo)' : ''}`}
+      subtitle={ROLE_LABELS[item.role]}
+      trailing={
+        isAdmin && item.role !== 'owner' ? (
+          <View style={styles.memberActions}>
+            {isOwner && (
+              <Pressable
+                onPress={() => handleChangeRole(item)}
+                disabled={item.role === 'member' && hasAdmin}
+                accessibilityRole="button"
+                accessibilityLabel={item.role === 'admin' ? 'Hạ quyền' : 'Lên admin'}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={{
+                  color: item.role === 'admin'
+                    ? c.danger
+                    : (hasAdmin ? c.divider : c.primary),
+                  fontSize: 13,
+                }}>
+                  {item.role === 'admin' ? 'Hạ quyền' : 'Lên admin'}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => handleKick(item)}
+              accessibilityRole="button"
+              accessibilityLabel="Xóa"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={{ color: c.danger, fontSize: 13 }}>Xóa</Text>
             </Pressable>
-          )}
-          <Pressable onPress={() => handleKick(item)}>
-            <Text style={{ color: c.danger, fontSize: 13 }}>Xóa</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
+          </View>
+        ) : undefined
+      }
+    />
   );
-
-  const tabStyle = (t: Tab) => [
-    styles.tab,
-    {
-      backgroundColor: tab === t ? c.primary : 'transparent',
-      borderColor: tab === t ? c.primary : isDark ? '#334155' : '#E2E8F0',
-    },
-  ];
-
-  const tabText = (t: Tab) => ({
-    color: tab === t ? '#FFFFFF' : isDark ? '#94A3B8' : '#64748B',
-    fontSize: 14,
-    fontWeight: '500' as const,
-  });
 
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
 
       {/* Tabs */}
-      <View style={styles.tabs}>
-        <Pressable style={tabStyle('trips')} onPress={() => setTab('trips')}>
-          <Text style={tabText('trips')}>Chuyến đi ({trips.length})</Text>
-        </Pressable>
-        <Pressable style={tabStyle('members')} onPress={() => setTab('members')}>
-          <Text style={tabText('members')}>Thành viên ({currentGroupMembers.length})</Text>
-        </Pressable>
-        {isAdmin && (
-          <Pressable style={tabStyle('settings')} onPress={() => setTab('settings')}>
-            <Text style={tabText('settings')}>Cài đặt</Text>
-          </Pressable>
-        )}
-      </View>
+      <SectionTabs
+        items={[
+          { key: 'trips', label: `Chuyến đi (${trips.length})` },
+          {
+            key: 'members',
+            label: `Thành viên (${currentGroupMembers.length})`,
+            badge: isAdmin ? pendingJoinRequests.length : undefined,
+          },
+          { key: 'settings', label: 'Cài đặt', hidden: !isAdmin },
+        ]}
+        selected={tab}
+        onSelect={(key) => setTab(key as Tab)}
+      />
 
       {/* ── Tab: Trips ── */}
       {tab === 'trips' && (
@@ -230,59 +272,34 @@ export default function GroupDetailScreen() {
             </View>
           )}
 
-          {showCreateTrip && (
-            <View style={[styles.formCard, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }]}>
-              <TextInput
-                style={[styles.input, {
-                  color: c.foreground,
-                  borderColor: isDark ? '#334155' : '#E2E8F0',
-                  backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                }]}
-                placeholder="Tên chuyến (VD: Đà Lạt T4/2026)"
-                placeholderTextColor={isDark ? '#94A3B8' : '#64748B'}
-                value={newTripName}
-                onChangeText={setNewTripName}
-                autoFocus
-              />
-              {/* Type picker */}
-              <View style={styles.typePicker}>
-                {(['travel', 'meal', 'event', 'other'] as const).map((t) => (
-                  <Pressable
-                    key={t}
-                    onPress={() => setNewTripType(t)}
-                    style={[
-                      styles.typeChip,
-                      {
-                        backgroundColor: newTripType === t ? c.primary : 'transparent',
-                        borderColor: newTripType === t ? c.primary : isDark ? '#334155' : '#E2E8F0',
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: newTripType === t ? '#FFF' : isDark ? '#94A3B8' : '#64748B', fontSize: 13 }}>
-                      {TRIP_TYPE_LABELS[t]}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Button variant="primary" size="sm" onPress={handleCreateTrip}>
-                <Button.Label>Tạo</Button.Label>
-              </Button>
-            </View>
-          )}
+          <FormReveal isOpen={showCreateTrip}>
+            <AppTextField
+              placeholder="Tên chuyến (VD: Đà Lạt T4/2026)"
+              value={newTripName}
+              onChangeText={setNewTripName}
+              autoFocus
+            />
+            <ChipPicker
+              options={TRIP_TYPE_OPTIONS}
+              selected={newTripType}
+              onSelect={setNewTripType}
+            />
+            <Button variant="primary" size="sm" onPress={handleCreateTrip}>
+              <Button.Label>Tạo</Button.Label>
+            </Button>
+          </FormReveal>
 
-          <FlatList
-            data={trips}
-            keyExtractor={(item) => item.id}
-            renderItem={renderTrip}
-            contentContainerStyle={trips.length === 0 ? styles.emptyContainer : styles.list}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>
-                  Chưa có chuyến đi nào
-                </Text>
-              </View>
-            }
-          />
+          {tripsLoading && trips.length === 0 ? (
+            <ListSkeleton count={3} />
+          ) : (
+            <FlatList
+              data={trips}
+              keyExtractor={(item) => item.id}
+              renderItem={renderTrip}
+              contentContainerStyle={trips.length === 0 ? styles.emptyContainer : styles.list}
+              ListEmptyComponent={<EmptyState icon={MapPin} title="Chưa có chuyến đi nào" />}
+            />
+          )}
         </View>
       )}
 
@@ -291,12 +308,51 @@ export default function GroupDetailScreen() {
         <View style={styles.tabContent}>
           <Pressable
             onPress={handleShare}
-            style={[styles.inviteBanner, { backgroundColor: isDark ? '#1E293B' : '#F0F9FF' }]}
+            style={[styles.inviteBanner, { backgroundColor: c.surfaceAlt }]}
+            accessibilityRole="button"
+            accessibilityLabel="Chia sẻ mã mời"
           >
-            <Text style={[styles.inviteLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Mã mời:</Text>
+            <Text style={[styles.inviteLabel, { color: c.muted }]}>Mã mời:</Text>
             <Text style={[styles.inviteCode, { color: c.primary }]}>{group?.invite_code}</Text>
-            <Text style={[styles.inviteTap, { color: isDark ? '#94A3B8' : '#64748B' }]}>Nhấn để chia sẻ</Text>
+            <Text style={[styles.inviteTap, { color: c.muted }]}>Nhấn để chia sẻ</Text>
           </Pressable>
+          {/* Pending join requests — chỉ hiện cho Admin/Owner (F-23) */}
+          {isAdmin && pendingJoinRequests.length > 0 && (
+            <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
+              <Text style={[styles.pendingLabel, { color: c.muted }]}>
+                Yêu cầu tham gia ({pendingJoinRequests.length})
+              </Text>
+              {pendingJoinRequests.map((req) => (
+                <AppCard
+                  key={req.id}
+                  title={req.display_name}
+                  subtitle="Đang chờ duyệt"
+                  borderLeft={{ width: 3, color: '#D97706' }}
+                  trailing={
+                    <View style={styles.memberActions}>
+                      <Pressable
+                        onPress={() => handleApprove(req)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Duyệt"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={{ color: c.success, fontSize: 13, fontFamily: fonts.semibold, fontWeight: '600' }}>Duyệt</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleReject(req)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Từ chối"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={{ color: c.danger, fontSize: 13 }}>Từ chối</Text>
+                      </Pressable>
+                    </View>
+                  }
+                />
+              ))}
+            </View>
+          )}
+
           <FlatList
             data={currentGroupMembers}
             keyExtractor={(item) => item.id}
@@ -322,27 +378,15 @@ export default function GroupDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   tabContent: { flex: 1 },
   sectionActions: { paddingHorizontal: 16, paddingBottom: 8 },
-  formCard: { marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 12, gap: 8 },
-  input: { height: 44, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, fontSize: 15 },
-  typePicker: { flexDirection: 'row', gap: 6 },
-  typeChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
-  card: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10, marginBottom: 6 },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '500' },
-  cardMeta: { fontSize: 12, marginTop: 2 },
-  roleBadge: { fontSize: 12, marginTop: 2 },
   memberActions: { flexDirection: 'row', gap: 12 },
   inviteBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 10 },
   inviteLabel: { fontSize: 13 },
-  inviteCode: { fontSize: 16, fontWeight: '700', flex: 1 },
+  inviteCode: { fontSize: 16, fontFamily: fonts.bold, fontWeight: '700', flex: 1 },
   inviteTap: { fontSize: 12 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
-  empty: { alignItems: 'center', padding: 24 },
-  emptyText: { fontSize: 16 },
   settingsContent: { padding: 16, gap: 12 },
+  pendingLabel: { fontSize: 13, fontFamily: fonts.semibold, fontWeight: '600', marginBottom: 6, marginTop: 4 },
 });

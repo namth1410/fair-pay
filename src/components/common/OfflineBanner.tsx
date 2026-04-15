@@ -1,10 +1,13 @@
-import { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAppStore } from '../../stores/app.store';
 
 export function OfflineBanner() {
   const { isOnline, setOnline } = useAppStore();
+  const c = useAppTheme();
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -16,7 +19,7 @@ export function OfflineBanner() {
   if (isOnline) return null;
 
   return (
-    <View style={styles.banner}>
+    <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: c.warning }]}>
       <Text style={styles.text}>Ngoại tuyến — dữ liệu sẽ đồng bộ khi có mạng</Text>
     </View>
   );
@@ -24,7 +27,6 @@ export function OfflineBanner() {
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#D97706',
     paddingVertical: 6,
     paddingHorizontal: 16,
     alignItems: 'center',

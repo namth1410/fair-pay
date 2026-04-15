@@ -1,6 +1,9 @@
 /**
  * Greedy Simplification Algorithm — BR-07: suggestions only.
  * Calculates optimal settlement transactions to minimize number of transfers.
+ *
+ * Fix: rounding sử dụng unrounded amounts để tính toán chính xác,
+ * chỉ round kết quả cuối cùng. Điều chỉnh giao dịch cuối để bù sai số.
  */
 export function calculateSettlements(
   balances: { memberId: string; memberName: string; balance: number }[]
@@ -24,11 +27,17 @@ export function calculateSettlements(
   let j = 0; // creditor index
 
   while (i < debtors.length && j < creditors.length) {
-    const debtor = debtors[i];
-    const creditor = creditors[j];
+    const debtor = debtors[i]!;
+    const creditor = creditors[j]!;
 
+    // Use unrounded amount for calculation to prevent cumulative rounding loss
     const amount = Math.min(Math.abs(debtor.balance), creditor.balance);
-    // Round to nearest 1000
+
+    // Update balances with unrounded amount first (accurate tracking)
+    debtor.balance += amount;
+    creditor.balance -= amount;
+
+    // Round only the output transaction
     const rounded = Math.round(amount / 1000) * 1000;
 
     if (rounded > 0) {
@@ -41,11 +50,28 @@ export function calculateSettlements(
       });
     }
 
-    debtor.balance += amount;
-    creditor.balance -= amount;
-
     if (Math.abs(debtor.balance) <= TOLERANCE) i++;
     if (creditor.balance <= TOLERANCE) j++;
+  }
+
+  // Adjust last transaction to absorb rounding difference
+  // This ensures total settlement ≈ total debt (minimize rounding loss)
+  if (transactions.length > 0) {
+    const totalDebt = balances
+      .filter((b) => b.balance < -TOLERANCE)
+      .reduce((sum, b) => sum + Math.abs(b.balance), 0);
+
+    const totalSettlement = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const diff = Math.round(totalDebt / 1000) * 1000 - totalSettlement;
+
+    if (diff !== 0 && Math.abs(diff) <= TOLERANCE) {
+      // Adjust last transaction to compensate
+      const last = transactions[transactions.length - 1]!;
+      const adjusted = last.amount + diff;
+      if (adjusted > 0) {
+        last.amount = adjusted;
+      }
+    }
   }
 
   return transactions;

@@ -1,29 +1,31 @@
+import { Stack,useLocalSearchParams } from 'expo-router';
+import { Button } from 'heroui-native';
+import { Clock, Receipt, Scale, Wallet } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  Pressable,
-  TextInput,
-  useColorScheme,
-  StyleSheet,
   Alert,
-  ScrollView,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
-import { Button } from 'heroui-native';
-import { useTripStore } from '../../../stores/trip.store';
-import { useGroupStore } from '../../../stores/group.store';
-import { colors } from '../../../config/theme';
-import { formatVND, formatBalance } from '../../../utils/format';
-import { fetchAuditLogs, getActionLabel, type AuditLog } from '../../../services/audit.service';
-import { exportToImage } from '../../../utils/export';
-import { getErrorMessage } from '../../../utils/error';
-import { splitEqual, validateSplits } from '../../../utils/split';
+
+import { AppCard, AppTextField, ChipPicker, EmptyState, FormReveal, ListSkeleton, SectionTabs } from '../../../components/ui';
+import { fonts } from '../../../config/fonts';
+import { useAppTheme } from '../../../hooks/useAppTheme';
+import { type AuditLog,fetchAuditLogs, getActionLabel } from '../../../services/audit.service';
 import type { ExpenseWithSplits } from '../../../services/expense.service';
 import type { Payment } from '../../../services/payment.service';
+import { useGroupStore } from '../../../stores/group.store';
+import { useTripStore } from '../../../stores/trip.store';
+import { getErrorMessage } from '../../../utils/error';
+import { exportToImage } from '../../../utils/export';
+import { formatBalance,formatVND } from '../../../utils/format';
+import { type RatioMember,splitByRatio, splitEqual, type SplitResult, validateAmount, validateSplits } from '../../../utils/split';
 
 type Tab = 'expenses' | 'balances' | 'settle' | 'history';
 
@@ -36,14 +38,26 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: 'other', label: 'Khác' },
 ];
 
+const TAB_ITEMS = [
+  { key: 'expenses', label: 'Chi phí' },
+  { key: 'balances', label: 'Số dư' },
+  { key: 'settle', label: 'Quyết toán' },
+  { key: 'history', label: 'Lịch sử' },
+];
+
+const SPLIT_TYPE_OPTIONS = [
+  { key: 'equal' as const, label: 'Đều' },
+  { key: 'ratio' as const, label: 'Tỷ lệ' },
+  { key: 'custom' as const, label: 'Tùy chỉnh' },
+];
+
 export default function TripDetailScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const c = isDark ? colors.dark : colors.light;
+  const c = useAppTheme();
 
   const {
-    trips, currentExpenses, currentPayments, balances, settlements, isLoading,
+    trips, currentExpenses, currentPayments, balances, settlements,
+    isLoading,
     loadExpenses, addExpense, removeExpense,
     loadPayments, addPayment, removePayment,
     loadBalances,
@@ -59,6 +73,9 @@ export default function TripDetailScreen() {
   const [category, setCategory] = useState('food');
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
+  const [splitType, setSplitType] = useState<'equal' | 'ratio' | 'custom'>('equal');
+  const [ratios, setRatios] = useState<Record<string, string>>({});
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
 
   // Audit logs
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -88,11 +105,14 @@ export default function TripDetailScreen() {
   }, [trip?.group_id]);
 
   useEffect(() => {
-    if (!paidBy && currentGroupMembers.length > 0) setPaidBy(currentGroupMembers[0].id);
+    if (!paidBy && currentGroupMembers.length > 0) setPaidBy(currentGroupMembers[0]!.id);
   }, [currentGroupMembers, paidBy]);
 
   const getMemberName = (id: string) =>
     currentGroupMembers.find((m) => m.id === id)?.display_name || '?';
+
+  // ── Derived data for ChipPicker ──
+  const memberOptions = currentGroupMembers.map((m) => ({ key: m.id, label: m.display_name }));
 
   // ── Handlers ──
   const handleAddExpense = async () => {
@@ -102,17 +122,37 @@ export default function TripDetailScreen() {
       Alert.alert('Lỗi', 'Số tiền phải lớn hơn 0');
       return;
     }
+    const amountErr = validateAmount(amount);
+    if (amountErr) { Alert.alert('Lỗi', amountErr); return; }
+
     const memberIds = currentGroupMembers.map((m) => m.id);
-    const splits = splitEqual(amount, memberIds);
+    let splits: SplitResult[];
+
+    if (splitType === 'ratio') {
+      const ratioMembers: RatioMember[] = currentGroupMembers.map((m) => ({
+        memberId: m.id,
+        ratio: parseInt(ratios[m.id] || '1', 10) || 1,
+      }));
+      splits = splitByRatio(amount, ratioMembers);
+    } else if (splitType === 'custom') {
+      splits = currentGroupMembers.map((m) => ({
+        memberId: m.id,
+        amount: parseInt(customAmounts[m.id] || '0', 10) || 0,
+      }));
+    } else {
+      splits = splitEqual(amount, memberIds);
+    }
+
     const err = validateSplits(amount, splits);
     if (err) { Alert.alert('Lỗi', err); return; }
     try {
       await addExpense({
         tripId: trip.id, groupId: trip.group_id,
         title: title.trim(), amount, category, paidByMemberId: paidBy,
-        splitType: 'equal', splits, note: note.trim() || undefined,
+        splitType, splits, note: note.trim() || undefined,
       });
       setTitle(''); setAmountStr(''); setNote(''); setCategory('food');
+      setSplitType('equal'); setRatios({}); setCustomAmounts({});
       setShowAddExpense(false);
     } catch (e: any) { Alert.alert('Lỗi', getErrorMessage(e)); }
   };
@@ -153,22 +193,17 @@ export default function TripDetailScreen() {
     ]);
   };
 
-  // ── Shared styles ──
-  const inputStyle = [styles.input, {
+  // ── Shared styles for ratio/custom split raw TextInputs ──
+  const splitInputStyle = [styles.splitInput, {
     color: c.foreground,
-    borderColor: isDark ? '#334155' : '#E2E8F0',
-    backgroundColor: isDark ? '#0F172A' : '#FFF',
+    borderColor: c.divider,
+    backgroundColor: c.background,
+    height: 38,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
   }];
-  const phColor = isDark ? '#94A3B8' : '#64748B';
-  const cardBg = isDark ? '#1E293B' : '#F8FAFC';
-
-  const tabStyle = (t: Tab) => [styles.tab, {
-    backgroundColor: tab === t ? c.primary : 'transparent',
-    borderColor: tab === t ? c.primary : isDark ? '#334155' : '#E2E8F0',
-  }];
-  const tabText = (t: Tab) => ({
-    color: tab === t ? '#FFFFFF' : phColor, fontSize: 14, fontWeight: '500' as const,
-  });
 
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -177,29 +212,20 @@ export default function TripDetailScreen() {
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
 
       {/* Summary */}
-      <View style={[styles.summary, { backgroundColor: isDark ? '#1E293B' : '#F0F9FF' }]}>
-        <Text style={[styles.summaryLabel, { color: phColor }]}>Tổng chi</Text>
+      <View style={[styles.summary, { backgroundColor: c.surfaceAlt }]}>
+        <Text style={[styles.summaryLabel, { color: c.muted }]}>Tổng chi</Text>
         <Text style={[styles.summaryAmount, { color: c.primary }]}>{formatVND(totalExpenses)}</Text>
-        <Text style={[styles.summaryMeta, { color: phColor }]}>
+        <Text style={[styles.summaryMeta, { color: c.muted }]}>
           {currentExpenses.length} khoản · {currentPayments.length} thanh toán · {currentGroupMembers.length} người
         </Text>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
-        <Pressable style={tabStyle('expenses')} onPress={() => setTab('expenses')}>
-          <Text style={tabText('expenses')}>Chi phí</Text>
-        </Pressable>
-        <Pressable style={tabStyle('balances')} onPress={() => setTab('balances')}>
-          <Text style={tabText('balances')}>Số dư</Text>
-        </Pressable>
-        <Pressable style={tabStyle('settle')} onPress={() => setTab('settle')}>
-          <Text style={tabText('settle')}>Quyết toán</Text>
-        </Pressable>
-        <Pressable style={tabStyle('history')} onPress={() => setTab('history')}>
-          <Text style={tabText('history')}>Lịch sử</Text>
-        </Pressable>
-      </View>
+      <SectionTabs
+        items={TAB_ITEMS}
+        selected={tab}
+        onSelect={(key) => setTab(key as Tab)}
+      />
 
       {/* ══════ Tab: Expenses ══════ */}
       {tab === 'expenses' && (
@@ -212,54 +238,110 @@ export default function TripDetailScreen() {
             </View>
           )}
 
-          {showAddExpense && (
+          <FormReveal isOpen={showAddExpense}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-              <ScrollView style={[styles.formCard, { backgroundColor: cardBg }]}>
-                <TextInput style={inputStyle} placeholder="Tên khoản chi" placeholderTextColor={phColor} value={title} onChangeText={setTitle} autoFocus />
-                <TextInput style={inputStyle} placeholder="Số tiền (VND)" placeholderTextColor={phColor} value={amountStr} onChangeText={setAmountStr} keyboardType="number-pad" />
-                <View style={styles.chipRow}>
-                  {CATEGORIES.map((cat) => (
-                    <Pressable key={cat.key} onPress={() => setCategory(cat.key)}
-                      style={[styles.chip, { backgroundColor: category === cat.key ? c.primary : 'transparent', borderColor: category === cat.key ? c.primary : isDark ? '#334155' : '#E2E8F0' }]}>
-                      <Text style={{ color: category === cat.key ? '#FFF' : phColor, fontSize: 12 }}>{cat.label}</Text>
-                    </Pressable>
-                  ))}
+              <ScrollView>
+                <View style={{ gap: 8 }}>
+                  <AppTextField placeholder="Tên khoản chi" value={title} onChangeText={setTitle} autoFocus />
+                  <AppTextField placeholder="Số tiền (VND)" value={amountStr} onChangeText={setAmountStr} keyboardType="number-pad" />
+                  <ChipPicker options={CATEGORIES} selected={category} onSelect={setCategory} />
+                  <Text style={[styles.fieldLabel, { color: c.muted }]}>Người trả:</Text>
+                  <ChipPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
+                  <AppTextField placeholder="Ghi chú (tùy chọn)" value={note} onChangeText={setNote} />
+
+                  {/* Split type picker — F-07 */}
+                  <Text style={[styles.fieldLabel, { color: c.muted }]}>Cách chia:</Text>
+                  <ChipPicker options={SPLIT_TYPE_OPTIONS} selected={splitType} onSelect={setSplitType} />
+
+                  {/* Split details per mode */}
+                  {splitType === 'equal' && (
+                    <Text style={[styles.splitInfo, { color: c.muted }]}>Chia đều cho {currentGroupMembers.length} người</Text>
+                  )}
+
+                  {splitType === 'ratio' && (
+                    <View>
+                      <Text style={[styles.splitInfo, { color: c.muted }]}>Nhập tỷ lệ cho mỗi người (VD: 2 = gấp đôi)</Text>
+                      {currentGroupMembers.map((m) => (
+                        <View key={m.id} style={styles.splitRow}>
+                          <Text style={[styles.splitMemberName, { color: c.foreground }]}>{m.display_name}</Text>
+                          <TextInput
+                            style={splitInputStyle}
+                            placeholder="1"
+                            placeholderTextColor={c.muted}
+                            value={ratios[m.id] || ''}
+                            onChangeText={(v) => setRatios((prev) => ({ ...prev, [m.id]: v }))}
+                            keyboardType="number-pad"
+                          />
+                          {amountStr && (
+                            <Text style={[styles.splitPreview, { color: c.muted }]}>
+                              {(() => {
+                                const total = parseInt(amountStr, 10) || 0;
+                                const members = currentGroupMembers.map((mm) => ({ memberId: mm.id, ratio: parseInt(ratios[mm.id] || '1', 10) || 1 }));
+                                const splits = splitByRatio(total, members);
+                                const split = splits.find((s) => s.memberId === m.id);
+                                return split ? formatVND(split.amount) : '';
+                              })()}
+                            </Text>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {splitType === 'custom' && (
+                    <View>
+                      <Text style={[styles.splitInfo, { color: c.muted }]}>Nhập số tiền cụ thể cho mỗi người</Text>
+                      {currentGroupMembers.map((m) => (
+                        <View key={m.id} style={styles.splitRow}>
+                          <Text style={[styles.splitMemberName, { color: c.foreground }]}>{m.display_name}</Text>
+                          <TextInput
+                            style={splitInputStyle}
+                            placeholder="0"
+                            placeholderTextColor={c.muted}
+                            value={customAmounts[m.id] || ''}
+                            onChangeText={(v) => setCustomAmounts((prev) => ({ ...prev, [m.id]: v }))}
+                            keyboardType="number-pad"
+                          />
+                        </View>
+                      ))}
+                      {amountStr && (
+                        <Text style={[styles.splitInfo, { color: (() => {
+                          const total = parseInt(amountStr, 10) || 0;
+                          const sum = currentGroupMembers.reduce((s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0), 0);
+                          return sum === total ? c.success : c.danger;
+                        })() }]}>
+                          Tổng chia: {formatVND(currentGroupMembers.reduce((s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0), 0))} / {formatVND(parseInt(amountStr, 10) || 0)}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  <Button variant="primary" size="md" onPress={handleAddExpense}>
+                    <Button.Label>Thêm</Button.Label>
+                  </Button>
                 </View>
-                <Text style={[styles.fieldLabel, { color: phColor }]}>Người trả:</Text>
-                <View style={styles.chipRow}>
-                  {currentGroupMembers.map((m) => (
-                    <Pressable key={m.id} onPress={() => setPaidBy(m.id)}
-                      style={[styles.chip, { backgroundColor: paidBy === m.id ? c.primary : 'transparent', borderColor: paidBy === m.id ? c.primary : isDark ? '#334155' : '#E2E8F0' }]}>
-                      <Text style={{ color: paidBy === m.id ? '#FFF' : phColor, fontSize: 12 }}>{m.display_name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <TextInput style={inputStyle} placeholder="Ghi chú (tùy chọn)" placeholderTextColor={phColor} value={note} onChangeText={setNote} />
-                <Text style={[styles.splitInfo, { color: phColor }]}>Chia đều cho {currentGroupMembers.length} người</Text>
-                <Button variant="primary" size="md" onPress={handleAddExpense}>
-                  <Button.Label>Thêm</Button.Label>
-                </Button>
               </ScrollView>
             </KeyboardAvoidingView>
-          )}
+          </FormReveal>
 
-          <FlatList
-            data={currentExpenses}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <Pressable onLongPress={() => handleDeleteExpense(item)} style={[styles.card, { backgroundColor: cardBg }]}>
-                <View style={styles.cardContent}>
-                  <Text style={[styles.cardTitle, { color: c.foreground }]}>{item.title}</Text>
-                  <Text style={[styles.cardMeta, { color: phColor }]}>
-                    {getMemberName(item.paid_by)} đã trả · {CATEGORIES.find((ct) => ct.key === item.category)?.label}
-                  </Text>
-                </View>
-                <Text style={[styles.amountText, { color: c.primary }]}>{formatVND(item.amount)}</Text>
-              </Pressable>
-            )}
-            contentContainerStyle={currentExpenses.length === 0 ? styles.emptyContainer : styles.list}
-            ListEmptyComponent={<View style={styles.empty}><Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>Chưa có khoản chi nào</Text></View>}
-          />
+          {isLoading && currentExpenses.length === 0 ? (
+            <ListSkeleton count={3} />
+          ) : (
+            <FlatList
+              data={currentExpenses}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <AppCard
+                  title={item.title}
+                  subtitle={`${getMemberName(item.paid_by)} đã trả · ${CATEGORIES.find((ct) => ct.key === item.category)?.label}`}
+                  onLongPress={() => handleDeleteExpense(item)}
+                  trailing={<Text style={[styles.amountText, { color: c.primary }]}>{formatVND(item.amount)}</Text>}
+                />
+              )}
+              contentContainerStyle={currentExpenses.length === 0 ? styles.emptyContainer : styles.list}
+              ListEmptyComponent={<EmptyState icon={Receipt} title="Chưa có khoản chi nào" />}
+            />
+          )}
         </View>
       )}
 
@@ -277,22 +359,25 @@ export default function TripDetailScreen() {
             contentContainerStyle={styles.list}
             ListHeaderComponent={
               <View ref={balanceRef} collapsable={false} style={{ backgroundColor: c.background }}>
-                <View style={[styles.summary, { backgroundColor: isDark ? '#1E293B' : '#F0F9FF', marginHorizontal: 0, marginBottom: 8 }]}>
+                <View style={[styles.summary, { backgroundColor: c.surfaceAlt, marginHorizontal: 0, marginBottom: 8 }]}>
                   <Text style={[styles.summaryAmount, { color: c.primary, fontSize: 20 }]}>{trip?.name}</Text>
-                  <Text style={[styles.summaryMeta, { color: phColor }]}>Tổng chi: {formatVND(totalExpenses)}</Text>
+                  <Text style={[styles.summaryMeta, { color: c.muted }]}>Tổng chi: {formatVND(totalExpenses)}</Text>
                 </View>
                 {balances.map((item) => (
-                  <View key={item.memberId} style={[styles.card, { backgroundColor: cardBg }]}>
-                    <Text style={[styles.cardTitle, { color: c.foreground, flex: 1 }]}>{item.memberName}</Text>
-                    <Text style={[styles.balanceText, { color: item.balance >= 0 ? c.success : c.danger }]}>
-                      {formatBalance(item.balance)}
-                    </Text>
-                  </View>
+                  <AppCard
+                    key={item.memberId}
+                    title={item.memberName}
+                    trailing={
+                      <Text style={[styles.balanceText, { color: item.balance >= 0 ? c.success : c.danger }]}>
+                        {formatBalance(item.balance)}
+                      </Text>
+                    }
+                  />
                 ))}
               </View>
             }
             renderItem={() => null}
-            ListEmptyComponent={<View style={styles.empty}><Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>Thêm khoản chi để xem số dư</Text></View>}
+            ListEmptyComponent={<EmptyState icon={Scale} title="Thêm khoản chi để xem số dư" />}
           />
         </View>
       )}
@@ -304,16 +389,13 @@ export default function TripDetailScreen() {
           {settlements.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: c.foreground }]}>Đề xuất quyết toán</Text>
-              <Text style={[styles.sectionHint, { color: phColor }]}>Gợi ý tối ưu — chỉ tham khảo</Text>
+              <Text style={[styles.sectionHint, { color: c.muted }]}>Gợi ý tối ưu — chỉ tham khảo</Text>
               {settlements.map((s, i) => (
-                <View key={i} style={[styles.card, { backgroundColor: cardBg }]}>
-                  <View style={styles.cardContent}>
-                    <Text style={[styles.cardTitle, { color: c.foreground }]}>
-                      {s.fromName} → {s.toName}
-                    </Text>
-                  </View>
-                  <Text style={[styles.amountText, { color: c.danger }]}>{formatVND(s.amount)}</Text>
-                </View>
+                <AppCard
+                  key={i}
+                  title={`${s.fromName} → ${s.toName}`}
+                  trailing={<Text style={[styles.amountText, { color: c.danger }]}>{formatVND(s.amount)}</Text>}
+                />
               ))}
             </View>
           )}
@@ -325,68 +407,47 @@ export default function TripDetailScreen() {
               <Button.Label>{showAddPayment ? 'Hủy' : 'Ghi nhận thanh toán'}</Button.Label>
             </Button>
 
-            {showAddPayment && (
-              <View style={[styles.formCard, { backgroundColor: cardBg, marginHorizontal: 0 }]}>
-                <Text style={[styles.fieldLabel, { color: phColor }]}>Người trả tiền:</Text>
-                <View style={styles.chipRow}>
-                  {currentGroupMembers.map((m) => (
-                    <Pressable key={m.id} onPress={() => setPayFrom(m.id)}
-                      style={[styles.chip, { backgroundColor: payFrom === m.id ? c.primary : 'transparent', borderColor: payFrom === m.id ? c.primary : isDark ? '#334155' : '#E2E8F0' }]}>
-                      <Text style={{ color: payFrom === m.id ? '#FFF' : phColor, fontSize: 12 }}>{m.display_name}</Text>
-                    </Pressable>
-                  ))}
+            <FormReveal isOpen={showAddPayment}>
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Người trả tiền:</Text>
+              <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
+
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Người nhận tiền:</Text>
+              <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} />
+
+              <AppTextField placeholder="Số tiền (VND)" value={payAmountStr} onChangeText={setPayAmountStr} keyboardType="number-pad" />
+              <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} />
+
+              {/* Balance preview */}
+              {payFrom && payTo && payFrom !== payTo && (
+                <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>
+                  <Text style={[styles.previewLabel, { color: c.muted }]}>Số dư hiện tại:</Text>
+                  <Text style={{ color: c.foreground, fontSize: 13 }}>
+                    {getMemberName(payFrom)}: {formatBalance(balances.find((b) => b.memberId === payFrom)?.balance || 0)}
+                  </Text>
+                  <Text style={{ color: c.foreground, fontSize: 13 }}>
+                    {getMemberName(payTo)}: {formatBalance(balances.find((b) => b.memberId === payTo)?.balance || 0)}
+                  </Text>
                 </View>
+              )}
 
-                <Text style={[styles.fieldLabel, { color: phColor }]}>Người nhận tiền:</Text>
-                <View style={styles.chipRow}>
-                  {currentGroupMembers.map((m) => (
-                    <Pressable key={m.id} onPress={() => setPayTo(m.id)}
-                      style={[styles.chip, { backgroundColor: payTo === m.id ? c.success : 'transparent', borderColor: payTo === m.id ? c.success : isDark ? '#334155' : '#E2E8F0' }]}>
-                      <Text style={{ color: payTo === m.id ? '#FFF' : phColor, fontSize: 12 }}>{m.display_name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <TextInput style={inputStyle} placeholder="Số tiền (VND)" placeholderTextColor={phColor} value={payAmountStr} onChangeText={setPayAmountStr} keyboardType="number-pad" />
-                <TextInput style={inputStyle} placeholder="Ghi chú (VD: Chuyển khoản Momo)" placeholderTextColor={phColor} value={payNote} onChangeText={setPayNote} />
-
-                {/* Balance preview */}
-                {payFrom && payTo && payFrom !== payTo && (
-                  <View style={[styles.previewBox, { backgroundColor: isDark ? '#0F172A' : '#F0F9FF' }]}>
-                    <Text style={[styles.previewLabel, { color: phColor }]}>Số dư hiện tại:</Text>
-                    <Text style={{ color: c.foreground, fontSize: 13 }}>
-                      {getMemberName(payFrom)}: {formatBalance(balances.find((b) => b.memberId === payFrom)?.balance || 0)}
-                    </Text>
-                    <Text style={{ color: c.foreground, fontSize: 13 }}>
-                      {getMemberName(payTo)}: {formatBalance(balances.find((b) => b.memberId === payTo)?.balance || 0)}
-                    </Text>
-                  </View>
-                )}
-
-                <Button variant="primary" size="md" onPress={handleAddPayment}>
-                  <Button.Label>Ghi nhận</Button.Label>
-                </Button>
-              </View>
-            )}
+              <Button variant="primary" size="md" onPress={handleAddPayment}>
+                <Button.Label>Ghi nhận</Button.Label>
+              </Button>
+            </FormReveal>
 
             {/* Payment history */}
             {currentPayments.map((pay) => (
-              <Pressable key={pay.id} onLongPress={() => handleDeletePayment(pay)}
-                style={[styles.card, { backgroundColor: cardBg }]}>
-                <View style={styles.cardContent}>
-                  <Text style={[styles.cardTitle, { color: c.foreground }]}>
-                    {getMemberName(pay.from_member_id)} → {getMemberName(pay.to_member_id)}
-                  </Text>
-                  {pay.note && <Text style={[styles.cardMeta, { color: phColor }]}>{pay.note}</Text>}
-                </View>
-                <Text style={[styles.amountText, { color: c.success }]}>{formatVND(pay.amount)}</Text>
-              </Pressable>
+              <AppCard
+                key={pay.id}
+                title={`${getMemberName(pay.from_member_id)} → ${getMemberName(pay.to_member_id)}`}
+                subtitle={pay.note || undefined}
+                onLongPress={() => handleDeletePayment(pay)}
+                trailing={<Text style={[styles.amountText, { color: c.success }]}>{formatVND(pay.amount)}</Text>}
+              />
             ))}
 
             {currentPayments.length === 0 && !showAddPayment && (
-              <Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4, marginTop: 12 }]}>
-                Chưa có thanh toán nào
-              </Text>
+              <EmptyState icon={Wallet} title="Chưa có thanh toán nào" />
             )}
           </View>
         </ScrollView>
@@ -402,23 +463,13 @@ export default function TripDetailScreen() {
             const time = new Date(item.created_at);
             const timeStr = `${time.getDate()}/${time.getMonth() + 1} ${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}`;
             return (
-              <View style={[styles.card, { backgroundColor: cardBg }]}>
-                <View style={styles.cardContent}>
-                  <Text style={[styles.cardTitle, { color: c.foreground }]}>
-                    {item.actor_name} — {getActionLabel(item.action)}
-                  </Text>
-                  <Text style={[styles.cardMeta, { color: phColor }]}>{timeStr}</Text>
-                </View>
-              </View>
+              <AppCard
+                title={`${item.actor_name} — ${getActionLabel(item.action)}`}
+                subtitle={timeStr}
+              />
             );
           }}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={[styles.emptyText, { color: c.foreground, opacity: 0.4 }]}>
-                Chưa có lịch sử thay đổi
-              </Text>
-            </View>
-          }
+          ListEmptyComponent={<EmptyState icon={Clock} title="Chưa có lịch sử thay đổi" />}
         />
       )}
     </View>
@@ -429,31 +480,23 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   summary: { alignItems: 'center', paddingVertical: 16, marginHorizontal: 16, borderRadius: 12, marginTop: 8 },
   summaryLabel: { fontSize: 13 },
-  summaryAmount: { fontSize: 28, fontWeight: '700', marginVertical: 2 },
+  summaryAmount: { fontSize: 28, fontWeight: '700', fontFamily: fonts.bold, marginVertical: 2 },
   summaryMeta: { fontSize: 13 },
-  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   tabContent: { flex: 1 },
   sectionActions: { paddingHorizontal: 16, paddingBottom: 8 },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 17, fontWeight: '600', marginBottom: 4 },
+  sectionTitle: { fontSize: 17, fontWeight: '600', fontFamily: fonts.semibold, marginBottom: 4 },
   sectionHint: { fontSize: 13, marginBottom: 8 },
-  formCard: { marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 12, gap: 8 },
-  input: { height: 44, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, fontSize: 15 },
   fieldLabel: { fontSize: 13, marginTop: 4 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
   splitInfo: { fontSize: 13, textAlign: 'center' },
+  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 3 },
+  splitMemberName: { flex: 1, fontSize: 14 },
+  splitInput: { width: 70, textAlign: 'center' },
+  splitPreview: { fontSize: 12, width: 80, textAlign: 'right' },
   previewBox: { padding: 10, borderRadius: 8, gap: 2 },
   previewLabel: { fontSize: 12, marginBottom: 2 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
-  card: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10, marginBottom: 6 },
-  cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '500' },
-  cardMeta: { fontSize: 12, marginTop: 2 },
-  amountText: { fontSize: 15, fontWeight: '600' },
-  balanceText: { fontSize: 16, fontWeight: '700' },
+  amountText: { fontSize: 15, fontWeight: '600', fontFamily: fonts.semibold },
+  balanceText: { fontSize: 16, fontWeight: '700', fontFamily: fonts.bold },
   emptyContainer: { flex: 1, justifyContent: 'center' },
-  empty: { alignItems: 'center', padding: 24 },
-  emptyText: { fontSize: 16, textAlign: 'center' },
 });

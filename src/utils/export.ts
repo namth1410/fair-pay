@@ -1,8 +1,8 @@
-import { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
-import { Alert } from 'react-native';
 import type { RefObject } from 'react';
 import type { View } from 'react-native';
+import { Alert } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
 
 /** Capture a component as image and save to device gallery */
 export async function exportToImage(viewRef: RefObject<View | null>): Promise<boolean> {

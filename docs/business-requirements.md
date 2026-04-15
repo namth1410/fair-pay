@@ -137,12 +137,13 @@ Hệ thống 3 cấp quyền:
 | Vai trò | Mô tả | Quyền hạn |
 |---------|-------|-----------|
 | **Owner** (Chủ nhóm) | Người tạo nhóm, tự động được gán. Mỗi nhóm có đúng 1 Owner. | Tất cả quyền Admin + xóa nhóm + chuyển quyền Owner |
-| **Admin** (Quản trị) | Do Owner bổ nhiệm. Có thể có nhiều Admin. | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + tạo/đóng chuyến + xóa ghi nhận thanh toán |
+| **Admin** (Quản trị) | Do Owner bổ nhiệm. **Mỗi nhóm tối đa 1 Admin.** | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + tạo/đóng chuyến + xóa ghi nhận thanh toán |
 | **Member** (Thành viên) | Mặc định khi tham gia nhóm. | Xem tất cả + thêm khoản chi mới + ghi nhận thanh toán + sửa/xóa khoản chi do chính mình tạo |
 
 ### Quy tắc phân quyền bổ sung
 
-- Chỉ Owner và Admin mới được thay đổi vai trò của thành viên khác
+- Chỉ Owner mới được thay đổi vai trò của thành viên (promote lên Admin hoặc demote xuống Member)
+- Mỗi nhóm chỉ có tối đa **1 Admin**. Muốn bổ nhiệm Admin mới, Owner phải hạ quyền Admin hiện tại trước
 - Owner không thể bị xóa khỏi nhóm trừ khi đã chuyển quyền Owner trước
 - Khi xóa khoản chi, nếu đã có Payment liên quan → cảnh báo, không tự động xóa Payment
 - Mọi hành động sửa/xóa đều được ghi lại trong **audit log** (ai làm gì, lúc nào)
@@ -153,13 +154,17 @@ Hệ thống 3 cấp quyền:
 
 | Mã | Quy tắc | Chi tiết |
 |----|---------|----------|
-| BR-01 | Số tiền luôn là số nguyên | Lưu dưới dạng integer (đơn vị: đồng). Không bao giờ dùng float. Làm tròn đến 1.000đ khi chia đều, phần lẻ cộng vào người đầu tiên. |
+| BR-01 | Số tiền luôn là số nguyên, bội của 1.000đ | **Input:** App chỉ cho nhập số tiền là bội của 1.000đ (validate trước khi lưu). **Lưu trữ:** DB lưu cả `raw_amount` (số tiền gốc người dùng nhập) và `amount` (số tiền sau khi chia, đã làm tròn đến 1.000đ). Mục đích: hiển thị minh bạch cho người dùng biết số tiền gốc vs số tiền thực tế sau khi chia. **Chia đều:** Round đến 1.000đ, phần lẻ gán cho người cuối cùng trong danh sách. Không bao giờ dùng float. |
 | BR-02 | Tổng split = tổng khoản chi | Tổng số tiền trong expense_splits phải luôn bằng expenses.amount. Validate trước khi lưu. |
 | BR-03 | Payment là giao dịch tự do | Số tiền Payment không bị ràng buộc vào số dư hiện tại — người dùng có thể trả nhiều hơn hoặc ít hơn số đang nợ. |
-| BR-04 | Không xóa cứng (Soft delete) | Mọi record bị xóa chỉ set `deleted_at`, không xóa khỏi database. Cần cho audit log và sync. |
+| BR-04 | Không xóa cứng (Soft delete / Soft-remove) | Mọi record bị xóa chỉ set `deleted_at`, không xóa khỏi database. Cần cho audit log và sync. Riêng `group_members`: dùng `left_at` (rời nhóm) thay vì `deleted_at`. Khi rejoin → reset `left_at = NULL`, giữ nguyên member ID → kế thừa data lịch sử. |
 | BR-05 | Chuyến đã đóng vẫn đọc được | Sau khi đóng chuyến: không thêm expense mới, nhưng vẫn có thể ghi nhận Payment và xem lịch sử. |
 | BR-06 | Một User = nhiều Group | User tham gia Group qua invite link hoặc mã nhóm. Cần xác thực tài khoản trước khi tham gia. |
 | BR-07 | Đề xuất quyết toán chỉ là gợi ý | Thuật toán tối ưu giao dịch được hiển thị để tham khảo, không ảnh hưởng đến dữ liệu thực cho đến khi Payment được ghi nhận. |
+| BR-08 | Mã mời nhóm không trùng lặp | Mã mời 6 ký tự (`a-z, 0-9`) được sinh 1 lần duy nhất khi tạo nhóm. Sử dụng bảng chữ cái rộng (36^6 = ~2.1 tỷ tổ hợp) thay vì hex, kèm retry logic khi collision. Mã không thể đổi sau khi tạo. Column có UNIQUE constraint. |
+| BR-09 | Join nhóm cần Owner/Admin duyệt | Khi người dùng nhập mã mời, hệ thống tạo "yêu cầu tham gia" (join request) ở trạng thái `pending`. Owner hoặc Admin nhận notification và duyệt/từ chối. Chỉ khi được duyệt (`approved`) thì người dùng mới trở thành member. Áp dụng cho **mọi trường hợp** — kể cả user đã từng ở nhóm và rời đi. Mục đích: bảo vệ khi mã mời bị lộ. |
+| BR-10 | Badge tổng nợ trên Home | Màn hình Home hiển thị tổng hợp số dư của user qua tất cả nhóm/chuyến. Hiển thị: "Bạn đang nợ X" (đỏ) hoặc "Bạn được nợ X" (xanh). Tính từ tổng balance âm/dương của user trên mọi chuyến đang mở. |
+| BR-11 | Tìm và mời user qua email | Owner/Admin có thể tìm user đã đăng ký bằng email và gửi lời mời trực tiếp vào nhóm. User nhận notification và chấp nhận/từ chối. Không cần biết mã mời. |
 
 ---
 
@@ -180,8 +185,9 @@ Hệ thống 3 cấp quyền:
 | Trường | Nội dung |
 |--------|---------|
 | **Actor** | User đã đăng nhập (sẽ trở thành Owner) |
-| **Luồng chính** | 1. Tạo nhóm: nhập tên, chọn avatar nhóm → 2. App tạo invite link dạng: `splitvn.app/join/ABC123` → 3. Chia sẻ link qua Zalo/Messenger/copy → 4. Thành viên bấm link → app mở → xác nhận tham gia → 5. Owner thấy danh sách thành viên cập nhật real-time |
-| **Luồng phụ** | Owner có thể thêm thành viên "ảo" (không có tài khoản) để ghi chi phí — họ không nhận được notification |
+| **Luồng chính** | 1. Tạo nhóm: nhập tên, chọn avatar nhóm → 2. App sinh mã mời 6 ký tự (alphanumeric, UNIQUE, không đổi) → 3. Chia sẻ mã/link qua Zalo/Messenger/copy → 4. Thành viên nhập mã → hệ thống tạo **join request** (`pending`) → 5. Owner/Admin nhận notification → duyệt hoặc từ chối → 6. Nếu duyệt → thành viên mới là `member`, danh sách cập nhật real-time |
+| **Luồng phụ 1** | Owner có thể thêm thành viên "ảo" (không có tài khoản) để ghi chi phí — họ không nhận được notification |
+| **Luồng phụ 2 — Mời qua email** | Owner/Admin vào "Thêm thành viên" → nhập email → hệ thống tìm user đã đăng ký → gửi lời mời (invitation) → user nhận notification → chấp nhận = join nhóm, từ chối = hủy |
 | **Quyền** | Chỉ Owner và Admin mới tạo được chuyến trong nhóm |
 
 ### UC-03: Ghi nhận thanh toán thực tế
@@ -219,6 +225,11 @@ Hệ thống 3 cấp quyền:
 | F-17 | Export kết quả chuyến ra ảnh (lưu về máy ngay) | Should have | v1.1 |
 | F-19 | Thống kê chi tiêu theo danh mục | Nice to have | v1.2 |
 | F-20 | Chế độ đa tiền tệ | Nice to have | v2.0 |
+| F-21 | Giải thích bước chia tiền | Nice to have | v1.2 |
+| F-22 | Badge tổng nợ/được nợ trên Home | Must have | v1.0 |
+| F-23 | Join nhóm cần duyệt (Join Request) | Must have | v1.0 |
+| F-24 | Tìm và mời user qua email | Should have | v1.0 |
+| F-25 | Sinh mã mời collision-proof (alphanumeric 6 ký tự) | Must have | v1.0 |
 
 ---
 
@@ -227,9 +238,10 @@ Hệ thống 3 cấp quyền:
 ### Màn hình 1: Home — Danh sách nhóm
 
 - Danh sách các Group người dùng tham gia
-- Mỗi Group: tên, avatar, số thành viên, tóm tắt số chuyến đang mở
-- Badge hiển thị số tiền người dùng đang nợ hoặc đang được nợ (tổng qua tất cả nhóm)
-- Nút tạo nhóm mới, nút quét QR / nhập mã mời
+- Mỗi Group card: tên, avatar, số thành viên, tóm tắt số chuyến đang mở
+- **Badge tổng nợ** (BR-10): header hiển thị tổng nợ/được nợ qua tất cả nhóm. Mỗi group card hiển thị số dư riêng của user trong nhóm đó. Màu đỏ = nợ, xanh = được nợ.
+- **Join request badge**: hiện số lượng yêu cầu tham gia đang chờ duyệt (chỉ Owner/Admin thấy)
+- Nút tạo nhóm mới, nút nhập mã mời
 
 ### Màn hình 2: Chi tiết nhóm
 

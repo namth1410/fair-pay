@@ -1,17 +1,18 @@
-import { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  useColorScheme,
-  StyleSheet,
-} from 'react-native';
 import { Link } from 'expo-router';
 import { Button } from 'heroui-native';
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+import { AnimatedEntrance, AppTextField } from '../../components/ui';
+import { fonts } from '../../config/fonts';
+import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
-import { colors } from '../../config/theme';
 import { getErrorMessage } from '../../utils/error';
 
 export default function RegisterScreen() {
@@ -20,9 +21,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { signUpWithEmail, isLoading } = useAuthStore();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const c = isDark ? colors.dark : colors.light;
+  const c = useAppTheme();
 
   const handleRegister = async () => {
     if (!displayName || !email || !password) {
@@ -47,10 +46,14 @@ export default function RegisterScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <View style={styles.content}>
-        <Text style={[styles.title, { color: c.foreground }]}>Đăng ký</Text>
-        <Text style={[styles.subtitle, { color: c.foreground, opacity: 0.6 }]}>
-          Tạo tài khoản SplitVN
-        </Text>
+        <AnimatedEntrance delay={0}>
+          <Text style={[styles.title, { color: c.foreground }]}>Đăng ký</Text>
+        </AnimatedEntrance>
+        <AnimatedEntrance delay={80}>
+          <Text style={[styles.subtitle, { color: c.foreground, opacity: 0.6 }]}>
+            Tạo tài khoản SplitVN
+          </Text>
+        </AnimatedEntrance>
 
         {error ? (
           <View style={styles.errorBox}>
@@ -58,76 +61,57 @@ export default function RegisterScreen() {
           </View>
         ) : null}
 
-        <TextInput
-          style={[
-            styles.input,
-            {
-              color: c.foreground,
-              borderColor: isDark ? '#334155' : '#E2E8F0',
-              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-            },
-          ]}
-          placeholder="Tên hiển thị"
-          placeholderTextColor={isDark ? '#94A3B8' : '#64748B'}
-          value={displayName}
-          onChangeText={setDisplayName}
-          autoCapitalize="words"
-        />
+        <AnimatedEntrance delay={150}>
+          <AppTextField
+            placeholder="Tên hiển thị"
+            value={displayName}
+            onChangeText={setDisplayName}
+            autoCapitalize="words"
+          />
+        </AnimatedEntrance>
 
-        <TextInput
-          style={[
-            styles.input,
-            {
-              color: c.foreground,
-              borderColor: isDark ? '#334155' : '#E2E8F0',
-              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-            },
-          ]}
-          placeholder="Email"
-          placeholderTextColor={isDark ? '#94A3B8' : '#64748B'}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-        />
+        <AnimatedEntrance delay={220}>
+          <AppTextField
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+        </AnimatedEntrance>
 
-        <TextInput
-          style={[
-            styles.input,
-            {
-              color: c.foreground,
-              borderColor: isDark ? '#334155' : '#E2E8F0',
-              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-            },
-          ]}
-          placeholder="Mật khẩu (ít nhất 6 ký tự)"
-          placeholderTextColor={isDark ? '#94A3B8' : '#64748B'}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="new-password"
-        />
+        <AnimatedEntrance delay={290}>
+          <AppTextField
+            placeholder="Mật khẩu (ít nhất 6 ký tự)"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="new-password"
+          />
+        </AnimatedEntrance>
 
-        <Button
-          variant="primary"
-          size="lg"
-          onPress={handleRegister}
-          isDisabled={isLoading}
-          style={styles.button}
-        >
-          <Button.Label>
-            {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
-          </Button.Label>
-        </Button>
+        <AnimatedEntrance delay={360}>
+          <Button
+            variant="primary"
+            size="lg"
+            onPress={handleRegister}
+            isDisabled={isLoading}
+            style={styles.button}
+          >
+            <Button.Label>
+              {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
+            </Button.Label>
+          </Button>
 
-        <View style={styles.footer}>
-          <Link href="/(auth)/login">
-            <Text style={{ color: c.primary }}>
-              Đã có tài khoản? Đăng nhập
-            </Text>
-          </Link>
-        </View>
+          <View style={styles.footer}>
+            <Link href="/(auth)/login">
+              <Text style={{ color: c.primary }}>
+                Đã có tài khoản? Đăng nhập
+              </Text>
+            </Link>
+          </View>
+        </AnimatedEntrance>
       </View>
     </KeyboardAvoidingView>
   );
@@ -141,29 +125,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
+    gap: 4,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
+    fontFamily: fonts.bold,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   errorBox: {
-    marginBottom: 16,
+    marginBottom: 8,
     padding: 12,
     borderRadius: 8,
     backgroundColor: 'rgba(220, 38, 38, 0.1)',
-  },
-  input: {
-    height: 48,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    marginBottom: 12,
   },
   button: {
     width: '100%',
