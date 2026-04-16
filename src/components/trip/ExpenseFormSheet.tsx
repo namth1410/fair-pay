@@ -177,6 +177,17 @@ export function ExpenseFormSheet({
 
   const amount = parseInt(amountStr, 10) || 0;
 
+  const ratioPreview = useMemo(() => {
+    if (splitType !== 'ratio' || amount <= 0) return [];
+    return splitByRatio(
+      amount,
+      members.map((m) => ({
+        memberId: m.id,
+        ratio: parseInt(ratios[m.id] || '1', 10) || 1,
+      })),
+    );
+  }, [splitType, amount, members, ratios]);
+
   return (
     <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
       <BottomSheet.Portal>
@@ -294,15 +305,7 @@ export function ExpenseFormSheet({
                             {amount > 0 && (
                               <View style={styles.splitPreview}>
                                 <Money
-                                  value={
-                                    splitByRatio(
-                                      amount,
-                                      members.map((mm) => ({
-                                        memberId: mm.id,
-                                        ratio: parseInt(ratios[mm.id] || '1', 10) || 1,
-                                      })),
-                                    ).find((s) => s.memberId === m.id)?.amount ?? 0
-                                  }
+                                  value={ratioPreview.find((s) => s.memberId === m.id)?.amount ?? 0}
                                   variant="compact"
                                   tone="muted"
                                 />

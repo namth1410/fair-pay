@@ -1,4 +1,4 @@
-import { Skeleton } from 'heroui-native';
+import { SkeletonGroup } from 'heroui-native';
 import { StyleSheet, View } from 'react-native';
 
 interface ListSkeletonProps {
@@ -8,18 +8,20 @@ interface ListSkeletonProps {
 // Match exact AppCard geometry: padding 14, radius 14, avatar 40 leading, 2 text lines.
 export function ListSkeleton({ count = 3 }: ListSkeletonProps) {
   return (
-    <View style={styles.wrap}>
-      {Array.from({ length: count }).map((_, i) => (
-        <View key={i} style={styles.card}>
-          <Skeleton style={styles.avatar} />
-          <View style={styles.textCol}>
-            <Skeleton style={styles.lineTitle} />
-            <Skeleton style={styles.lineSub} />
+    <SkeletonGroup isLoading variant="shimmer">
+      <View style={styles.wrap}>
+        {Array.from({ length: count }).map((_, i) => (
+          <View key={i} style={styles.card}>
+            <SkeletonGroup.Item style={styles.avatar} />
+            <View style={styles.textCol}>
+              <SkeletonGroup.Item style={styles.lineTitle} />
+              <SkeletonGroup.Item style={styles.lineSub} />
+            </View>
+            <SkeletonGroup.Item style={styles.trailing} />
           </View>
-          <Skeleton style={styles.trailing} />
-        </View>
-      ))}
-    </View>
+        ))}
+      </View>
+    </SkeletonGroup>
   );
 }
 

@@ -60,7 +60,7 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.tabs}>
+      <View style={styles.tabs} accessibilityRole="tablist">
         <Animated.View
           pointerEvents="none"
           style={[
@@ -100,7 +100,7 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
                   <View style={[styles.badge, { backgroundColor: c.danger }]}>
                     <AppText
                       weight="bold"
-                      style={{ color: '#FFFFFF', fontSize: 10, lineHeight: 14 }}
+                      style={{ color: c.inverseForeground, fontSize: 10, lineHeight: 14 }}
                     >
                       {item.badge}
                     </AppText>

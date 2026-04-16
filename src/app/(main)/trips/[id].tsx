@@ -1,7 +1,8 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { withTiming } from 'react-native-reanimated';
+import type { EntryAnimationsValues } from 'react-native-reanimated';
 
 import { BalancesTab } from '../../../components/trip/BalancesTab';
 import { ExpensesTab } from '../../../components/trip/ExpensesTab';
@@ -36,6 +37,7 @@ export default function TripDetailScreen() {
   const { currentGroupMembers, loadMembers } = useGroupStore();
 
   const [tab, setTab] = useState<Tab>('expenses');
+  const prevTabRef = useRef<Tab>(tab);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const trip = trips.find((t) => t.id === tripId);
@@ -46,12 +48,34 @@ export default function TripDetailScreen() {
     loadExpenses(tripId);
     loadPayments(tripId);
     loadBalances(tripId);
-    fetchAuditLogs(tripId).then(setAuditLogs).catch(() => {});
+    fetchAuditLogs(tripId).then(setAuditLogs).catch((e) => {
+      if (__DEV__) console.warn('[AuditLogs] Fetch failed:', e);
+    });
   }, [tripId]);
+
+  if (!tripId) return null;
 
   useEffect(() => {
     if (trip?.group_id) loadMembers(trip.group_id);
   }, [trip?.group_id]);
+
+  const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history'];
+  const tabIdx = TAB_KEYS.indexOf(tab);
+  const prevIdx = TAB_KEYS.indexOf(prevTabRef.current);
+  const direction = tabIdx >= prevIdx ? 'right' : 'left';
+  prevTabRef.current = tab;
+
+  const tabEntering = (_values: EntryAnimationsValues) => {
+    'worklet';
+    const offset = direction === 'right' ? 40 : -40;
+    return {
+      initialValues: { opacity: 0, transform: [{ translateX: offset }] },
+      animations: {
+        opacity: withTiming(1, { duration: 200 }),
+        transform: [{ translateX: withTiming(0, { duration: 200 }) }],
+      },
+    };
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
@@ -70,10 +94,10 @@ export default function TripDetailScreen() {
 
       <SectionTabs items={TAB_ITEMS} selected={tab} onSelect={(key) => setTab(key as Tab)} />
 
-      <Animated.View key={tab} entering={FadeIn.duration(150)} style={styles.tabContent}>
+      <Animated.View key={tab} entering={tabEntering} style={styles.tabContent}>
         {tab === 'expenses' && (
           <ExpensesTab
-            tripId={tripId!}
+            tripId={tripId}
             groupId={trip?.group_id || ''}
             tripStatus={trip?.status || 'open'}
             expenses={currentExpenses}
@@ -94,7 +118,7 @@ export default function TripDetailScreen() {
 
         {tab === 'settle' && (
           <SettlementTab
-            tripId={tripId!}
+            tripId={tripId}
             groupId={trip?.group_id || ''}
             settlements={settlements}
             payments={currentPayments}

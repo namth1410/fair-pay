@@ -1,4 +1,4 @@
-# Code Review — Fair Pay (SplitVN)
+# Code Review — Fair Pay
 
 > **Ngày review:** 2026-04-16
 > **Phạm vi:** Toàn bộ codebase (`src/` — 76 files TypeScript/TSX)

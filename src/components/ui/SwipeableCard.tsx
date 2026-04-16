@@ -53,7 +53,7 @@ function RightAction({
         accessibilityRole="button"
         accessibilityLabel={deleteLabel}
       >
-        <Trash2 size={18} color="#FFFFFF" strokeWidth={2} />
+        <Trash2 size={18} color={c.inverseForeground} strokeWidth={2} />
         <AppText variant="meta" weight="semibold" tone="inverse">
           {deleteLabel}
         </AppText>

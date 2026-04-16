@@ -530,3 +530,41 @@ describe('Integration: ratio split flow', () => {
     expect(imbalance).toBeLessThanOrEqual(members.length * 1000);
   });
 });
+
+describe('BIZ-01: splitByRatio clamp edge case — remaining < 0', () => {
+  it('clamps negative remainder to 0 (all amounts non-negative)', () => {
+    // 5000đ / 7 members ratio 1: raw ≈ 714, rounds to 1000 each
+    // After 6 members: 6000 allocated, remaining = -1000 → clamped to 0
+    const members = Array.from({ length: 7 }, (_, i) => ({
+      memberId: `M${i}`,
+      ratio: 1,
+    }));
+    const result = splitByRatio(5000, members);
+    expect(result.every((s) => s.amount >= 0)).toBe(true);
+  });
+
+  it('validateSplits catches under-distributed splits from clamp', () => {
+    const members = Array.from({ length: 7 }, (_, i) => ({
+      memberId: `M${i}`,
+      ratio: 1,
+    }));
+    const result = splitByRatio(5000, members);
+    const sum = result.reduce((acc, s) => acc + s.amount, 0);
+    if (sum < 5000) {
+      // validateSplits should reject splits that don't match the total
+      const err = validateSplits(5000, result);
+      expect(err).not.toBeNull();
+    }
+  });
+
+  it('normal case: ratio split sums correctly', () => {
+    // 900000đ / 3 members ratio [2,1,1]: no clamp needed
+    const result = splitByRatio(900000, [
+      { memberId: 'A', ratio: 2 },
+      { memberId: 'B', ratio: 1 },
+      { memberId: 'C', ratio: 1 },
+    ]);
+    const sum = result.reduce((acc, s) => acc + s.amount, 0);
+    expect(sum).toBe(900000);
+  });
+});

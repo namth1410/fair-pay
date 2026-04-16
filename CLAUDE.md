@@ -1,4 +1,4 @@
-# CLAUDE.md — Fair Pay (SplitVN)
+# CLAUDE.md — Fair Pay
 
 ## Dự án
 

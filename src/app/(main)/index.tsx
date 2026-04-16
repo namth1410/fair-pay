@@ -9,20 +9,18 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ScrollShadow } from 'heroui-native';
 
 import { CreateJoinSheet } from '../../components/common/CreateJoinSheet';
 import { SettingsSheet } from '../../components/common/SettingsSheet';
+import { GroupBalancePill } from '../../components/home/GroupBalancePill';
+import { HeroDebt } from '../../components/home/HeroDebt';
 import {
   AnimatedEntrance,
   AppCard,
   AppText,
   Avatar,
   EmptyState,
-  GradientHero,
   ListSkeleton,
-  Money,
 } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupWithMemberCount } from '../../services/group.service';
@@ -44,70 +42,6 @@ export default function HomeScreen() {
     loadGroups();
   }, []);
 
-  // ── Hero debt card (BR-10) ──
-  // Always rendered when user has at least one group — shows owed / owing /
-  // settled variants. Previously hid when total=0, causing layout jumps that
-  // felt like the UI was "reacting" to the user settling up.
-  const renderHeroDebt = () => {
-    if (groups.length === 0) return null;
-
-    const { total } = balanceSummary;
-    const isSettled = total === 0;
-    const isPositive = total > 0;
-
-    let label: string;
-    let tone: 'success' | 'danger' | undefined;
-    let gradFrom: string;
-    if (isSettled) {
-      label = 'Đã thanh toán đầy đủ';
-      tone = undefined;
-      gradFrom = c.accentSoft;
-    } else if (isPositive) {
-      label = 'Bạn đang được nợ';
-      tone = 'success';
-      gradFrom = c.successSoft;
-    } else {
-      label = 'Bạn đang nợ';
-      tone = 'danger';
-      gradFrom = c.dangerSoft;
-    }
-    const gradTo = c.tint ?? c.surface;
-    const footnote = isSettled ? 'Không còn khoản nào cần thanh toán' : 'trên tất cả các nhóm';
-
-    return (
-      <AnimatedEntrance delay={0}>
-        <GradientHero fromColor={gradFrom} toColor={gradTo} style={styles.heroWrap}>
-          <View style={styles.heroInner}>
-            <AppText variant="label" tone="muted">
-              {label}
-            </AppText>
-            <View style={styles.heroAmount}>
-              <Money value={Math.abs(total)} variant="hero" tone={tone} animate />
-            </View>
-            <AppText variant="meta" tone="muted">
-              {footnote}
-            </AppText>
-          </View>
-        </GradientHero>
-      </AnimatedEntrance>
-    );
-  };
-
-  // ── Per-group balance pill ──
-  const renderGroupBalance = (groupId: string) => {
-    const balance = balanceSummary.groupBalances[groupId];
-    if (balance === undefined || balance === 0) return null;
-    const isPositive = balance > 0;
-    return (
-      <Money
-        value={Math.abs(balance)}
-        variant="compact"
-        tone={isPositive ? 'success' : 'danger'}
-        showSign
-      />
-    );
-  };
-
   const getBorderColor = (bal: number): string | undefined => {
     if (bal > 0) return c.success;
     if (bal < 0) return c.danger;
@@ -125,7 +59,7 @@ export default function HomeScreen() {
           subtitle={`${item.member_count} thành viên`}
           onPress={() => router.push(`/(main)/groups/${item.id}`)}
           leading={<Avatar seed={item.id} label={item.name} size={44} />}
-          trailing={renderGroupBalance(item.id)}
+          trailing={<GroupBalancePill balance={balanceSummary.groupBalances[item.id] ?? 0} />}
           borderLeft={borderColor ? { width: 3, color: borderColor } : undefined}
         />
       </AnimatedEntrance>
@@ -168,7 +102,7 @@ export default function HomeScreen() {
       />
 
       {/* Hero: owed / owing / settled — luôn hiện khi có nhóm */}
-      {renderHeroDebt()}
+      {groups.length > 0 && <HeroDebt total={balanceSummary.total} />}
 
       {/* Pending banner — khi user vừa gửi join request (BR-09) */}
       {joinPendingGroup && (
@@ -195,25 +129,23 @@ export default function HomeScreen() {
       {isLoading && groups.length === 0 ? (
         <ListSkeleton count={4} />
       ) : (
-        <ScrollShadow LinearGradientComponent={LinearGradient}>
-          <FlatList
-            data={groups}
-            keyExtractor={(item) => item.id}
-            renderItem={renderGroup}
-            contentContainerStyle={groups.length === 0 ? styles.emptyContainer : styles.list}
-            refreshControl={
-              <RefreshControl refreshing={isLoading} onRefresh={loadGroups} tintColor={c.primaryStrong} />
-            }
-            ListEmptyComponent={
-              <EmptyState
-                icon={Users}
-                title="Chưa có nhóm nào"
-                subtitle="Tạo nhóm mới hoặc nhập mã mời để bắt đầu"
-                action={{ label: 'Tạo nhóm', onPress: () => setCreateJoinOpen(true) }}
-              />
-            }
-          />
-        </ScrollShadow>
+        <FlatList
+          data={groups}
+          keyExtractor={(item) => item.id}
+          renderItem={renderGroup}
+          contentContainerStyle={groups.length === 0 ? styles.emptyContainer : styles.list}
+          refreshControl={
+            <RefreshControl refreshing={isLoading} onRefresh={loadGroups} tintColor={c.primaryStrong} />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon={Users}
+              title="Chưa có nhóm nào"
+              subtitle="Tạo nhóm mới hoặc nhập mã mời để bắt đầu"
+              action={{ label: 'Tạo nhóm', onPress: () => setCreateJoinOpen(true) }}
+            />
+          }
+        />
       )}
 
       <CreateJoinSheet
@@ -235,22 +167,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
-  },
-
-  // Hero debt card
-  heroWrap: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  heroInner: {
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    gap: 4,
-  },
-  heroAmount: {
-    marginVertical: 2,
   },
 
   list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },

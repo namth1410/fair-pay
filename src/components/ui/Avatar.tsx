@@ -52,7 +52,7 @@ export function Avatar({ seed, label, size = 40, style }: AvatarProps) {
     <View
       style={[{ width: size, height: size }, style]}
       accessibilityRole="image"
-      accessibilityLabel={label ? `Avatar ${label}` : undefined}
+      accessibilityLabel={`Avatar ${label ?? seed}`}
     >
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <Defs>

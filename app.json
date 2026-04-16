@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "Fair Pay",
-    "slug": "splitvn",
+    "slug": "fair-pay",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "splitvn",
+    "scheme": "fairpay",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -18,7 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FDF2F8"
       },
-      "package": "com.splitvn.app"
+      "package": "com.fairpay.app"
     },
     "plugins": [
       [
@@ -30,16 +30,31 @@
       "expo-secure-store",
       "expo-sqlite",
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#FDF2F8",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#1F1018"
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {
         "root": "./src/app"
       },
       "eas": {
-        "projectId": "82b24ff1-45df-4eee-b43a-dbec26962ddd"
+        "projectId": "486fbc86-d177-48b7-a389-f1c101b7d5a8"
       }
     },
-    "owner": "namth1410"
+    "owner": "namth1410",
+    "ios": {
+      "bundleIdentifier": "com.fairpay.app"
+    }
   }
 }

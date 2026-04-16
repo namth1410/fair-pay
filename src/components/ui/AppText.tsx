@@ -52,7 +52,7 @@ export function AppText({
     success: c.success,
     danger: c.danger,
     warning: c.warning,
-    inverse: '#FFFFFF',
+    inverse: c.inverseForeground,
   };
 
   return (

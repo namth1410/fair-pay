@@ -552,10 +552,10 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
 }
 
 // ── Helpers ─────────────────────────────────
-type Role = 'owner' | 'admin' | 'member';
+export type Role = 'owner' | 'admin' | 'member';
 
 /** Assert that the current user has one of the allowed roles in the group */
-async function assertRole(
+export async function assertRole(
   groupId: string,
   allowed: Role[]
 ): Promise<void> {

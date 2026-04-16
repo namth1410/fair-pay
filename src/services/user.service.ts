@@ -49,7 +49,7 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
     'Bạn';
 
   return {
-    id: user.id,
+    id: data?.id || user.id,
     email: data?.email || user.email || '',
     display_name: data?.display_name || fallbackName,
     photo_url: data?.photo_url || meta.avatar_url || null,

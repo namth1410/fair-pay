@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import { validatePositiveAmount } from '../utils/validate';
 
 import { getAuthUserId } from './auth.helper';
+import { assertRole } from './group.service';
 
 export interface Payment {
   id: string;
@@ -80,6 +81,14 @@ export async function createPayment(params: {
 
 /** Soft delete payment — admin only */
 export async function deletePayment(paymentId: string): Promise<void> {
+  const { data: payment, error: fetchErr } = await supabase
+    .from('payments')
+    .select('group_id')
+    .eq('id', paymentId)
+    .single();
+  if (fetchErr || !payment) throw new Error('Thanh toán không tồn tại');
+  await assertRole(payment.group_id, ['owner', 'admin']);
+
   const { error } = await supabase
     .from('payments')
     .update({ deleted_at: new Date().toISOString() })

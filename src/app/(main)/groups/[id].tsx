@@ -1,15 +1,16 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from 'heroui-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { withTiming } from 'react-native-reanimated';
+import type { EntryAnimationsValues } from 'react-native-reanimated';
 
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { TripsTab } from '../../../components/group/TripsTab';
 import { ConfirmDialog, SectionTabs } from '../../../components/ui';
-import { supabase } from '../../../config/supabase';
 import { useAppTheme } from '../../../hooks/useAppTheme';
+import { getAuthUserId } from '../../../services/auth.helper';
 import type { GroupMember, JoinRequest } from '../../../services/group.service';
 import type { Trip } from '../../../services/trip.service';
 import { useAuthStore } from '../../../stores/auth.store';
@@ -55,6 +56,7 @@ export default function GroupDetailScreen() {
   const { user } = useAuthStore();
 
   const [tab, setTab] = useState<Tab>('trips');
+  const prevTabRef = useRef<Tab>(tab);
   const [myRole, setMyRole] = useState<Role>('member');
   const [confirm, setConfirm] = useState<ConfirmState>(CONFIRM_CLOSED);
 
@@ -69,13 +71,9 @@ export default function GroupDetailScreen() {
   useEffect(() => {
     if (!user || !currentGroupMembers.length) return;
     const findMyRole = async () => {
-      const { data } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', user.id)
-        .single();
-      if (data) {
-        const me = currentGroupMembers.find((m) => m.user_id === data.id);
+      const appUserId = await getAuthUserId();
+      if (appUserId) {
+        const me = currentGroupMembers.find((m) => m.user_id === appUserId);
         if (me) setMyRole(me.role as Role);
       }
     };
@@ -120,7 +118,14 @@ export default function GroupDetailScreen() {
       description: `Đổi ${member.display_name} thành ${ROLE_LABELS[newRole as Role]}?`,
       confirmLabel: 'Xác nhận',
       destructive: false,
-      onConfirm: () => changeRole(member.id, newRole, id),
+      onConfirm: async () => {
+        try {
+          await changeRole(member.id, newRole, id);
+          toast.show({ variant: 'success', label: 'Đã thay đổi vai trò' });
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        }
+      },
     });
   };
 
@@ -131,7 +136,14 @@ export default function GroupDetailScreen() {
       description: `Xóa ${member.display_name} khỏi nhóm?`,
       confirmLabel: 'Xóa',
       destructive: true,
-      onConfirm: () => kickMember(member.id, id!),
+      onConfirm: async () => {
+        try {
+          await kickMember(member.id, id!);
+          toast.show({ variant: 'success', label: 'Đã xóa thành viên' });
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        }
+      },
     });
   };
 
@@ -142,7 +154,14 @@ export default function GroupDetailScreen() {
       description: `Cho phép ${req.display_name} tham gia nhóm?`,
       confirmLabel: 'Duyệt',
       destructive: false,
-      onConfirm: () => approveRequest(req.id, id!),
+      onConfirm: async () => {
+        try {
+          await approveRequest(req.id, id!);
+          toast.show({ variant: 'success', label: 'Đã duyệt yêu cầu' });
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        }
+      },
     });
   };
 
@@ -153,7 +172,14 @@ export default function GroupDetailScreen() {
       description: `Từ chối ${req.display_name}?`,
       confirmLabel: 'Từ chối',
       destructive: true,
-      onConfirm: () => rejectRequest(req.id, id!),
+      onConfirm: async () => {
+        try {
+          await rejectRequest(req.id, id!);
+          toast.show({ variant: 'success', label: 'Đã từ chối yêu cầu' });
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        }
+      },
     });
   };
 
@@ -165,10 +191,32 @@ export default function GroupDetailScreen() {
       confirmLabel: 'Xóa',
       destructive: true,
       onConfirm: async () => {
-        await removeGroup(id!);
-        router.back();
+        try {
+          await removeGroup(id!);
+          router.back();
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        }
       },
     });
+  };
+
+  const GROUP_TAB_KEYS: Tab[] = ['trips', 'members', 'settings'];
+  const tabIdx = GROUP_TAB_KEYS.indexOf(tab);
+  const prevIdx = GROUP_TAB_KEYS.indexOf(prevTabRef.current);
+  const direction = tabIdx >= prevIdx ? 'right' : 'left';
+  prevTabRef.current = tab;
+
+  const tabEntering = (_values: EntryAnimationsValues) => {
+    'worklet';
+    const offset = direction === 'right' ? 40 : -40;
+    return {
+      initialValues: { opacity: 0, transform: [{ translateX: offset }] },
+      animations: {
+        opacity: withTiming(1, { duration: 200 }),
+        transform: [{ translateX: withTiming(0, { duration: 200 }) }],
+      },
+    };
   };
 
   return (
@@ -190,7 +238,7 @@ export default function GroupDetailScreen() {
       />
 
       {tab === 'trips' && (
-        <Animated.View key="trips" entering={FadeIn.duration(150)} style={styles.tabContent}>
+        <Animated.View key="trips" entering={tabEntering} style={styles.tabContent}>
           <TripsTab
             trips={trips}
             isLoading={tripsLoading}
@@ -203,7 +251,7 @@ export default function GroupDetailScreen() {
       )}
 
       {tab === 'members' && (
-        <Animated.View key="members" entering={FadeIn.duration(150)} style={styles.tabContent}>
+        <Animated.View key="members" entering={tabEntering} style={styles.tabContent}>
           <MembersTab
             members={currentGroupMembers}
             pendingRequests={pendingJoinRequests}
@@ -221,7 +269,7 @@ export default function GroupDetailScreen() {
       )}
 
       {tab === 'settings' && isAdmin && (
-        <Animated.View key="settings" entering={FadeIn.duration(150)} style={styles.settingsContent}>
+        <Animated.View key="settings" entering={tabEntering} style={styles.settingsContent}>
           <GroupSettingsTab
             memberCount={currentGroupMembers.length}
             virtualMemberCount={currentGroupMembers.filter((m) => m.is_virtual).length}

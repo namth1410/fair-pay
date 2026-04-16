@@ -236,7 +236,7 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
             {/* ── Đăng xuất ── */}
             <View style={styles.logoutSection}>
               <Button variant="danger" size="md" onPress={handleSignOut}>
-                <LogOut size={18} color="#FFFFFF" />
+                <LogOut size={18} color={c.inverseForeground} />
                 <Button.Label>Đăng xuất</Button.Label>
               </Button>
             </View>

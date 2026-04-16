@@ -4,6 +4,7 @@ import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
 
 import { getAuthUserId } from './auth.helper';
+import { assertRole } from './group.service';
 
 export interface Expense {
   id: string;
@@ -112,6 +113,14 @@ export async function createExpense(params: {
 
 /** Soft delete expense — BR-04 */
 export async function deleteExpense(expenseId: string): Promise<void> {
+  const { data: expense, error: fetchErr } = await supabase
+    .from('expenses')
+    .select('group_id')
+    .eq('id', expenseId)
+    .single();
+  if (fetchErr || !expense) throw new Error('Khoản chi không tồn tại');
+  await assertRole(expense.group_id, ['owner', 'admin']);
+
   const { error } = await supabase
     .from('expenses')
     .update({ deleted_at: new Date().toISOString() })
@@ -153,7 +162,8 @@ export async function calculateBalances(
   const expenses = expensesRes.data;
   const payments = paymentsRes.data;
 
-  // Members query depends on trip.group_id — must run after trip fetch
+  // Lấy TẤT CẢ members (kể cả đã rời) vì expense/payment của họ vẫn ảnh hưởng đến balance.
+  // Khác với fetchGroupMembers() chỉ lấy active members cho hiển thị danh sách.
   const { data: members } = await supabase
     .from('group_members')
     .select('id, display_name')

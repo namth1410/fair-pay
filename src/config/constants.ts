@@ -1,6 +1,6 @@
 export const APP_NAME = 'Fair Pay';
 export const APP_SLOGAN = 'Chia tiền · Không chia rẽ';
-export const APP_SCHEME = 'splitvn';
+export const APP_SCHEME = 'fairpay';
 
 // Supabase
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -13,7 +13,7 @@ if (__DEV__ && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
 }
 
 // Database
-export const DB_NAME = 'splitvn.db';
+export const DB_NAME = 'fairpay.db';
 
 // Sync
 export const SYNC_RETRY_MAX = 3;

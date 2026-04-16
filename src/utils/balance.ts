@@ -74,7 +74,7 @@ export function computeBalances(
   return members.map((m) => ({
     memberId: m.id,
     memberName: m.displayName,
-    balance: balanceMap[m.id] || 0,
+    balance: balanceMap[m.id] ?? 0,
   }));
 }
 

@@ -26,8 +26,8 @@ export function OfflineBanner() {
       accessibilityLiveRegion="polite"
       style={[styles.banner, { backgroundColor: c.warning }]}
     >
-      <WifiOff size={14} color="#FFFFFF" strokeWidth={2.2} />
-      <AppText variant="caption" weight="semibold" style={{ color: '#FFFFFF' }}>
+      <WifiOff size={14} color={c.inverseForeground} strokeWidth={2.2} />
+      <AppText variant="caption" weight="semibold" style={{ color: c.inverseForeground }}>
         Ngoại tuyến — dữ liệu sẽ đồng bộ khi có mạng
       </AppText>
     </View>

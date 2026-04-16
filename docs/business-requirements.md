@@ -1,4 +1,4 @@
-# SplitVN — Tài Liệu Nghiệp Vụ
+# Fair Pay — Tài Liệu Nghiệp Vụ
 
 > **Phiên bản:** 2.0 — Draft  
 > **Ngày cập nhật:** Tháng 4, 2026  
@@ -30,7 +30,7 @@
 
 ### 1.1 Giới thiệu
 
-**SplitVN** là ứng dụng di động giúp nhóm bạn bè, gia đình, đồng nghiệp dễ dàng ghi lại và chia sẻ chi phí trong các chuyến đi, bữa ăn, hoặc bất kỳ hoạt động nhóm nào. Ứng dụng hoạt động theo mô hình **offline-first** — người dùng có thể dùng ngay không cần mạng, dữ liệu sẽ tự đồng bộ lên server khi có kết nối để cả nhóm cùng xem được.
+**Fair Pay** là ứng dụng di động giúp nhóm bạn bè, gia đình, đồng nghiệp dễ dàng ghi lại và chia sẻ chi phí trong các chuyến đi, bữa ăn, hoặc bất kỳ hoạt động nhóm nào. Ứng dụng hoạt động theo mô hình **offline-first** — người dùng có thể dùng ngay không cần mạng, dữ liệu sẽ tự đồng bộ lên server khi có kết nối để cả nhóm cùng xem được.
 
 ### 1.2 Vấn đề cần giải quyết
 
@@ -356,4 +356,4 @@ Hệ thống 3 cấp quyền:
 
 ---
 
-*SplitVN v2.0 Project Spec — Tài liệu nghiệp vụ — Cập nhật tháng 4/2026*
+*Fair Pay v2.0 Project Spec — Tài liệu nghiệp vụ — Cập nhật tháng 4/2026*

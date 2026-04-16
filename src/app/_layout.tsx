@@ -8,10 +8,12 @@ import {
   useFonts,
 } from '@expo-google-fonts/be-vietnam-pro';
 import { Slot, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { ReduceMotion, ReducedMotionConfig } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Uniwind } from 'uniwind';
 
@@ -24,6 +26,8 @@ import { useAppTheme } from '../hooks/useAppTheme';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
+
+SplashScreen.preventAutoHideAsync();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
@@ -105,12 +109,22 @@ export default function RootLayout() {
 
   useThemeHydration();
 
-  if (!fontsLoaded) {
-    return <LoadingScreen />;
+  const isInitialized = useAuthStore((s) => s.isInitialized);
+  const isDatabaseReady = useAppStore((s) => s.isDatabaseReady);
+
+  useEffect(() => {
+    if (fontsLoaded && isDatabaseReady && isInitialized) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, isDatabaseReady, isInitialized]);
+
+  if (!fontsLoaded || !isDatabaseReady || !isInitialized) {
+    return null;
   }
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: c.background }}>
+      <ReducedMotionConfig mode={ReduceMotion.System} />
       <ErrorBoundary>
         <SafeAreaProvider>
           <HeroUINativeProvider>

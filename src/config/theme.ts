@@ -47,13 +47,11 @@ export const colors = {
     danger: '#E11D48',          // rose-600
     warning: '#F59E0B',         // amber-500
     divider: '#FBCFE8',         // pink-200 divider
+    inverseForeground: '#FFFFFF', // text/icon trên nền màu đậm
     // Soft variants (badge/banner backgrounds)
     successSoft: '#D1FAE5',     // emerald-100
     dangerSoft: '#FFE4E6',      // rose-100
     accentSoft: '#FCE7F3',      // pink-100
-    successSoftDark: '#064E3B',
-    dangerSoftDark: '#4C0519',
-    accentSoftDark: '#831843',  // pink-900
   },
   dark: {
     background: '#1F1018',      // deep plum
@@ -70,12 +68,10 @@ export const colors = {
     danger: '#FB7185',
     warning: '#FBBF24',
     divider: '#3D2433',
+    inverseForeground: '#FFFFFF', // text/icon trên nền màu đậm
     // Soft variants (badge backgrounds)
     successSoft: '#064E3B',
     dangerSoft: '#4C0519',
     accentSoft: '#4D1E38',      // deep plum-pink
-    successSoftDark: '#064E3B',
-    dangerSoftDark: '#4C0519',
-    accentSoftDark: '#4D1E38',
   },
 };

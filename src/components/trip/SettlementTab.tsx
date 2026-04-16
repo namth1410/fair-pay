@@ -95,9 +95,9 @@ export const SettlementTab = React.memo(function SettlementTab({
           <AppText variant="caption" tone="muted" style={styles.suggestionHint}>
             Gợi ý tối ưu — chỉ tham khảo
           </AppText>
-          {settlements.map((s, i) => (
+          {settlements.map((s) => (
             <AppCard
-              key={i}
+              key={`${s.from}-${s.to}`}
               title={`${s.fromName} → ${s.toName}`}
               trailing={<Money value={s.amount} variant="default" tone="danger" />}
             />
@@ -171,8 +171,14 @@ export const SettlementTab = React.memo(function SettlementTab({
         description="Xóa ghi nhận thanh toán này?"
         confirmLabel="Xóa"
         destructive
-        onConfirm={() => {
-          if (deleteTarget) onDeletePayment(deleteTarget.id, tripId);
+        onConfirm={async () => {
+          if (deleteTarget) {
+            try {
+              await onDeletePayment(deleteTarget.id, tripId);
+            } catch (e: unknown) {
+              toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+            }
+          }
         }}
       />
     </ScrollView>

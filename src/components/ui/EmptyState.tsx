@@ -1,5 +1,6 @@
 import { Button } from 'heroui-native';
 import type { LucideIcon } from 'lucide-react-native';
+import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
@@ -19,7 +20,7 @@ interface EmptyStateProps {
 }
 
 // Soft decorative halo behind the icon — 3 pastel pink blobs xen kẽ, chỉ hint subtle.
-function Halo({ c }: { c: ReturnType<typeof useAppTheme> }) {
+const Halo = memo(function Halo({ c }: { c: ReturnType<typeof useAppTheme> }) {
   return (
     <Svg width={140} height={140} viewBox="0 0 140 140" style={styles.halo}>
       <Defs>
@@ -41,7 +42,7 @@ function Halo({ c }: { c: ReturnType<typeof useAppTheme> }) {
       <Circle cx={70} cy={95} r={44} fill="url(#halo-c)" />
     </Svg>
   );
-}
+});
 
 export function EmptyState({ title, subtitle, icon: Icon, action }: EmptyStateProps) {
   const c = useAppTheme();

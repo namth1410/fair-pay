@@ -99,7 +99,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       if (result.type === 'success') {
         const url = result.url;
-        const params = new URLSearchParams(url.split('#')[1]);
+        const fragment = url.split('#')[1];
+        if (!fragment) throw new Error('Đăng nhập Google thất bại — không nhận được token');
+        const params = new URLSearchParams(fragment);
         const accessToken = params.get('access_token');
         const refreshToken = params.get('refresh_token');
 

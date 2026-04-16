@@ -1,4 +1,4 @@
-# Frontend Review — Fair Pay (SplitVN)
+# Frontend Review — Fair Pay
 
 **Ngày đánh giá:** 16/04/2026
 **Stack:** React Native 0.83 · Expo 55 · HeroUI Native 1.0 · Uniwind (Tailwind v4) · Reanimated 4 · Zustand 5
