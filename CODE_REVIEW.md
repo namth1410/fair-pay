@@ -1,546 +1,593 @@
-# Báo cáo Review Code — SplitVN (Fair Pay)
+# Code Review — Fair Pay (SplitVN)
 
-**Codebase**: React Native (Expo 55) + Supabase + Zustand + HeroUI Native + TypeScript strict
-**Số file review**: 62 file TypeScript/TSX, ~7.353 dòng code
-**Tests**: 3 bộ test, 71 test cases — tất cả PASS
-**Ngày review**: 2026-04-16
-**Reviewer**: Claude Code (full review)
+> **Ngày review:** 2026-04-16
+> **Phạm vi:** Toàn bộ codebase (`src/` — 76 files TypeScript/TSX)
+> **Stack:** Expo 55 · React Native 0.83 · Supabase · Zustand 5 · HeroUI Native
+> **Trạng thái CI:** 74/74 tests pass · `tsc --noEmit` clean
 
 ---
 
-## Đánh giá tổng thể: **Yêu cầu chỉnh sửa (Request Changes)**
+## Mục lục
 
-Codebase có cấu trúc tốt với phân tầng rõ ràng (utils → services → stores → UI). Logic tài chính được test kỹ lưỡng — 71 test cases bao phủ các quy tắc nghiệp vụ về chia tiền, số dư, và quyết toán. Tuy nhiên, có nhiều vấn đề cần xử lý trước khi ship, đặc biệt về **bảo mật (thiếu kiểm tra quyền)**, **toàn vẹn dữ liệu (thiếu transaction)**, **hiệu năng (trùng lặp auth lookup, thiếu memoization)**, và **tổ chức code (component quá lớn)**.
+1. [Tổng quan & Đánh giá chung](#1-tổng-quan--đánh-giá-chung)
+2. [Kiến trúc & Thiết kế](#2-kiến-trúc--thiết-kế)
+3. [Bảo mật & Phân quyền](#3-bảo-mật--phân-quyền)
+4. [Logic nghiệp vụ & Tính đúng đắn](#4-logic-nghiệp-vụ--tính-đúng-đắn)
+5. [Service Layer](#5-service-layer)
+6. [Store Layer (Zustand)](#6-store-layer-zustand)
+7. [Component Layer](#7-component-layer)
+8. [Screen / Routing](#8-screen--routing)
+9. [Hiệu năng](#9-hiệu-năng)
+10. [Test Coverage](#10-test-coverage)
+11. [Bảng điểm tổng hợp](#11-bảng-điểm-tổng-hợp)
+12. [Danh sách hành động ưu tiên](#12-danh-sách-hành-động-ưu-tiên)
+
+---
+
+## 1. Tổng quan & Đánh giá chung
+
+Fair Pay là một ứng dụng chia tiền nhóm được thiết kế tốt với kiến trúc phân tầng rõ ràng: **Services → Stores → Components**. Business logic core (balance, split, settlement) được tách thành pure functions có test coverage cao. Codebase tuân thủ phần lớn quy tắc trong CLAUDE.md.
 
 **Điểm mạnh nổi bật:**
-- Hàm thuần (`computeBalances`, `splitEqual`, `calculateSettlements`) được dùng chung giữa test và production
-- Soft delete nhất quán (`deleted_at`, `left_at`)
-- Auth token lưu trong SecureStore (không phải AsyncStorage)
-- Thuật toán quyết toán Greedy xử lý làm tròn chính xác với unrounded tracking
-- Audit log lỗi không làm hỏng luồng chính
+- 🎉 `[praise]` Pure functions cho tính toán tài chính — testable, không side-effect
+- 🎉 `[praise]` Auth helper cache 30s giảm round-trip hiệu quả
+- 🎉 `[praise]` Audit logging tách biệt, failure-safe (không break main flow)
+- 🎉 `[praise]` UI components tách nhỏ với React.memo, nhận data qua props
+- 🎉 `[praise]` Error mapping sang tiếng Việt thân thiện, không leak thông tin kỹ thuật
+- 🎉 `[praise]` Rollback pattern trong `createExpense` đảm bảo BR-02 invariant
+
+**Vấn đề cần xử lý:** 3 blocking, 6 important, 7 nit/suggestion
 
 ---
 
-## 1. BẢO MẬT
+## 2. Kiến trúc & Thiết kế
 
-### 1.1 `audit.service.ts` dùng `auth.id` thay vì `users.id` làm `actor_id`
+### 🎉 `[praise]` Phân tầng rõ ràng
 
-**Mức độ**: :red_circle: **[blocking]**
-**File**: [audit.service.ts:73-84](src/services/audit.service.ts#L73-L84)
-
-Hàm `logAction` ghi `user.id` (Supabase auth UUID) vào trường `actor_id`, nhưng FK `audit_logs.actor_id` tham chiếu đến bảng `users(id)` — là user ID cấp ứng dụng. Mọi service khác đều sử dụng `getAuthUserId()` để chuyển đổi `auth_id → users.id`, nhưng audit bỏ qua bước này.
-
-**Hậu quả**:
-- Ràng buộc FK thất bại (audit được bọc trong `try/catch` nên lỗi bị nuốt im lặng)
-- `fetchAuditLogs` làm giàu tên actor bằng cách tra `users.id`, nên tất cả log hiện "Ẩn danh"
-- Toàn bộ lịch sử audit hiện tại vô nghĩa
-
-**Gợi ý sửa**:
-```ts
-// Thay vì:
-const { data: { user } } = await supabase.auth.getUser();
-actor_id: user.id, // ← auth UUID
-
-// Dùng:
-const userId = await getAuthUserId(); // ← app user ID
-if (!userId) return;
-actor_id: userId,
+```
+UI (screens/components) → Stores (Zustand) → Services (Supabase) → Utils (pure)
 ```
 
----
+- Services chỉ gọi Supabase và trả typed data
+- Stores gọi services và quản lý state
+- Utils là hàm thuần, không phụ thuộc runtime
+- Components nhận data qua props, không gọi store trực tiếp (trừ common/)
 
-### 1.2 Không kiểm tra quyền trong các hàm quản lý nhóm
+### 🎉 `[praise]` Theme system
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [group.service.ts](src/services/group.service.ts)
+`useAppTheme()` là single hook trả về `{ isDark, ...colors }`. Mọi component dùng nhất quán, không ai dùng `useIsDark()` (deprecated). Ternary `scheme === 'dark' ? X : Y` thay vì dùng `Appearance.getColorScheme()` làm key — đúng theo CLAUDE.md.
 
-Nhiều hàm quan trọng không kiểm tra caller có quyền thực hiện hành động không:
+### 💡 `[suggestion]` Barrel exports
 
-| Hàm | Dòng | Vấn đề |
-|-----|------|--------|
-| `approveJoinRequest()` | 205 | Không kiểm tra caller là owner/admin |
-| `rejectJoinRequest()` | 268 | Không kiểm tra caller là owner/admin |
-| `updateMemberRole()` | 329 | Không kiểm tra caller là owner |
-| `removeMember()` | 366 | Không kiểm tra quyền, không chặn owner tự xóa chính mình |
-| `updateGroup()` | 376 | Không kiểm tra caller là admin/owner |
-| `deleteGroup()` | 389 | Không kiểm tra caller là owner |
-| `fetchPendingJoinRequests()` | 190 | Bất kỳ user nào cũng xem được |
-
-Nếu Supabase RLS cấu hình sai hoặc bị tắt, bất kỳ user nào cũng có thể duyệt request, xóa thành viên, xóa nhóm của người khác.
-
-**Gợi ý**: Thêm guard kiểm tra role ở đầu mỗi hàm, hoặc ghi chú rõ ràng là phụ thuộc hoàn toàn vào RLS + review RLS policies.
+`src/components/ui/index.ts` export tất cả UI components — thuận tiện cho import. Tuy nhiên `src/services/` và `src/utils/` chưa có barrel file. Nên thêm nếu muốn nhất quán, nhưng không bắt buộc vì mỗi file đủ nhỏ.
 
 ---
 
-### 1.3 `fetchMyGroups` hiện cả nhóm mà user đã rời
+## 3. Bảo mật & Phân quyền
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [group.service.ts:56-59](src/services/group.service.ts#L56-L59)
+### 🔴 `[blocking]` SEC-01: Thiếu `assertRole()` trong trip.service.ts
 
-```ts
-const { data: memberships } = await supabase
-  .from('group_members')
-  .select('group_id')
-  .eq('user_id', userId);
-  // ← thiếu: .is('left_at', null)
+**File:** `src/services/trip.service.ts` — `createTrip()` (L32), `closeTrip()` (L54), `reopenTrip()` (L64)
+
+CLAUDE.md quy định: _"Mọi hàm service thay đổi dữ liệu nhóm PHẢI gọi `assertRole()` ở đầu hàm"_. Cả 3 hàm đều thiếu kiểm tra quyền. Bất kỳ authenticated user nào có `groupId` đều có thể tạo/đóng/mở trip.
+
+```typescript
+// trip.service.ts — hiện tại
+export async function createTrip(groupId: string, name: string, ...) {
+  // ❌ Không có assertRole()
+  const userId = await getAuthUserId();
+  ...
+}
+
+// Nên sửa
+export async function createTrip(groupId: string, name: string, ...) {
+  await assertRole(groupId, ['owner', 'admin']); // ✅
+  const userId = await getAuthUserId();
+  ...
+}
 ```
 
-User đã rời nhóm vẫn thấy nhóm đó trong danh sách của mình.
+**Ảnh hưởng:** Member thường có thể tạo/đóng/mở lại trip mà không cần quyền admin.
 
----
+> **Lưu ý:** RLS trên Supabase có thể đã chặn ở tầng database, nhưng defense-in-depth yêu cầu kiểm tra ở cả application layer.
 
-### 1.4 `fetchMyGroups` đếm cả thành viên đã rời nhóm
+### 🔴 `[blocking]` SEC-02: Thiếu `assertRole()` trong expense.service.ts và payment.service.ts
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [group.service.ts:77-81](src/services/group.service.ts#L77-L81)
+**Files:**
+- `src/services/expense.service.ts` — `deleteExpense()` (L114)
+- `src/services/payment.service.ts` — `deletePayment()` (L82)
 
-```ts
-const { data: counts } = await supabase
-  .from('group_members')
-  .select('group_id')
-  .in('group_id', groupIds);
-  // ← thiếu: .is('left_at', null)
+Hai hàm delete chỉ cần `expenseId`/`paymentId` — không kiểm tra caller có thuộc nhóm không, có quyền xóa không. Bất kỳ authenticated user nào biết ID đều có thể soft-delete.
+
+```typescript
+// Hiện tại — không kiểm tra quyền
+export async function deleteExpense(expenseId: string): Promise<void> {
+  const { error } = await supabase
+    .from('expenses')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', expenseId);
+  if (error) throw error;
+}
 ```
 
-Số thành viên hiển thị trên màn hình chính bao gồm cả người đã rời nhóm.
+**Đề xuất:** Fetch expense trước, lấy `group_id`, rồi `assertRole(groupId, ['owner', 'admin'])`.
 
----
+### 🟡 `[important]` SEC-03: Google OAuth token parsing fragile
 
-### 1.5 Không validate biến môi trường
+**File:** `src/stores/auth.store.ts` (L100-114)
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [constants.ts:6-7](src/config/constants.ts#L6-L7)
-
-```ts
-export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+```typescript
+const params = new URLSearchParams(url.split('#')[1]);
+const accessToken = params.get('access_token');
+const refreshToken = params.get('refresh_token');
 ```
 
-Nếu env vars không được set, app sẽ tạo Supabase client với URL rỗng → thất bại im lặng tại runtime với lỗi 401/network không rõ nguyên nhân. Cần throw error sớm nếu thiếu env vars bắt buộc.
+Nếu URL redirect không chứa fragment `#` (ví dụ error redirect, hoặc deep link format thay đổi), `url.split('#')[1]` trả về `undefined`, `URLSearchParams(undefined)` sẽ tạo empty params → silent failure, user không nhận được session mà không có error message.
 
----
-
-### 1.6 `SecureStore` adapter không có error handling
-
-**Mức độ**: :green_circle: **[nit]**
-**File**: [supabase.ts:6-16](src/config/supabase.ts#L6-L16)
-
-`ExpoSecureStoreAdapter` không bọc try/catch. Nếu SecureStore throw (VD: thiết bị không hỗ trợ), app crash. Nên wrap trong try/catch và fallback an toàn.
-
----
-
-### 1.7 Không validate input trong các hàm service
-
-**Mức độ**: :yellow_circle: **[important]**
-
-Các hàm service không validate độ dài/nội dung input:
-
-| Hàm | Input thiếu validate |
-|-----|---------------------|
-| `createGroup()` | Tên nhóm (độ dài, ký tự đặc biệt) |
-| `createTrip()` | Tên chuyến (độ dài) |
-| `updateDisplayName()` | Chỉ check empty, không check độ dài max |
-| `createPayment()` | Không check số tiền âm hoặc = 0 |
-| `createExpense()` | Không check số tiền âm |
-| `updateFcmToken()` | Không check format token |
-
----
-
-## 2. LOGIC VÀ TÍNH ĐÚNG ĐẮN
-
-### 2.1 `createExpense` — expense và splits không phải atomic
-
-**Mức độ**: :red_circle: **[blocking]**
-**File**: [expense.service.ts:66-96](src/services/expense.service.ts#L66-L96)
-
-Expense và splits được insert bằng 2 query riêng biệt:
-
-```ts
-// Query 1: Insert expense
-const { data: expense } = await supabase.from('expenses').insert({...});
-
-// Query 2: Insert splits (có thể thất bại)
-const { error: splitErr } = await supabase.from('expense_splits').insert(splitRows);
+**Đề xuất:** Thêm validation:
+```typescript
+const fragment = url.split('#')[1];
+if (!fragment) throw new Error('Đăng nhập Google thất bại — không nhận được token');
+const params = new URLSearchParams(fragment);
 ```
 
-Nếu query 2 thất bại, sẽ tồn tại expense không có splits — vi phạm BR-02 (tổng splits = tổng số tiền). App hiện tại throw error nhưng không rollback expense đã insert.
+### 🟢 `[nit]` SEC-04: `__DEV__` check trong production build
 
-**Gợi ý**: Dùng Supabase RPC/database function để gọi trong 1 transaction, hoặc thêm rollback logic:
-```ts
+**File:** `src/services/user.service.ts` (L38)
+
+```typescript
+if (error && __DEV__) {
+  console.warn('[fetchCurrentUser] users table query failed:', error.message);
+}
+```
+
+Không gây lỗi nhưng lỗi bị nuốt hoàn toàn trong production. Nên log qua crash reporting service (nếu có) thay vì chỉ console.warn trong dev.
+
+---
+
+## 4. Logic nghiệp vụ & Tính đúng đắn
+
+### 🎉 `[praise]` Thuật toán tài chính chính xác
+
+- `computeBalances()` — Σ balance luôn = 0, verified bởi 15+ test cases (TC-05)
+- `splitEqual()` — Round 1000đ, last person absorbs remainder, fallback 1đ cho small amounts
+- `splitByRatio()` — Clamp `Math.max(0, remaining)` ngăn negative splits
+- `calculateSettlements()` — Greedy ≤ N-1 transactions, adjustment cho rounding diff
+
+### 🟡 `[important]` BIZ-01: `splitByRatio` clamp có thể vi phạm BR-02
+
+**File:** `src/utils/split.ts` (L203)
+
+```typescript
+splits.push({ memberId: member.memberId, amount: Math.max(0, remaining) });
+```
+
+Khi nhiều members round UP, `remaining` có thể âm → clamp về 0 → **tổng splits < total amount**. Điều này vi phạm BR-02 (_"total splits must equal expense amount"_).
+
+**Kịch bản:** 7000đ chia ratio [1,1,1,1,1,1,1] — mỗi người round lên 1000đ = 6000đ đã phân phối, remaining = 1000đ → OK trong trường hợp này. Nhưng với ratio [3,3,3,3,3,3,1] / 10000đ, accumulated rounding có thể vượt tolerance.
+
+**Mức độ:** Thực tế khó xảy ra vì `validateSplits()` được gọi trước `createExpense()` — form sẽ reject splits không hợp lệ. Nhưng hàm `splitByRatio` đơn lẻ không đảm bảo invariant.
+
+**Đề xuất:** Thêm test case cho edge case này hoặc điều chỉnh rounding strategy (round DOWN thay vì NEAREST cho non-last members).
+
+### 🟡 `[important]` BIZ-02: Settlement adjustment bỏ qua nếu diff > TOLERANCE
+
+**File:** `src/utils/settlement.ts` (L70)
+
+```typescript
+if (diff !== 0 && Math.abs(diff) <= TOLERANCE) {
+  const last = transactions[transactions.length - 1]!;
+  const adjusted = last.amount + diff;
+  if (adjusted > 0) last.amount = adjusted;
+}
+```
+
+Nếu `|diff| > 1000đ` (ví dụ 10+ người với nhiều khoản nhỏ), adjustment bị bỏ qua hoàn toàn → total settlement ≠ total debt. Settlement chỉ là "gợi ý" (BR-07), nhưng sai lệch lớn gây mất tin tưởng.
+
+**Đề xuất:** Log warning khi `|diff| > TOLERANCE`, hoặc phân bổ diff cho nhiều transactions thay vì chỉ transaction cuối.
+
+### 🟢 `[nit]` BIZ-03: `computeBalances` dùng `balanceMap[m.id] || 0`
+
+**File:** `src/utils/balance.ts` (L77)
+
+`|| 0` sẽ thay thế cả giá trị `0` hợp lệ bằng `0` (không sai), nhưng nếu map có member với balance `NaN` hoặc `undefined` do lỗi upstream, `|| 0` sẽ mask lỗi thay vì fail fast. Dùng `?? 0` chính xác hơn về semantic.
+
+---
+
+## 5. Service Layer
+
+### 🎉 `[praise]` Rollback pattern trong expense.service.ts
+
+```typescript
+// L100-108
+const { error: splitErr } = await supabase
+  .from('expense_splits').insert(splitRows);
+
 if (splitErr) {
   await supabase.from('expenses').delete().eq('id', expense.id);
   throw splitErr;
 }
 ```
 
----
+Đảm bảo BR-02: không bao giờ có expense orphan không có splits.
 
-### 2.2 `splitByRatio` — người cuối có thể nhận số tiền âm
+### 🟡 `[important]` SVC-01: `calculateBalances` thiếu `left_at` filter
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [split.ts:196-210](src/utils/split.ts#L196-L210)
+**File:** `src/services/expense.service.ts` (L157-160)
 
-Khi làm tròn đẩy các thành viên trước vượt quá phần công bằng, `remaining` có thể âm, gây split âm cho người cuối. Xảy ra khi các ratio chênh lệch lớn và total nhỏ.
-
-VD: `total = 10000, ratios = [9, 1, 1, 1]` → sum = 12
-- Người 1: round(10000*9/12 / 1000)*1000 = 8000
-- Người 2: round(10000*1/12 / 1000)*1000 = 1000
-- Người 3: round(10000*1/12 / 1000)*1000 = 1000
-- remaining = 10000 - 8000 - 1000 - 1000 = 0 (OK trong trường hợp này)
-
-Nhưng VD khác: khi n lớn hơn thì làm tròn có thể tích lũy. Cần thêm assert `remaining >= 0`.
-
----
-
-### 2.3 `calculateSettlements` — adjustment logic đọc từ mảng gốc
-
-**Mức độ**: :green_circle: **[nit]**
-**File**: [settlement.ts:59-65](src/utils/settlement.ts#L59-L65)
-
-Phần điều chỉnh làm tròn đọc lại `balances` gốc để tính `totalDebt`. Vì hàm tạo bản sao nông với `{ ...b }`, mảng gốc không bị thay đổi — logic đúng. Tuy nhiên, ý định dễ vỡ vô tình — nếu ai refactor dùng trực tiếp object gốc, sẽ hỏng mà không báo lỗi.
-
-**Gợi ý**: Thêm comment giải thích tại sao đọc lại `balances` là an toàn, hoặc lưu `totalDebt` trước vòng lặp.
-
----
-
-### 2.4 `user.service.ts` — double write không atomic
-
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [user.service.ts](src/services/user.service.ts)
-
-`updateDisplayName()` cập nhật cả bảng `users` và Supabase auth metadata bằng 2 query riêng. Nếu 1 thành công và 1 thất bại, dữ liệu bị lệch pha giữa hai nguồn.
-
----
-
-## 3. HIỆU NĂNG
-
-### 3.1 `getAuthUserId()` trùng lặp ở 4 service — 2 Supabase call mỗi lần
-
-**Mức độ**: :yellow_circle: **[important]**
-**File**: Xuất hiện tại 4 file:
-- [group.service.ts:502-515](src/services/group.service.ts#L502-L515)
-- [expense.service.ts:179-192](src/services/expense.service.ts#L179-L192)
-- [payment.service.ts:89-102](src/services/payment.service.ts#L89-L102)
-- [trip.service.ts:68-81](src/services/trip.service.ts#L68-L81)
-
-Mỗi lần gọi mất 2 round-trip tới Supabase (`auth.getUser()` + tra bảng `users`). Mỗi service call (tạo expense, tạo payment...) đều tốn thêm 2 request không cần thiết.
-
-**Gợi ý**: Trích xuất ra `src/services/auth.helper.ts` và xem xét cache theo session:
-```ts
-let cachedUserId: string | null = null;
-export async function getAuthUserId(): Promise<string | null> {
-  if (cachedUserId) return cachedUserId;
-  // ... fetch logic
-  cachedUserId = data?.id ?? null;
-  return cachedUserId;
-}
+```typescript
+const { data: members } = await supabase
+  .from('group_members')
+  .select('id, display_name')
+  .eq('group_id', tripRes.data.group_id);
+// ❌ Thiếu .is('left_at', null)
 ```
 
----
+CLAUDE.md: _"Mọi query liên quan `group_members` PHẢI có `.is('left_at', null)` trừ khi cần hiển thị lịch sử."_
 
-### 3.2 `fetchUserBalanceSummary` — lọc O(trips * expenses)
+Ở đây có thể **cố ý** include members đã rời (để balance của họ vẫn được tính), nhưng cần comment giải thích rõ tại sao bỏ filter. So sánh: `fetchUserBalanceSummary()` (group.service.ts L464) **có** `.is('left_at', null)` → inconsistent behavior giữa hai hàm cùng tính balance.
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [group.service.ts:464-467](src/services/group.service.ts#L464-L467)
+**Ảnh hưởng:** Nếu member A rời nhóm nhưng có expense, `calculateBalances` vẫn tính balance cho A (đúng), nhưng `fetchUserBalanceSummary` thì không (sai). Kết quả: số dư hiển thị ở Trip detail khác với số dư ở Home screen.
 
-Trong vòng lặp `for (const trip of trips)`, expenses và payments được lọc bằng `.filter()` cho mỗi trip. Với nhiều nhóm và nhiều chuyến, độ phức tạp là O(T * E).
+### 🟡 `[important]` SVC-02: `user.service.ts` dùng `auth.id` thay vì `users.id`
 
-**Gợi ý**: Nhóm trước theo `trip_id` vào `Map`:
-```ts
-const expensesByTrip = new Map<string, typeof expenses>();
-expenses.forEach(e => {
-  const list = expensesByTrip.get(e.trip_id) || [];
-  list.push(e);
-  expensesByTrip.set(e.trip_id, list);
-});
+**File:** `src/services/user.service.ts` (L51)
+
+```typescript
+return {
+  id: user.id,  // ← Supabase auth UUID
+  ...
+};
 ```
 
+`fetchCurrentUser()` trả về `id: user.id` — đây là **auth UUID**, không phải **app-level user ID** (từ bảng `users`). Nếu caller dùng `id` này để so sánh với `group_members.user_id` (app-level), kết quả sẽ sai.
+
+Hiện tại chỉ `SettingsSheet` gọi hàm này và dùng `display_name`/`email` nên chưa gây bug trực tiếp. Nhưng nếu có ai dùng `.id` từ kết quả, đây sẽ là bug khó debug.
+
+### 💡 `[suggestion]` SVC-03: `assertRole` nên là shared helper
+
+`assertRole()` hiện chỉ là private function trong `group.service.ts`. Các service khác (trip, expense, payment) nếu cần dùng sẽ phải import hoặc copy. Nên export và đặt trong `auth.helper.ts` hoặc tạo `authorization.helper.ts`.
+
 ---
 
-### 3.3 `calculateBalances` trong expense.service — 4 query tuần tự
+## 6. Store Layer (Zustand)
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [expense.service.ts:119-151](src/services/expense.service.ts#L119-L151)
+### 🎉 `[praise]` Thiết kế store tốt
 
-4 query Supabase chạy tuần tự (expenses, payments, trip, members). 3 query đầu có thể chạy song song với `Promise.all()` sau khi có `tripId`.
+- 4 domain stores phân tách rõ ràng
+- `get()` pattern cho cascading updates sau mutation
+- `Promise.all()` cho queries độc lập
+- Audit logging integration trong trip.store
 
----
+### 🔴 `[blocking]` STORE-01: Unhandled promise rejection trong confirm callbacks
 
-### 3.4 `useAppTheme()` gọi `useUniwind()` hai lần
+**File:** `src/app/(main)/groups/[id].tsx` (L123, L134, L145, L157, L167)
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [useAppTheme.ts](src/hooks/useAppTheme.ts)
-
-`useAppTheme()` gọi `useIsDark()` → gọi `useUniwind()`. Mỗi component dùng cả 2 hook sẽ gọi `useUniwind()` 2 lần mỗi render.
-
-**Gợi ý**: Lưu theme 1 lần:
-```ts
-export function useAppTheme() {
-  const { theme } = useUniwind();
-  return theme === 'dark' ? colors.dark : colors.light;
-}
+```typescript
+onConfirm: () => changeRole(member.id, newRole, id),
+onConfirm: () => kickMember(member.id, id!),
+onConfirm: () => approveRequest(req.id, id!),
+onConfirm: () => rejectRequest(req.id, id!),
+onConfirm: async () => {
+  await removeGroup(id!);
+  router.back();
+},
 ```
 
----
+Các callbacks này gọi async store methods nhưng **không có try/catch**. Nếu service throw (network error, RLS violation), đây là unhandled promise rejection → crash trên React Native production.
 
-### 3.5 Component quá lớn — thiếu memoization
+Chỉ `removeGroup` (L167) dùng `async/await` nhưng vẫn thiếu try/catch. Các callback khác return Promise nhưng không await → rejection bị nuốt.
 
-**Mức độ**: :yellow_circle: **[important]**
-**File**:
-- [trips/[id].tsx](src/app/(main)/trips/[id].tsx) — ~572 dòng
-- [groups/[id].tsx](src/app/(main)/groups/[id].tsx) — ~489 dòng
-
-Các vấn đề chung:
-- **FlatList `renderItem`** dùng inline arrow functions — tạo lại mỗi render
-- **AnimatedEntrance** wrap mỗi item không có memoization
-- **Split calculation** (`splitByRatio()`) gọi trong JSX inline cho mỗi dòng thành viên
-- **Style objects** tạo inline mỗi render (VD: `{ backgroundColor: c.background }`)
-- **Helper functions** (`getMemberName`, `renderTrip`, `renderMember`) là inline arrow
-- **Không có `useMemo`/`useCallback`** bất kỳ đâu
-
-**Gợi ý**: Tách các tab thành component riêng, dùng `React.memo` + `useCallback` cho FlatList items.
-
----
-
-## 4. AN TOÀN KIỂU DỮ LIỆU (TYPE SAFETY)
-
-### 4.1 `GroupMemberRow` thiếu trường `left_at`
-
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [database.types.ts](src/types/database.types.ts)
-
-`GroupMemberRow` không có `left_at`, nhưng schema và service code đều sử dụng. Interface `GroupMember` trong `group.service.ts` đã có `left_at` — lệch pha giữa types file và thực tế.
-
----
-
-### 4.2 Sử dụng quá nhiều `any` trong services
-
-**Mức độ**: :yellow_circle: **[important]**
-
-| File | Số lượng `any` | Vị trí |
-|------|---------------|--------|
-| [group.service.ts](src/services/group.service.ts) | 8 | Dòng 465-484 (filter/map callbacks) |
-| [expense.service.ts](src/services/expense.service.ts) | 3 | Dòng 154, 157, 163 |
-| [audit.service.ts](src/services/audit.service.ts) | 4 | Dòng 10-11 (interface), 43, 52 |
-
-**Gợi ý**: Dùng Supabase generated types hoặc định nghĩa interface rõ ràng cho Supabase responses.
-
----
-
-### 4.3 `group.store.ts` — giả định `members[0]` tồn tại
-
-**Mức độ**: :yellow_circle: **[important]**
-**File**: [group.store.ts:104-107](src/stores/group.store.ts#L104-L107)
-
-```ts
-changeRole: async (memberId, role) => {
-  await updateMemberRole(memberId, role);
-  const members = get().currentGroupMembers;
-  if (members.length > 0) {
-    await get().loadMembers(members[0]!.group_id); // ← non-null assertion
+**Đề xuất:** Wrap mỗi callback trong try/catch với toast error:
+```typescript
+onConfirm: async () => {
+  try {
+    await changeRole(member.id, newRole, id);
+    toast.show({ variant: 'success', label: 'Đã thay đổi vai trò' });
+  } catch (e) {
+    toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
   }
+},
+```
+
+### 🟢 `[nit]` STORE-02: `loadBalances` gọi 2 lần sau mỗi mutation
+
+**File:** `src/stores/trip.store.ts`
+
+Sau `addExpense` (L132-133):
+```typescript
+await get().loadExpenses(params.tripId);
+await get().loadBalances(params.tripId);  // loadBalances đã fetch expenses lại
+```
+
+`loadBalances → calculateBalances` fetch expenses từ Supabase một lần nữa. Tổng cộng: 2 lần fetch expenses cho mỗi mutation. Chấp nhận được cho simplicity nhưng có thể optimize bằng cách truyền cached expenses vào `calculateBalances`.
+
+---
+
+## 7. Component Layer
+
+### 🎉 `[praise]` React.memo áp dụng đúng chỗ
+
+Tất cả tab components (BalancesTab, ExpensesTab, SettlementTab, HistoryTab, GroupSettingsTab, MembersTab, TripsTab) đều dùng `React.memo` và nhận data qua props — đúng theo CLAUDE.md.
+
+### 🎉 `[praise]` ExpenseFormSheet — validation kỹ lưỡng
+
+- Step 1: validate title, amount (BR-01), paidBy
+- Step 2: validate splits (BR-02) trước khi submit
+- Ratio/custom split preview real-time
+- Error handling với `getErrorMessage()`
+- Busy state prevent double-submit
+
+### 🟡 `[important]` COMP-01: ErrorBoundary hook trong try/catch
+
+**File:** `src/components/common/ErrorBoundary.tsx` (L32-39)
+
+```typescript
+function ErrorFallback({ error, onReset }: ErrorFallbackProps) {
+  let c: ReturnType<typeof useAppTheme> | null = null;
+  try {
+    c = useAppTheme();
+  } catch {
+    // Theme context not available
+  }
+```
+
+Hook `useAppTheme()` được gọi bên trong try/catch. Technically, hook **vẫn được gọi mỗi render** (không vi phạm Rules of Hooks), nhưng nếu hook throw ở lần render thứ 2 mà không throw ở lần render thứ 1, React có thể detect inconsistency.
+
+**Rủi ro:** Thấp — vì `useAppTheme` chỉ gọi `useUniwind()` và spread colors, ít khi throw. Fallback colors đã handle đúng. Nhưng pattern này không idiomatic.
+
+**Đề xuất:** Tách thành 2 components:
+```typescript
+function ErrorFallbackWithTheme(props) {
+  const c = useAppTheme();
+  return <ErrorFallbackInner {...props} colors={c} />;
+}
+
+function ErrorFallback(props) {
+  return (
+    <ErrorBoundaryForTheme fallback={<MinimalFallback {...props} />}>
+      <ErrorFallbackWithTheme {...props} />
+    </ErrorBoundaryForTheme>
+  );
 }
 ```
 
-Dùng `!` assertion nhưng điều kiện `length > 0` đảm bảo an toàn. Tuy nhiên, nên truyền `groupId` trực tiếp từ caller để tránh phụ thuộc vào state:
+### 🟡 `[important]` COMP-02: ExpenseFormSheet ratio preview recalculates mỗi render
 
-```ts
-changeRole: async (memberId, role, groupId) => {
-  await updateMemberRole(memberId, role);
-  await get().loadMembers(groupId);
+**File:** `src/components/trip/ExpenseFormSheet.tsx` (L296-305)
+
+```typescript
+value={
+  splitByRatio(
+    amount,
+    members.map((mm) => ({
+      memberId: mm.id,
+      ratio: parseInt(ratios[mm.id] || '1', 10) || 1,
+    })),
+  ).find((s) => s.memberId === m.id)?.amount ?? 0
 }
 ```
 
----
+`splitByRatio()` được gọi **N lần** (1 lần cho mỗi member) trong mỗi render. Với 10 members, đó là 10 lần chạy full split algorithm mỗi keystroke.
 
-### 4.4 `trip.store.ts` — `result?.id || 'unknown'` mất expense ID
-
-**Mức độ**: :green_circle: **[nit]**
-**File**: [trip.store.ts:129](src/stores/trip.store.ts#L129)
-
-```ts
-targetId: result?.id || 'unknown',
+**Đề xuất:** Memoize kết quả:
+```typescript
+const ratioPreview = useMemo(
+  () => splitByRatio(amount, members.map(mm => ({
+    memberId: mm.id,
+    ratio: parseInt(ratios[mm.id] || '1', 10) || 1,
+  }))),
+  [amount, members, ratios]
+);
+// Trong JSX:
+value={ratioPreview.find(s => s.memberId === m.id)?.amount ?? 0}
 ```
 
-Nếu `createExpense` trả về null (không nên xảy ra vì sẽ throw trước), audit log ghi `'unknown'` — không trace được. Nên dùng optional chaining hoặc throw nếu thiếu ID.
+### 🟢 `[nit]` COMP-03: `SettlementTab` dùng array index làm key
+
+**File:** `src/components/trip/SettlementTab.tsx` (L98)
+
+```typescript
+{settlements.map((s, i) => (
+  <AppCard key={i} ... />
+))}
+```
+
+Settlement items có thể thay đổi thứ tự khi balance thay đổi. Dùng `key={`${s.from}-${s.to}`}` sẽ giúp React reconcile đúng hơn.
+
+### 🟢 `[nit]` COMP-04: ConfirmDialog `onDeletePayment` không await
+
+**File:** `src/components/trip/SettlementTab.tsx` (L174-176)
+
+```typescript
+onConfirm={() => {
+  if (deleteTarget) onDeletePayment(deleteTarget.id, tripId);
+}}
+```
+
+`onDeletePayment` là async nhưng không được await → unhandled rejection nếu throw. Tương tự vấn đề STORE-01.
 
 ---
 
-### 4.5 `ExpenseRow.paid_by` — comment sai
+## 8. Screen / Routing
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [database.types.ts](src/types/database.types.ts)
+### 🎉 `[praise]` AuthGate pattern
 
-Comment ghi "JSON array of member IDs" nhưng thực tế là single member ID (string). Service code xác nhận: `paid_by: params.paidByMemberId`. Comment gây nhầm lẫn.
+`_layout.tsx` implement auth guard đúng cách: check `isInitialized` trước khi redirect, `LoadingScreen` trong khi chờ, redirect loop prevention.
 
----
+### 🟡 `[important]` SCREEN-01: Role lookup query không hiệu quả
 
-## 5. GIAO DIỆN NGƯỜI DÙNG (UI/UX)
+**File:** `src/app/(main)/groups/[id].tsx` (L71-82)
 
-### 5.1 `ErrorBoundary` hardcode dark theme
+```typescript
+const findMyRole = async () => {
+  const { data } = await supabase
+    .from('users')
+    .select('id')
+    .eq('auth_id', user.id)
+    .single();
+  if (data) {
+    const me = currentGroupMembers.find((m) => m.user_id === data.id);
+    if (me) setMyRole(me.role as Role);
+  }
+};
+```
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [ErrorBoundary.tsx](src/components/common/ErrorBoundary.tsx)
+Mỗi lần `currentGroupMembers` thay đổi, screen query Supabase `users` table để translate auth UUID → app ID. Nên dùng `getAuthUserId()` từ `auth.helper.ts` (đã có 30s cache):
 
-Background hardcode `#0F172A` (tối). User ở light mode sẽ thấy màn hình lỗi tối đột ngột. Class component không dùng hooks được — có thể dùng `Appearance.getColorScheme()`.
+```typescript
+import { getAuthUserId } from '../../../services/auth.helper';
 
----
+const findMyRole = async () => {
+  const userId = await getAuthUserId(); // ← cached, no extra query
+  if (userId) {
+    const me = currentGroupMembers.find((m) => m.user_id === userId);
+    if (me) setMyRole(me.role as Role);
+  }
+};
+```
 
-### 5.2 Thiếu accessibility labels
+### 🟢 `[nit]` SCREEN-02: Non-null assertions `tripId!`
 
-**Mức độ**: :yellow_circle: **[important]**
+**File:** `src/app/(main)/trips/[id].tsx` (L76, 77, 98)
 
-| Màn hình | Vấn đề |
-|----------|--------|
-| [trips/[id].tsx](src/app/(main)/trips/[id].tsx) | TextInput cho split không có labels, chỉ có placeholder |
-| [login.tsx](src/app/(auth)/login.tsx) | Form fields không có `accessibilityLabel` |
-| [register.tsx](src/app/(auth)/register.tsx) | Không có email format validation, thiếu confirm password |
-| [groups/[id].tsx](src/app/(main)/groups/[id].tsx) | Hit slop không nhất quán giữa các button |
+```typescript
+tripId={tripId!}
+groupId={trip?.group_id || ''}
+```
 
-**Điểm tốt**: `OfflineBanner` có `accessibilityRole="alert"` và `accessibilityLiveRegion="polite"`.
+`useLocalSearchParams` có thể trả undefined. Dùng `!` assert nguy hiểm. Nên thêm early return:
+```typescript
+if (!tripId) return <EmptyState title="Không tìm thấy chuyến đi" />;
+```
 
----
+### 🟢 `[nit]` SCREEN-03: `fetchAuditLogs` catch trống
 
-### 5.3 Form validation yếu
+**File:** `src/app/(main)/trips/[id].tsx` (L49)
 
-**Mức độ**: :yellow_circle: **[important]**
+```typescript
+fetchAuditLogs(tripId).then(setAuditLogs).catch(() => {});
+```
 
-| Form | Thiếu |
-|------|-------|
-| Register | Không check email format (regex), không có confirm password |
-| Login | Chỉ check presence, không validate email format |
-| Create trip | Không check độ dài tên |
-| Create group | Không check độ dài tên |
-| Add expense | Không validate amount ở tầng UI (chỉ validate ở utils) |
-
----
-
-### 5.4 SettingsSheet — dark mode hoạt động với optimistic update
-
-**Mức độ**: :star: **[praise]**
-
-[SettingsSheet.tsx](src/components/common/SettingsSheet.tsx) implement dark mode toggle với **optimistic update** + **rollback on error** — UX rất tốt. Cho dù backend thất bại, theme vẫn được áp dụng local.
-
----
-
-## 6. ĐỘ BAO PHỦ TEST
-
-### 6.1 Những gì được test tốt :white_check_mark:
-
-| Module | Số tests | Bao phủ |
-|--------|----------|---------|
-| `split.ts` (equal + ratio) | ~40 | Kỹ lưỡng, bao gồm edge cases, explanation |
-| `balance.ts` | ~15 | Tất cả kịch bản nghiệp vụ từ spec |
-| `settlement.ts` | ~16 | Đầy đủ edge cases, tolerance, real scenarios |
-| Tích hợp (expense → balance → settlement → payment) | 2 | Luồng đầy đủ |
-
-### 6.2 Những gì còn thiếu :x:
-
-- `splitByRatio` với ratio âm hoặc bằng 0 — không có test
-- `splitByRatio` khi làm tròn gây số âm cho người cuối — không có test
-- `validateAmount` với số cực lớn (> `Number.MAX_SAFE_INTEGER`) — không có test
-- `calculateSettlements` adjustment logic với real rounding divergence — không có test
-- Tầng service chưa có test (cần mock Supabase)
-- Store actions chưa có test
-- Component/screen chưa có test
+Lỗi bị nuốt hoàn toàn. Nên ít nhất log:
+```typescript
+.catch((err) => console.warn('[Audit]', err));
+```
 
 ---
 
-## 7. KIẾN TRÚC
+## 9. Hiệu năng
 
-### 7.1 Quyết định tốt :star: [praise]
+### 🎉 `[praise]` Query optimization
 
-- **Hàm thuần** `computeBalances()` trong `utils/balance.ts` — dùng chung giữa test và production, tránh lệch pha
-- **Soft delete** nhất quán ở mọi nơi (`deleted_at`, `left_at`)
-- **SQLite WAL mode** + foreign keys enabled
-- **Supabase auth tokens** lưu trong SecureStore (bảo mật)
-- **Settlement algorithm** ghi rõ "chỉ là gợi ý" (BR-07)
-- **Audit log** thất bại không làm hỏng luồng chính (try/catch im lặng)
-- **Zustand stores** — nhẹ, ít boilerplate, tách biệt rõ giữa domain
-- **Phân tầng** utils → services → stores → UI rõ ràng
-- **TypeScript strict mode** với `noUncheckedIndexedAccess`, `noUnusedLocals`
-- **Promise.all** cho song song queries trong `fetchUserBalanceSummary`
+- `Promise.all()` cho queries độc lập (`fetchMyGroups`, `calculateBalances`, `fetchUserBalanceSummary`)
+- `Map` pre-index thay vì `.filter()` trong vòng lặp (`fetchUserBalanceSummary` L492-512)
+- WAL mode cho SQLite concurrent reads
+- Auth cache 30s giảm round-trip
 
-### 7.2 Điểm lo ngại
+### 💡 `[suggestion]` PERF-01: Batch data loading trong TripDetailScreen
 
-| Vấn đề | Chi tiết |
-|--------|----------|
-| **Sync queue không sử dụng** | Bảng `sync_queue` được tạo trong schema nhưng không gì đọc/ghi vào |
-| **`join_requests` chỉ trên Supabase** | Không có trong schema local (`src/db/schema.ts`) — offline sẽ không hoạt động |
-| **Không có centralized error handling** | Mỗi component tự bắt lỗi riêng, không có error logging/reporting |
-| **Không có error state trong stores** | Tất cả lỗi được throw, UI không có cách biết lỗi gì đã xảy ra |
-| **Component quá lớn** | `trips/[id].tsx` (572 dòng), `groups/[id].tsx` (489 dòng) — cần tách thành sub-components |
-| **Không có retry logic** | Network errors không được retry, không có timeout handling |
+**File:** `src/app/(main)/trips/[id].tsx` (L44-49)
 
----
+```typescript
+loadExpenses(tripId);
+loadPayments(tripId);
+loadBalances(tripId);
+fetchAuditLogs(tripId).then(setAuditLogs).catch(() => {});
+```
 
-## 8. DATABASE
+4 async calls fire cùng lúc (tốt — không sequential), nhưng `loadBalances` sẽ fetch expenses + payments lại từ Supabase (trùng với `loadExpenses` và `loadPayments`). Tổng cộng: expenses fetched 2 lần, payments fetched 2 lần.
 
-### 8.1 Thiếu indexes quan trọng
+**Đề xuất:** Refactor `loadBalances` nhận cached data thay vì self-fetch, hoặc merge `loadExpenses` + `loadPayments` + `loadBalances` thành 1 call.
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [schema.ts](src/db/schema.ts)
+### 💡 `[suggestion]` PERF-02: FlatList trong ScrollShadow
 
-| Index thiếu | Lý do cần thiết |
-|------------|-----------------|
-| `expense_splits.member_id` | Common join khi tính balance |
-| `audit_logs.actor_id` | Enrich tên actor trong fetchAuditLogs |
-| `payments.trip_id` nói riêng | Filter payments theo trip |
+**File:** `src/app/(main)/index.tsx` (L198-199)
 
-### 8.2 Migration framework — chưa có rollback
+```typescript
+<ScrollShadow LinearGradientComponent={LinearGradient}>
+  <FlatList data={groups} ... />
+</ScrollShadow>
+```
 
-**Mức độ**: :green_circle: **[nit]**
-**File**: [migrations.ts](src/db/migrations.ts)
-
-Migration array hiện tại rỗng (chưa cần). Nhưng framework không có:
-- Transaction wrapping (nếu migration thất bại giữa chừng, DB ở trạng thái không nhất quán)
-- Rollback capability
-- Data validation sau migration
+`FlatList` bên trong `ScrollShadow` (which wraps `ScrollView`) có thể gây "VirtualizedList inside ScrollView" warning. FlatList cần control own scrolling để virtualize properly.
 
 ---
 
-## Bảng điểm tổng hợp
+## 10. Test Coverage
 
-| Lĩnh vực | Điểm | Ghi chú |
-|----------|------|---------|
-| **Logic tài chính** | **A** | Làm tròn, BR-01/02 đều chắc chắn. 71 test cases. |
-| **Bảo mật** | **C** | Lỗ hổng phân quyền nghiêm trọng ở tầng service, actor_id sai trong audit |
-| **Toàn vẹn dữ liệu** | **B-** | Expense+splits không atomic, đếm thành viên lệch, double write không atomic |
-| **Hiệu năng** | **B-** | Trùng lặp auth lookup (8 round-trip/action), thiếu memoization UI, O(T*E) filtering |
-| **An toàn kiểu** | **B** | Types lệch với schema, 15+ chỗ dùng `any`, thiếu discriminated unions |
-| **Chất lượng test** | **A-** | 71 tests bao phủ tốt logic nghiệp vụ. Thiếu service/store/component tests. |
-| **UI/UX** | **B+** | Sạch sẽ, optimistic dark mode, nhưng thiếu accessibility và form validation |
-| **Kiến trúc** | **A-** | Phân tầng rõ, offline infra chưa dùng, component quá lớn |
-| **Tổng** | **B** | Nền tảng tốt, cần xử lý bảo mật và data integrity trước khi ship |
+### 🎉 `[praise]` Test architecture
 
----
+- 74 test cases cover all BR rules (BR-01 → BR-07) và TC scenarios (TC-01 → TC-05)
+- Tests import trực tiếp từ utils — **zero drift** giữa test và production code
+- Real-world scenario "Đà Lạt 5 người" test end-to-end flow
+- Integration tests: Expense → Balance → Settlement → Payment → Verified
 
-## Danh sách hành động ưu tiên
+### 🟡 `[important]` TEST-01: Thiếu test cho service layer
 
-### :red_circle: Blocking (phải sửa trước khi merge)
+Hiện tại chỉ test pure functions (utils). Service layer (7 files) không có unit test. Đặc biệt:
+- Authorization logic (`assertRole`) chưa được test
+- Rollback pattern (`createExpense` split failure) chưa được test
+- Race condition handling (`approveJoinRequest` duplicate key) chưa được test
 
-1. **Sửa `actor_id` trong audit** — [audit.service.ts:73-84](src/services/audit.service.ts#L73-L84) — dùng `getAuthUserId()` thay vì `user.id`
-2. **Làm expense+splits atomic** — [expense.service.ts:66-96](src/services/expense.service.ts#L66-L96) — dùng RPC hoặc rollback
+**Đề xuất:** Thêm integration tests với Supabase mock hoặc test database cho critical service functions.
 
-### :yellow_circle: Important (nên sửa trong sprint này)
+### 🟢 `[nit]` TEST-02: Chưa test `splitByRatio` với small amounts
 
-3. **Sửa `fetchMyGroups`** — [group.service.ts:56-59](src/services/group.service.ts#L56-L59) — lọc `left_at IS NULL` trong cả 2 query
-4. **Thêm kiểm tra quyền** — [group.service.ts](src/services/group.service.ts) — guard role trước approve/reject/remove/updateRole/delete
-5. **Trích xuất `getAuthUserId()` dùng chung** — 4 bản sao → 1 shared module với cache
-6. **Thêm `left_at` vào `GroupMemberRow`** — [database.types.ts](src/types/database.types.ts)
-7. **Validate input** — thêm độ dài/format check cho tên nhóm, tên chuyến, email, số tiền
-8. **Tách component lớn** — trips/[id].tsx và groups/[id].tsx thành sub-components với memoization
-9. **Validate env vars** — [constants.ts](src/config/constants.ts) — throw nếu thiếu `SUPABASE_URL` hoặc `SUPABASE_ANON_KEY`
-
-### :green_circle: Nit (nice to have)
-
-10. Thêm `assert remaining >= 0` trong `splitByRatio()`
-11. Nhóm expenses/payments vào Map trước khi loop trong `fetchUserBalanceSummary()`
-12. Thêm accessibility labels cho form inputs
-13. Fix `useAppTheme()` gọi `useUniwind()` 2 lần
-14. Thêm indexes cho `expense_splits.member_id`, `audit_logs.actor_id`
-15. Loại bỏ `any` casts trong services — thay bằng typed interfaces
+`splitEqual` có test cho small amounts (1000đ / 3 người), nhưng `splitByRatio` chưa có. Nên thêm: `splitByRatio(1000, [{id:'a', ratio:2}, {id:'b', ratio:1}])`.
 
 ---
 
-*Báo cáo được tạo bởi Claude Code — 2026-04-16*
+## 11. Bảng điểm tổng hợp
+
+| Tiêu chí | Điểm | Ghi chú |
+|---|---|---|
+| **Kiến trúc** | 9/10 | Phân tầng rõ, separation of concerns tốt |
+| **Bảo mật** | 6/10 | Thiếu assertRole ở trip/expense/payment service |
+| **Logic nghiệp vụ** | 8.5/10 | Thuật toán chính xác, edge case nhỏ ở ratio split |
+| **TypeScript** | 8/10 | Không dùng `:any`, typed interfaces đầy đủ. Vài chỗ dùng `as` cast |
+| **Component quality** | 8.5/10 | React.memo đúng chỗ, props-driven, accessibility labels |
+| **Error handling** | 7/10 | Service layer tốt, nhưng store/screen layer thiếu catch |
+| **Performance** | 8/10 | Parallel queries, Map indexing; trùng fetch ở balance |
+| **Test coverage** | 7.5/10 | Pure functions excellent; service layer chưa có test |
+| **CLAUDE.md compliance** | 8/10 | Đa số tuân thủ; vài quy tắc bị bỏ sót |
+| **Tổng** | **7.9/10** | Codebase chất lượng tốt, cần fix security gaps |
+
+---
+
+## 12. Danh sách hành động ưu tiên
+
+### 🔴 Phải sửa trước khi merge (Blocking)
+
+| # | Vấn đề | File | Effort |
+|---|---|---|---|
+| 1 | SEC-01: Thêm `assertRole()` vào `createTrip`, `closeTrip`, `reopenTrip` | `trip.service.ts` | Nhỏ |
+| 2 | SEC-02: Thêm authorization check vào `deleteExpense`, `deletePayment` | `expense.service.ts`, `payment.service.ts` | Nhỏ |
+| 3 | STORE-01: Wrap confirm callbacks trong try/catch với toast error | `groups/[id].tsx` | Nhỏ |
+
+### 🟡 Nên sửa (Important)
+
+| # | Vấn đề | File | Effort |
+|---|---|---|---|
+| 4 | SEC-03: Validate Google OAuth URL fragment | `auth.store.ts` | Nhỏ |
+| 5 | SVC-01: Fix `left_at` filter inconsistency giữa 2 balance functions | `expense.service.ts` + `group.service.ts` | Trung bình |
+| 6 | SVC-02: `fetchCurrentUser` trả auth UUID thay vì app user ID | `user.service.ts` | Nhỏ |
+| 7 | SCREEN-01: Dùng `getAuthUserId()` thay vì query trực tiếp | `groups/[id].tsx` | Nhỏ |
+| 8 | BIZ-01: Thêm test cho `splitByRatio` edge case + document clamp behavior | `split.ts` + `split.test.ts` | Nhỏ |
+| 9 | COMP-02: Memoize ratio preview trong ExpenseFormSheet | `ExpenseFormSheet.tsx` | Nhỏ |
+
+### 🟢 Nice to have (Nit / Suggestion)
+
+| # | Vấn đề | File | Effort |
+|---|---|---|---|
+| 10 | SCREEN-02: Thay `tripId!` bằng early return guard | `trips/[id].tsx` | Nhỏ |
+| 11 | SCREEN-03: Log audit fetch errors thay vì catch trống | `trips/[id].tsx` | Nhỏ |
+| 12 | COMP-03: Dùng composite key thay vì array index | `SettlementTab.tsx` | Nhỏ |
+| 13 | BIZ-03: Dùng `?? 0` thay vì `\|\| 0` trong balanceMap | `balance.ts` | Nhỏ |
+| 14 | SVC-03: Export `assertRole` thành shared helper | `group.service.ts` → `auth.helper.ts` | Trung bình |
+| 15 | TEST-01: Thêm service layer tests | Mới | Lớn |
+| 16 | PERF-01: Giảm duplicate fetch trong balance loading | `trip.store.ts` | Trung bình |
+
+---
+
+> **Kết luận:** Codebase có kiến trúc tốt và business logic chính xác. Ưu tiên sửa 3 vấn đề blocking (authorization gaps + unhandled rejections) — effort nhỏ nhưng impact lớn về bảo mật và stability.
