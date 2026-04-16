@@ -7,8 +7,7 @@ import {
   BeVietnamPro_700Bold,
   useFonts,
 } from '@expo-google-fonts/be-vietnam-pro';
-import { Slot, useRouter, useSegments } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+import { Slot, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
 import { useEffect } from 'react';
@@ -18,7 +17,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Uniwind } from 'uniwind';
 
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
-import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { initDatabase } from '../db/database';
@@ -44,12 +42,16 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
       router.replace('/(main)');
+    } else {
+      SplashScreen.hideAsync();
     }
   }, [session, isInitialized, segments]);
 
-  if (!isInitialized) {
-    return <LoadingScreen />;
-  }
+  if (!isInitialized) return null;
+
+  const inAuthGroup = segments[0] === '(auth)';
+  if (!session && !inAuthGroup) return null;
+  if (session && inAuthGroup) return null;
 
   return <>{children}</>;
 }
@@ -109,16 +111,9 @@ export default function RootLayout() {
 
   useThemeHydration();
 
-  const isInitialized = useAuthStore((s) => s.isInitialized);
   const isDatabaseReady = useAppStore((s) => s.isDatabaseReady);
 
-  useEffect(() => {
-    if (fontsLoaded && isDatabaseReady && isInitialized) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, isDatabaseReady, isInitialized]);
-
-  if (!fontsLoaded || !isDatabaseReady || !isInitialized) {
+  if (!fontsLoaded || !isDatabaseReady) {
     return null;
   }
 
