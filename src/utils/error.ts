@@ -32,7 +32,7 @@ export function getErrorMessage(error: unknown): string {
   const raw =
     typeof error === 'string'
       ? error
-      : (error as any)?.message || (error as any)?.error_description || '';
+      : (error as Error)?.message || (error as Record<string, string>)?.error_description || '';
 
   // Check exact matches first
   for (const [key, msg] of Object.entries(ERROR_MAP)) {

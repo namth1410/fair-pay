@@ -28,10 +28,14 @@ export default function LoginScreen() {
       setError('Vui lòng nhập email và mật khẩu');
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Email không hợp lệ');
+      return;
+    }
     setError('');
     try {
       await signInWithEmail(email, password);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(getErrorMessage(e));
     }
   };
@@ -40,7 +44,7 @@ export default function LoginScreen() {
     setError('');
     try {
       await signInWithGoogle();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(getErrorMessage(e));
     }
   };
@@ -74,6 +78,7 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
+            accessibilityLabel="Email"
             error={error && !email ? error : undefined}
           />
         </AnimatedEntrance>
@@ -85,12 +90,17 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             secureTextEntry
             autoComplete="password"
+            accessibilityLabel="Mật khẩu"
             error={error && email && !password ? error : undefined}
           />
         </AnimatedEntrance>
 
         {error && email && password ? (
-          <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+          <View
+            style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
             <AppText variant="caption" tone="danger">
               {error}
             </AppText>
@@ -151,7 +161,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
-    gap: 4,
+    gap: 12,
   },
   brand: {
     marginBottom: 4,

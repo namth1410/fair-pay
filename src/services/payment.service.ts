@@ -1,4 +1,7 @@
 import { supabase } from '../config/supabase';
+import { validatePositiveAmount } from '../utils/validate';
+
+import { getAuthUserId } from './auth.helper';
 
 export interface Payment {
   id: string;
@@ -46,6 +49,9 @@ export async function createPayment(params: {
   note?: string;
   date?: string;
 }): Promise<Payment> {
+  const amountErr = validatePositiveAmount(params.amount);
+  if (amountErr) throw new Error(amountErr);
+
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
@@ -84,19 +90,3 @@ export async function deletePayment(paymentId: string): Promise<void> {
 
 // Re-export from utils for backward compatibility
 export { calculateSettlements } from '../utils/settlement';
-
-// ── Helper ──────────────────────────────────
-async function getAuthUserId(): Promise<string | null> {
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
-
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', authUser.id)
-    .single();
-
-  return data?.id ?? null;
-}

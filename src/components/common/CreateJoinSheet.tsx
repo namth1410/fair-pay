@@ -49,7 +49,7 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
     try {
       await createGroup(name);
       onOpenChange(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.show({
         variant: 'danger',
         label: 'Không tạo được nhóm',
@@ -68,7 +68,7 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
       const result = await joinByCode(code);
       onOpenChange(false);
       onJoinPending(result.group.name);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.show({
         variant: 'danger',
         label: 'Không tham gia được',

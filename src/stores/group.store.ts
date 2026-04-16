@@ -34,7 +34,7 @@ interface GroupState {
   loadPendingRequests: (groupId: string) => Promise<void>;
   approveRequest: (requestId: string, groupId: string) => Promise<void>;
   rejectRequest: (requestId: string, groupId: string) => Promise<void>;
-  changeRole: (memberId: string, role: 'admin' | 'member') => Promise<void>;
+  changeRole: (memberId: string, role: 'admin' | 'member', groupId: string) => Promise<void>;
   kickMember: (memberId: string, groupId: string) => Promise<void>;
   removeGroup: (groupId: string) => Promise<void>;
 }
@@ -99,12 +99,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     await get().loadPendingRequests(groupId);
   },
 
-  changeRole: async (memberId, role) => {
+  changeRole: async (memberId, role, groupId) => {
     await updateMemberRole(memberId, role);
-    const members = get().currentGroupMembers;
-    if (members.length > 0) {
-      await get().loadMembers(members[0]!.group_id);
-    }
+    await get().loadMembers(groupId);
   },
 
   kickMember: async (memberId, groupId) => {

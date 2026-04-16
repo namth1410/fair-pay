@@ -6,6 +6,12 @@ export const APP_SCHEME = 'splitvn';
 export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
+if (__DEV__ && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
+  throw new Error(
+    'Thiếu EXPO_PUBLIC_SUPABASE_URL hoặc EXPO_PUBLIC_SUPABASE_ANON_KEY trong .env'
+  );
+}
+
 // Database
 export const DB_NAME = 'splitvn.db';
 

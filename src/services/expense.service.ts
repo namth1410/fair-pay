@@ -1,6 +1,9 @@
 import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
 import type { SplitResult } from '../utils/split';
+import { validateName, validatePositiveAmount } from '../utils/validate';
+
+import { getAuthUserId } from './auth.helper';
 
 export interface Expense {
   id: string;
@@ -59,6 +62,11 @@ export async function createExpense(params: {
   note?: string;
   date?: string;
 }): Promise<Expense> {
+  const titleErr = validateName(params.title, 'Tên khoản chi');
+  if (titleErr) throw new Error(titleErr);
+  const amountErr = validatePositiveAmount(params.amount);
+  if (amountErr) throw new Error(amountErr);
+
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
@@ -82,7 +90,7 @@ export async function createExpense(params: {
 
   if (expErr) throw expErr;
 
-  // Insert splits
+  // Insert splits — rollback expense if splits fail to maintain BR-02 invariant
   const splitRows = params.splits.map((s) => ({
     expense_id: expense.id,
     member_id: s.memberId,
@@ -93,7 +101,11 @@ export async function createExpense(params: {
     .from('expense_splits')
     .insert(splitRows);
 
-  if (splitErr) throw splitErr;
+  if (splitErr) {
+    // Rollback: delete the orphaned expense to prevent data corruption
+    await supabase.from('expenses').delete().eq('id', expense.id);
+    throw splitErr;
+  }
 
   return expense;
 }
@@ -115,55 +127,54 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 export async function calculateBalances(
   tripId: string
 ): Promise<{ memberId: string; memberName: string; balance: number }[]> {
-  // Fetch expenses with splits
-  const { data: expenses, error: expErr } = await supabase
-    .from('expenses')
-    .select('*, expense_splits(*)')
-    .eq('trip_id', tripId)
-    .is('deleted_at', null);
+  // Parallel fetch: expenses, payments, and trip (all depend only on tripId)
+  const [expensesRes, paymentsRes, tripRes] = await Promise.all([
+    supabase
+      .from('expenses')
+      .select('*, expense_splits(*)')
+      .eq('trip_id', tripId)
+      .is('deleted_at', null),
+    supabase
+      .from('payments')
+      .select('*')
+      .eq('trip_id', tripId)
+      .is('deleted_at', null),
+    supabase
+      .from('trips')
+      .select('group_id')
+      .eq('id', tripId)
+      .single(),
+  ]);
 
-  if (expErr) throw expErr;
+  if (expensesRes.error) throw expensesRes.error;
+  if (paymentsRes.error) throw paymentsRes.error;
+  if (!tripRes.data) return [];
 
-  // Fetch payments
-  const { data: payments, error: payErr } = await supabase
-    .from('payments')
-    .select('*')
-    .eq('trip_id', tripId)
-    .is('deleted_at', null);
+  const expenses = expensesRes.data;
+  const payments = paymentsRes.data;
 
-  if (payErr) throw payErr;
-
-  // Fetch trip to get group_id
-  const { data: trip } = await supabase
-    .from('trips')
-    .select('group_id')
-    .eq('id', tripId)
-    .single();
-
-  if (!trip) return [];
-
-  // Fetch members
+  // Members query depends on trip.group_id — must run after trip fetch
   const { data: members } = await supabase
     .from('group_members')
     .select('id, display_name')
-    .eq('group_id', trip.group_id);
+    .eq('group_id', tripRes.data.group_id);
 
   if (!members) return [];
 
   // Transform to pure function format
-  const expenseData: ExpenseData[] = (expenses || []).map((exp: any) => ({
-    paidBy: exp.paid_by,
-    amount: exp.amount,
-    splits: (exp.expense_splits || []).map((s: any) => ({
+  const expenseData: ExpenseData[] = (expenses || []).map((exp) => ({
+    paidBy: exp.paid_by as string,
+    amount: exp.amount as number,
+    splits: ((exp.expense_splits as { member_id: string; amount: number }[]) || []).map((s) => ({
       memberId: s.member_id,
       amount: s.amount,
     })),
   }));
 
-  const paymentData: PaymentData[] = (payments || []).map((pay: any) => ({
-    fromMemberId: pay.from_member_id,
-    toMemberId: pay.to_member_id,
-    amount: pay.amount,
+  const paymentData: PaymentData[] = (payments || []).map((pay) => ({
+    fromMemberId: pay.from_member_id as string,
+    toMemberId: pay.to_member_id as string,
+    amount: pay.amount as number,
   }));
 
   const memberList = members.map((m) => ({
@@ -173,20 +184,4 @@ export async function calculateBalances(
 
   // Delegate to shared pure function (same code as tests use)
   return computeBalancesPure(memberList, expenseData, paymentData);
-}
-
-// ── Helper ──────────────────────────────────
-async function getAuthUserId(): Promise<string | null> {
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
-
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', authUser.id)
-    .single();
-
-  return data?.id ?? null;
 }

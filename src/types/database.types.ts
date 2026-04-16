@@ -30,6 +30,7 @@ export interface GroupMemberRow {
   role: 'owner' | 'admin' | 'member';
   is_virtual: number; // 0 = false, 1 = true
   joined_at: string;
+  left_at: string | null;
 }
 
 export interface TripRow {
@@ -51,7 +52,7 @@ export interface ExpenseRow {
   title: string;
   amount: number;
   category: 'food' | 'transport' | 'accommodation' | 'fun' | 'shopping' | 'other';
-  paid_by: string; // JSON array of member IDs
+  paid_by: string; // group_member id (single)
   split_type: 'equal' | 'ratio' | 'custom';
   date: string;
   note: string | null;

@@ -3,15 +3,18 @@ import { useUniwind } from 'uniwind';
 import { colors } from '../config/theme';
 
 /**
- * Returns true when the effective UI theme is dark. Reads from Uniwind's
- * runtime theme so it stays in sync with both system preference and
- * manual overrides (e.g. user toggling dark mode in settings).
+ * Single hook for theme access. Returns color tokens + isDark flag.
+ * Components that only need colors can destructure just what they need.
+ * Calls useUniwind() exactly once per component.
  */
+export function useAppTheme() {
+  const { theme } = useUniwind();
+  const isDark = theme === 'dark';
+  return { isDark, ...(isDark ? colors.dark : colors.light) };
+}
+
+/** @deprecated Use useAppTheme().isDark instead */
 export function useIsDark(): boolean {
   const { theme } = useUniwind();
   return theme === 'dark';
-}
-
-export function useAppTheme() {
-  return useIsDark() ? colors.dark : colors.light;
 }

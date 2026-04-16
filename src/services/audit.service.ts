@@ -1,5 +1,7 @@
 import { supabase } from '../config/supabase';
 
+import { getAuthUserId } from './auth.helper';
+
 export interface AuditLog {
   id: string;
   group_id: string;
@@ -7,8 +9,8 @@ export interface AuditLog {
   action: string;
   actor_id: string;
   target_id: string;
-  before_data: any;
-  after_data: any;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
   created_at: string;
   actor_name?: string;
 }
@@ -66,18 +68,18 @@ export async function logAction(params: {
   tripId?: string;
   action: string;
   targetId: string;
-  beforeData?: any;
-  afterData?: any;
+  beforeData?: Record<string, unknown> | null;
+  afterData?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const userId = await getAuthUserId();
+    if (!userId) return;
 
     await supabase.from('audit_logs').insert({
       group_id: params.groupId,
       trip_id: params.tripId || null,
       action: params.action,
-      actor_id: user.id,
+      actor_id: userId,
       target_id: params.targetId,
       before_data: params.beforeData || null,
       after_data: params.afterData || null,

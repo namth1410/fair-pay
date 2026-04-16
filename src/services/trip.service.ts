@@ -1,4 +1,7 @@
 import { supabase } from '../config/supabase';
+import { validateName } from '../utils/validate';
+
+import { getAuthUserId } from './auth.helper';
 
 export interface Trip {
   id: string;
@@ -31,6 +34,9 @@ export async function createTrip(
   name: string,
   type: Trip['type'] = 'other'
 ): Promise<Trip> {
+  const nameErr = validateName(name, 'Tên chuyến');
+  if (nameErr) throw new Error(nameErr);
+
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
@@ -62,20 +68,4 @@ export async function reopenTrip(tripId: string): Promise<void> {
     .eq('id', tripId);
 
   if (error) throw error;
-}
-
-// ── Helper ──────────────────────────────────
-async function getAuthUserId(): Promise<string | null> {
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
-
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', authUser.id)
-    .single();
-
-  return data?.id ?? null;
 }

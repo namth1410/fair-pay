@@ -1,10 +1,11 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button } from 'heroui-native';
+import { BottomSheet, Button, useToast } from 'heroui-native';
 import { LogOut } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useAppTheme, useIsDark } from '../../hooks/useAppTheme';
+import { useAppTheme } from '../../hooks/useAppTheme';
+import { hapticLight } from '../../utils/haptics';
 import { transitionToTheme } from '../../utils/themeTransition';
 import {
   DEFAULT_SETTINGS,
@@ -30,8 +31,8 @@ interface SettingsSheetProps {
 
 export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
   const { user, signOut } = useAuthStore();
-  const c = useAppTheme();
-  const isDark = useIsDark();
+  const { isDark, ...c } = useAppTheme();
+  const { toast } = useToast();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -65,27 +66,28 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
       await updateDisplayName(newName);
       setProfile((prev) => (prev ? { ...prev, display_name: newName.trim() } : prev));
       setIsEditingName(false);
-    } catch (e: any) {
-      Alert.alert('Lỗi', getErrorMessage(e));
+    } catch (e: unknown) {
+      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleToggleSetting = async (key: keyof UserSettings, value: any) => {
+  const handleToggleSetting = async (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => {
+    hapticLight();
     // Dark mode is purely runtime UI state — apply immediately, regardless
     // of whether the profile has loaded. This guarantees the switch responds
     // even if fetchCurrentUser failed (RLS, offline, session expired, etc.).
     // Goes through transitionToTheme for the crossfade animation.
     if (key === 'dark_mode') {
-      transitionToTheme(value);
+      transitionToTheme(value as UserSettings['dark_mode']);
     }
 
     // Without a loaded profile we can't safely construct the full settings
     // object to persist (would clobber other fields). Apply locally only.
     if (!profile) {
       if (key !== 'dark_mode') {
-        Alert.alert('Chưa sẵn sàng', 'Hồ sơ chưa tải xong, vui lòng thử lại.');
+        toast.show({ variant: 'warning', label: 'Chưa sẵn sàng', description: 'Hồ sơ chưa tải xong, vui lòng thử lại.' });
       }
       return;
     }
@@ -96,11 +98,11 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
     try {
       await updateSettings(newSettings);
       setProfile((prev) => (prev ? { ...prev, settings: newSettings } : prev));
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (key === 'dark_mode') {
         transitionToTheme(prevSettings.dark_mode);
       }
-      Alert.alert('Lỗi', getErrorMessage(e));
+      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
     }
   };
 

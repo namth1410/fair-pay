@@ -19,23 +19,36 @@ export default function RegisterScreen() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const { signUpWithEmail, isLoading } = useAuthStore();
   const c = useAppTheme();
 
   const handleRegister = async () => {
-    if (!displayName || !email || !password) {
+    if (!displayName || !email || !password || !confirmPassword) {
       setError('Vui lòng điền đầy đủ thông tin');
+      return;
+    }
+    if (displayName.trim().length < 2 || displayName.trim().length > 50) {
+      setError('Tên hiển thị phải từ 2 đến 50 ký tự');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Email không hợp lệ');
       return;
     }
     if (password.length < 6) {
       setError('Mật khẩu phải có ít nhất 6 ký tự');
       return;
     }
+    if (password !== confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp');
+      return;
+    }
     setError('');
     try {
       await signUpWithEmail(email, password, displayName);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(getErrorMessage(e));
     }
   };
@@ -60,7 +73,11 @@ export default function RegisterScreen() {
         </AnimatedEntrance>
 
         {error ? (
-          <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+          <View
+            style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+          >
             <AppText variant="caption" tone="danger">
               {error}
             </AppText>
@@ -69,10 +86,11 @@ export default function RegisterScreen() {
 
         <AnimatedEntrance delay={150}>
           <AppTextField
-            placeholder="Tên hiển thị"
+            placeholder="Tên hiển thị (2-50 ký tự)"
             value={displayName}
             onChangeText={setDisplayName}
             autoCapitalize="words"
+            accessibilityLabel="Tên hiển thị"
           />
         </AnimatedEntrance>
 
@@ -84,6 +102,7 @@ export default function RegisterScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
+            accessibilityLabel="Email"
           />
         </AnimatedEntrance>
 
@@ -94,10 +113,21 @@ export default function RegisterScreen() {
             onChangeText={setPassword}
             secureTextEntry
             autoComplete="new-password"
+            accessibilityLabel="Mật khẩu"
           />
         </AnimatedEntrance>
 
-        <AnimatedEntrance delay={360}>
+        <AnimatedEntrance delay={330}>
+          <AppTextField
+            placeholder="Xác nhận mật khẩu"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            accessibilityLabel="Xác nhận mật khẩu"
+          />
+        </AnimatedEntrance>
+
+        <AnimatedEntrance delay={400}>
           <Button
             variant="primary"
             size="lg"
@@ -131,7 +161,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
-    gap: 4,
+    gap: 12,
   },
   brand: {
     marginBottom: 4,

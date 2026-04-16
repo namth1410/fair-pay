@@ -6,6 +6,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { hapticLight } from '../../utils/haptics';
 import { AppText } from './AppText';
 
 interface AppCardProps {
@@ -41,7 +42,10 @@ export function AppCard({
   }));
 
   const handlePressIn = () => {
-    if (interactive) scale.value = withSpring(0.97, { damping: 18, stiffness: 300 });
+    if (interactive) {
+      hapticLight();
+      scale.value = withSpring(0.97, { damping: 18, stiffness: 300 });
+    }
   };
   const handlePressOut = () => {
     if (interactive) scale.value = withSpring(1, { damping: 18, stiffness: 300 });

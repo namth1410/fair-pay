@@ -299,7 +299,7 @@ describe('Integration: expense → balance → settlement → payment → settle
     expect(settlements.length).toBeGreaterThanOrEqual(1);
 
     // Step 4: Tạo payments ĐÚNG theo gợi ý
-    const payments = settlements.map((s: any) => ({
+    const payments = settlements.map((s) => ({
       fromMemberId: s.from,
       toMemberId: s.to,
       amount: s.amount,
@@ -439,6 +439,49 @@ describe('F-07: splitByRatioWithExplanation', () => {
   });
 });
 
+describe('splitByRatio — edge case: remaining không bao giờ âm', () => {
+  it('nhiều người chia số nhỏ — người cuối không nhận amount âm', () => {
+    // 10.000đ chia cho 11 người ratio đều
+    // Mỗi người raw = 909đ, round = 1000đ → 10 × 1000 = 10.000, remaining = 0
+    const members = Array.from({ length: 11 }, (_, i) => ({
+      memberId: `M${i}`,
+      ratio: 1,
+    }));
+    const result = splitByRatio(10000, members);
+    // Tất cả amount >= 0
+    expect(result.every((s) => s.amount >= 0)).toBe(true);
+    // Tổng <= total (clamp có thể làm tổng < total)
+    const sum = result.reduce((acc, s) => acc + s.amount, 0);
+    expect(sum).toBeLessThanOrEqual(10000);
+  });
+
+  it('ratio chênh lệch lớn — người cuối không âm', () => {
+    // 20.000đ chia cho [10, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] (11 người)
+    // Người đầu: round(20000*10/21 / 1000)*1000 = round(9523/1000)*1000 = 10.000
+    // 10 người còn: round(20000*1/21 / 1000)*1000 = round(952/1000)*1000 = 1.000 each
+    // remaining = 20.000 - 10.000 - 9*1.000 = 1.000 (OK nhưng test guard)
+    const members = [
+      { memberId: 'Big', ratio: 10 },
+      ...Array.from({ length: 10 }, (_, i) => ({
+        memberId: `S${i}`,
+        ratio: 1,
+      })),
+    ];
+    const result = splitByRatio(20000, members);
+    expect(result.every((s) => s.amount >= 0)).toBe(true);
+  });
+
+  it('tất cả amount là số nguyên', () => {
+    const members = Array.from({ length: 7 }, (_, i) => ({
+      memberId: `M${i}`,
+      ratio: i + 1,
+    }));
+    const result = splitByRatio(100000, members);
+    expect(result.every((s) => Number.isInteger(s.amount))).toBe(true);
+    expect(result.every((s) => s.amount >= 0)).toBe(true);
+  });
+});
+
 // ═══════════════════════════════════════════════════
 // Integration: ratio split → balance → settlement
 // ═══════════════════════════════════════════════════
@@ -477,7 +520,7 @@ describe('Integration: ratio split flow', () => {
     expect(settlements.length).toBeGreaterThanOrEqual(1);
 
     // Pay according to suggestions
-    const payments = settlements.map((s: any) => ({
+    const payments = settlements.map((s) => ({
       fromMemberId: s.from, toMemberId: s.to, amount: s.amount,
     }));
     const finalBalances = computeBalancesSimple(members, expenses, payments);

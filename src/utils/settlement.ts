@@ -23,6 +23,13 @@ export function calculateSettlements(
 
   const transactions: { from: string; fromName: string; to: string; toName: string; amount: number }[] = [];
 
+  // Pre-compute totalDebt from original balances BEFORE the greedy loop mutates copies.
+  // Safe because creditors/debtors are shallow copies ({ ...b }), but computing here
+  // removes the implicit dependency on balances array immutability.
+  const totalDebt = balances
+    .filter((b) => b.balance < -TOLERANCE)
+    .reduce((sum, b) => sum + Math.abs(b.balance), 0);
+
   let i = 0; // debtor index
   let j = 0; // creditor index
 
@@ -57,10 +64,6 @@ export function calculateSettlements(
   // Adjust last transaction to absorb rounding difference
   // This ensures total settlement ≈ total debt (minimize rounding loss)
   if (transactions.length > 0) {
-    const totalDebt = balances
-      .filter((b) => b.balance < -TOLERANCE)
-      .reduce((sum, b) => sum + Math.abs(b.balance), 0);
-
     const totalSettlement = transactions.reduce((sum, t) => sum + t.amount, 0);
     const diff = Math.round(totalDebt / 1000) * 1000 - totalSettlement;
 

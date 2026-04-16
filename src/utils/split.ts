@@ -198,8 +198,9 @@ export function splitByRatio(
   for (let i = 0; i < n; i++) {
     const member = members[i]!;
     if (i === n - 1) {
-      // Last person absorbs remainder
-      splits.push({ memberId: member.memberId, amount: remaining });
+      // Last person absorbs remainder — clamp to 0 to prevent negative splits
+      // from accumulated rounding (e.g. many members rounding up)
+      splits.push({ memberId: member.memberId, amount: Math.max(0, remaining) });
     } else {
       const raw = (total * member.ratio) / sumRatios;
       const rounded = Math.round(raw / 1000) * 1000;

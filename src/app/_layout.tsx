@@ -20,7 +20,7 @@ import { LoadingScreen } from '../components/common/LoadingScreen';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { initDatabase } from '../db/database';
-import { useAppTheme, useIsDark } from '../hooks/useAppTheme';
+import { useAppTheme } from '../hooks/useAppTheme';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
@@ -79,8 +79,7 @@ function useThemeHydration() {
 }
 
 export default function RootLayout() {
-  const isDark = useIsDark();
-  const c = useAppTheme();
+  const { isDark, ...c } = useAppTheme();
   const initialize = useAuthStore((s) => s.initialize);
   const setDatabaseReady = useAppStore((s) => s.setDatabaseReady);
 

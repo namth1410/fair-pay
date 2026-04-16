@@ -1,6 +1,8 @@
 import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
+import { validateName } from '../utils/validate';
 import { logAction } from './audit.service';
+import { getAuthUserId } from './auth.helper';
 
 export interface BalanceSummary {
   /** Tổng số dư qua tất cả nhóm/chuyến đang mở (dương = được nợ, âm = đang nợ) */
@@ -52,11 +54,12 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
   const userId = await getAuthUserId();
   if (!userId) return [];
 
-  // Get group IDs the user is a member of
+  // Get group IDs the user is an active member of
   const { data: memberships, error: memErr } = await supabase
     .from('group_members')
     .select('group_id')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .is('left_at', null);
 
   if (memErr) throw memErr;
   if (!memberships?.length) return [];
@@ -73,11 +76,12 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
 
   if (grpErr) throw grpErr;
 
-  // Count members per group
+  // Count active members per group (exclude those who left)
   const { data: counts, error: cntErr } = await supabase
     .from('group_members')
     .select('group_id')
-    .in('group_id', groupIds);
+    .in('group_id', groupIds)
+    .is('left_at', null);
 
   if (cntErr) throw cntErr;
 
@@ -94,6 +98,9 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
 
 /** Create a new group — caller becomes owner */
 export async function createGroup(name: string): Promise<Group> {
+  const nameErr = validateName(name, 'Tên nhóm');
+  if (nameErr) throw new Error(nameErr);
+
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
@@ -190,6 +197,8 @@ export async function joinGroupByCode(code: string): Promise<JoinResult> {
 export async function fetchPendingJoinRequests(
   groupId: string
 ): Promise<JoinRequest[]> {
+  await assertRole(groupId, ['owner', 'admin']);
+
   const { data, error } = await supabase
     .from('join_requests')
     .select('*')
@@ -206,6 +215,8 @@ export async function approveJoinRequest(
   requestId: string,
   groupId: string
 ): Promise<void> {
+  await assertRole(groupId, ['owner', 'admin']);
+
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
 
@@ -269,6 +280,8 @@ export async function rejectJoinRequest(
   requestId: string,
   groupId: string
 ): Promise<void> {
+  await assertRole(groupId, ['owner', 'admin']);
+
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
 
@@ -330,27 +343,28 @@ export async function updateMemberRole(
   memberId: string,
   newRole: 'admin' | 'member'
 ): Promise<void> {
+  // Lấy group_id của member này trước để kiểm tra quyền
+  const { data: targetMember } = await supabase
+    .from('group_members')
+    .select('group_id, role')
+    .eq('id', memberId)
+    .single();
+
+  if (!targetMember) throw new Error('Thành viên không tồn tại');
+  await assertRole(targetMember.group_id, ['owner']);
+
   if (newRole === 'admin') {
-    // Lấy group_id của member này
-    const { data: member } = await supabase
+    const { count } = await supabase
       .from('group_members')
-      .select('group_id')
-      .eq('id', memberId)
-      .single();
+      .select('id', { count: 'exact', head: true })
+      .eq('group_id', targetMember.group_id)
+      .eq('role', 'admin')
+      .is('left_at', null);
 
-    if (member) {
-      const { count } = await supabase
-        .from('group_members')
-        .select('id', { count: 'exact', head: true })
-        .eq('group_id', member.group_id)
-        .eq('role', 'admin')
-        .is('left_at', null);
-
-      if ((count ?? 0) >= 1) {
-        throw new Error(
-          'Nhóm đã có quản trị viên. Hãy hạ quyền quản trị viên hiện tại trước.'
-        );
-      }
+    if ((count ?? 0) >= 1) {
+      throw new Error(
+        'Nhóm đã có quản trị viên. Hãy hạ quyền quản trị viên hiện tại trước.'
+      );
     }
   }
 
@@ -364,6 +378,18 @@ export async function updateMemberRole(
 
 /** Soft-remove a member from group (admin/owner only) — sets left_at */
 export async function removeMember(memberId: string): Promise<void> {
+  // Fetch target member to check group and prevent owner removal
+  const { data: target } = await supabase
+    .from('group_members')
+    .select('group_id, role')
+    .eq('id', memberId)
+    .single();
+
+  if (!target) throw new Error('Thành viên không tồn tại');
+  if (target.role === 'owner') throw new Error('Không thể xóa chủ nhóm');
+
+  await assertRole(target.group_id, ['owner', 'admin']);
+
   const { error } = await supabase
     .from('group_members')
     .update({ left_at: new Date().toISOString() })
@@ -377,6 +403,8 @@ export async function updateGroup(
   groupId: string,
   updates: { name?: string }
 ): Promise<void> {
+  await assertRole(groupId, ['owner', 'admin']);
+
   const { error } = await supabase
     .from('groups')
     .update(updates)
@@ -387,6 +415,8 @@ export async function updateGroup(
 
 /** Soft delete group (owner only) */
 export async function deleteGroup(groupId: string): Promise<void> {
+  await assertRole(groupId, ['owner']);
+
   const { error } = await supabase
     .from('groups')
     .update({ deleted_at: new Date().toISOString() })
@@ -458,32 +488,55 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
   const payments = paymentsRes.data || [];
   const allMembers = allMembersRes.data || [];
 
+  // Pre-index by trip_id / group_id for O(1) lookup instead of O(N) filter per trip
+  const expensesByTrip = new Map<string, typeof expenses>();
+  for (const e of expenses) {
+    const key = e.trip_id as string;
+    const arr = expensesByTrip.get(key) || [];
+    arr.push(e);
+    expensesByTrip.set(key, arr);
+  }
+  const paymentsByTrip = new Map<string, typeof payments>();
+  for (const p of payments) {
+    const key = p.trip_id as string;
+    const arr = paymentsByTrip.get(key) || [];
+    arr.push(p);
+    paymentsByTrip.set(key, arr);
+  }
+  const membersByGroup = new Map<string, typeof allMembers>();
+  for (const m of allMembers) {
+    const key = m.group_id as string;
+    const arr = membersByGroup.get(key) || [];
+    arr.push(m);
+    membersByGroup.set(key, arr);
+  }
+
   // Tính balance per group
   const groupBalances: Record<string, number> = {};
 
   for (const trip of trips) {
-    const tripExpenses = expenses.filter((e: any) => e.trip_id === trip.id);
-    const tripPayments = payments.filter((p: any) => p.trip_id === trip.id);
-    const tripMembers = allMembers.filter((m: any) => m.group_id === trip.group_id);
+    const tripExpenses = expensesByTrip.get(trip.id) || [];
+    const tripPayments = paymentsByTrip.get(trip.id) || [];
+    const tripMembers = membersByGroup.get(trip.group_id) || [];
 
-    const expenseData: ExpenseData[] = tripExpenses.map((e: any) => ({
-      paidBy: e.paid_by,
-      amount: e.amount,
-      splits: (e.expense_splits || []).map((s: any) => ({
+    const expenseData: ExpenseData[] = tripExpenses.map((e) => ({
+      paidBy: e.paid_by as string,
+      amount: e.amount as number,
+      splits: ((e.expense_splits as { member_id: string; amount: number }[]) || []).map((s) => ({
         memberId: s.member_id,
         amount: s.amount,
       })),
     }));
 
-    const paymentData: PaymentData[] = tripPayments.map((p: any) => ({
-      fromMemberId: p.from_member_id,
-      toMemberId: p.to_member_id,
-      amount: p.amount,
+    const paymentData: PaymentData[] = tripPayments.map((p) => ({
+      fromMemberId: p.from_member_id as string,
+      toMemberId: p.to_member_id as string,
+      amount: p.amount as number,
     }));
 
-    const memberList = tripMembers.map((m: any) => ({
-      id: m.id,
-      displayName: m.display_name,
+    const memberList = tripMembers.map((m) => ({
+      id: m.id as string,
+      displayName: m.display_name as string,
     }));
 
     const balances = computeBalancesPure(memberList, expenseData, paymentData);
@@ -498,18 +551,26 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
   return { total, groupBalances };
 }
 
-// ── Helper ──────────────────────────────────
-async function getAuthUserId(): Promise<string | null> {
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
+// ── Helpers ─────────────────────────────────
+type Role = 'owner' | 'admin' | 'member';
+
+/** Assert that the current user has one of the allowed roles in the group */
+async function assertRole(
+  groupId: string,
+  allowed: Role[]
+): Promise<void> {
+  const userId = await getAuthUserId();
+  if (!userId) throw new Error('Chưa đăng nhập');
 
   const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', authUser.id)
+    .from('group_members')
+    .select('role')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .is('left_at', null)
     .single();
 
-  return data?.id ?? null;
+  if (!data || !allowed.includes(data.role as Role)) {
+    throw new Error('Bạn không có quyền thực hiện hành động này');
+  }
 }

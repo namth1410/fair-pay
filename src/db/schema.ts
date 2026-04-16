@@ -153,4 +153,6 @@ export const CREATE_TABLES = [
   `CREATE INDEX IF NOT EXISTS idx_audit_logs_group ON audit_logs(group_id)`,
   `CREATE INDEX IF NOT EXISTS idx_groups_invite ON groups(invite_code) WHERE deleted_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status) WHERE status = 'pending'`,
+  `CREATE INDEX IF NOT EXISTS idx_expense_splits_member ON expense_splits(member_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_id)`,
 ];

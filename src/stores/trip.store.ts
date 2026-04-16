@@ -126,7 +126,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       groupId: params.groupId,
       tripId: params.tripId,
       action: 'expense.create',
-      targetId: result?.id || 'unknown',
+      targetId: result.id,
       afterData: { title: params.title, amount: params.amount, category: params.category, paidBy: params.paidByMemberId },
     });
     await get().loadExpenses(params.tripId);
@@ -161,7 +161,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       groupId: params.groupId,
       tripId: params.tripId,
       action: 'payment.create',
-      targetId: result?.id || 'unknown',
+      targetId: result.id,
       afterData: { from: params.fromMemberId, to: params.toMemberId, amount: params.amount },
     });
     await get().loadPayments(params.tripId);

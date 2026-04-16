@@ -9,7 +9,8 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ScrollShadow } from 'heroui-native';
 
 import { CreateJoinSheet } from '../../components/common/CreateJoinSheet';
 import { SettingsSheet } from '../../components/common/SettingsSheet';
@@ -19,6 +20,7 @@ import {
   AppText,
   Avatar,
   EmptyState,
+  GradientHero,
   ListSkeleton,
   Money,
 } from '../../components/ui';
@@ -74,22 +76,7 @@ export default function HomeScreen() {
 
     return (
       <AnimatedEntrance delay={0}>
-        <View style={styles.heroWrap}>
-          <Svg
-            width="100%"
-            height="100%"
-            style={StyleSheet.absoluteFill}
-            preserveAspectRatio="none"
-            viewBox="0 0 100 100"
-          >
-            <Defs>
-              <LinearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0%" stopColor={gradFrom} />
-                <Stop offset="100%" stopColor={gradTo} />
-              </LinearGradient>
-            </Defs>
-            <Rect width="100" height="100" rx="6" fill="url(#heroGrad)" />
-          </Svg>
+        <GradientHero fromColor={gradFrom} toColor={gradTo} style={styles.heroWrap}>
           <View style={styles.heroInner}>
             <AppText variant="label" tone="muted">
               {label}
@@ -101,7 +88,7 @@ export default function HomeScreen() {
               {footnote}
             </AppText>
           </View>
-        </View>
+        </GradientHero>
       </AnimatedEntrance>
     );
   };
@@ -208,23 +195,25 @@ export default function HomeScreen() {
       {isLoading && groups.length === 0 ? (
         <ListSkeleton count={4} />
       ) : (
-        <FlatList
-          data={groups}
-          keyExtractor={(item) => item.id}
-          renderItem={renderGroup}
-          contentContainerStyle={groups.length === 0 ? styles.emptyContainer : styles.list}
-          refreshControl={
-            <RefreshControl refreshing={isLoading} onRefresh={loadGroups} tintColor={c.primaryStrong} />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon={Users}
-              title="Chưa có nhóm nào"
-              subtitle="Tạo nhóm mới hoặc nhập mã mời để bắt đầu"
-              action={{ label: 'Tạo nhóm', onPress: () => setCreateJoinOpen(true) }}
-            />
-          }
-        />
+        <ScrollShadow LinearGradientComponent={LinearGradient}>
+          <FlatList
+            data={groups}
+            keyExtractor={(item) => item.id}
+            renderItem={renderGroup}
+            contentContainerStyle={groups.length === 0 ? styles.emptyContainer : styles.list}
+            refreshControl={
+              <RefreshControl refreshing={isLoading} onRefresh={loadGroups} tintColor={c.primaryStrong} />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                icon={Users}
+                title="Chưa có nhóm nào"
+                subtitle="Tạo nhóm mới hoặc nhập mã mời để bắt đầu"
+                action={{ label: 'Tạo nhóm', onPress: () => setCreateJoinOpen(true) }}
+              />
+            }
+          />
+        </ScrollShadow>
       )}
 
       <CreateJoinSheet
@@ -253,8 +242,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
-    borderRadius: 18,
-    overflow: 'hidden',
   },
   heroInner: {
     paddingVertical: 18,

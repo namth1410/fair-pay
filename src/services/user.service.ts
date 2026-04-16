@@ -40,7 +40,7 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
   }
 
   // Build display_name with priority: DB row → auth metadata → email local-part
-  const meta = (user.user_metadata ?? {}) as Record<string, any>;
+  const meta = (user.user_metadata ?? {}) as Record<string, string | undefined>;
   const fallbackName =
     meta.display_name ||
     meta.full_name ||
@@ -73,10 +73,14 @@ export async function updateDisplayName(name: string): Promise<void> {
 
   if (error) throw error;
 
-  // Also update Supabase auth metadata
-  await supabase.auth.updateUser({
-    data: { display_name: trimmed },
-  });
+  // Auth metadata is secondary — DB is source of truth
+  try {
+    await supabase.auth.updateUser({
+      data: { display_name: trimmed },
+    });
+  } catch {
+    console.warn('[User] Auth metadata update failed, DB is source of truth');
+  }
 }
 
 /** Update user settings (notification preferences, dark mode, etc.) */

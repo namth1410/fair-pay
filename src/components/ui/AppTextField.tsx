@@ -14,6 +14,7 @@ interface AppTextFieldProps {
   autoFocus?: boolean;
   returnKeyType?: 'done' | 'next' | 'search' | 'go' | 'send';
   onSubmitEditing?: () => void;
+  accessibilityLabel?: string;
 }
 
 export function AppTextField({
@@ -29,9 +30,10 @@ export function AppTextField({
   autoFocus,
   returnKeyType,
   onSubmitEditing,
+  accessibilityLabel,
 }: AppTextFieldProps) {
   return (
-    <TextField isInvalid={!!error}>
+    <TextField isInvalid={!!error} accessibilityLabel={accessibilityLabel}>
       {label ? <Label>{label}</Label> : null}
       <Input
         placeholder={placeholder}
@@ -40,7 +42,7 @@ export function AppTextField({
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
-        autoComplete={autoComplete as any}
+        autoComplete={autoComplete as 'email' | 'new-password' | 'current-password' | undefined}
         autoFocus={autoFocus}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmitEditing}
