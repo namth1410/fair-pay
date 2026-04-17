@@ -1,5 +1,4 @@
 import { supabase } from '../config/supabase';
-
 import { getAuthUserId } from './auth.helper';
 
 export interface AuditLog {

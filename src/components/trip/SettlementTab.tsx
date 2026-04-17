@@ -6,9 +6,9 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
-import { hapticSuccess } from '../../utils/haptics';
 import type { Payment } from '../../services/payment.service';
 import { getErrorMessage } from '../../utils/error';
+import { hapticSuccess } from '../../utils/haptics';
 import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, SwipeableCard } from '../ui';
 
 interface SettlementEntry {

@@ -8,10 +8,9 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember, JoinRequest } from '../../services/group.service';
 import { AppCard, AppText, Avatar, GradientHero } from '../ui';
 
-type Role = 'owner' | 'admin' | 'member';
+type Role = 'admin' | 'member';
 
 const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Chủ nhóm',
   admin: 'Quản trị',
   member: 'Thành viên',
 };
@@ -31,31 +30,21 @@ interface MembersTabProps {
   pendingRequests: JoinRequest[];
   inviteCode?: string;
   isAdmin: boolean;
-  isOwner: boolean;
-  hasAdmin: boolean;
   onShare: () => void;
-  onChangeRole: (member: GroupMember) => void;
   onKick: (member: GroupMember) => void;
   onApprove: (req: JoinRequest) => void;
   onReject: (req: JoinRequest) => void;
 }
 
 export const MembersTab = React.memo(function MembersTab({
-  members, pendingRequests, inviteCode, isAdmin, isOwner, hasAdmin,
-  onShare, onChangeRole, onKick, onApprove, onReject,
+  members, pendingRequests, inviteCode, isAdmin,
+  onShare, onKick, onApprove, onReject,
 }: MembersTabProps) {
   const c = useAppTheme();
 
   const roleColor: Record<Role, string> = {
-    owner: c.warning,
     admin: c.primaryStrong,
     member: c.muted,
-  };
-
-  const getChangeRoleColor = (member: GroupMember): string => {
-    if (member.role === 'admin') return c.danger;
-    if (hasAdmin) return c.divider;
-    return c.primaryStrong;
   };
 
   const renderMember = ({ item }: { item: GroupMember }) => (
@@ -65,25 +54,8 @@ export const MembersTab = React.memo(function MembersTab({
       trailing={
         <View style={styles.memberTrailing}>
           <RolePill role={item.role as Role} color={roleColor[item.role as Role]} />
-          {isAdmin && item.role !== 'owner' ? (
+          {isAdmin && item.role !== 'admin' ? (
             <View style={styles.memberActions}>
-              {isOwner && (
-                <Pressable
-                  onPress={() => onChangeRole(item)}
-                  disabled={item.role === 'member' && hasAdmin}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.role === 'admin' ? 'Hạ quyền' : 'Lên admin'}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <AppText
-                    variant="meta"
-                    weight="medium"
-                    style={{ color: getChangeRoleColor(item) }}
-                  >
-                    {item.role === 'admin' ? 'Hạ quyền' : 'Lên admin'}
-                  </AppText>
-                </Pressable>
-              )}
               <Pressable
                 onPress={() => onKick(item)}
                 accessibilityRole="button"

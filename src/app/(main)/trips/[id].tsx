@@ -1,8 +1,8 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { withTiming } from 'react-native-reanimated';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
+import Animated, { withTiming } from 'react-native-reanimated';
 
 import { BalancesTab } from '../../../components/trip/BalancesTab';
 import { ExpensesTab } from '../../../components/trip/ExpensesTab';

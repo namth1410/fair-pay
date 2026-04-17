@@ -9,12 +9,11 @@ interface GroupSettingsTabProps {
   memberCount: number;
   virtualMemberCount: number;
   tripCount: number;
-  isOwner: boolean;
   onDeleteGroup: () => void;
 }
 
 export const GroupSettingsTab = React.memo(function GroupSettingsTab({
-  memberCount, virtualMemberCount, tripCount, isOwner, onDeleteGroup,
+  memberCount, virtualMemberCount, tripCount, onDeleteGroup,
 }: GroupSettingsTabProps) {
   const c = useAppTheme();
 
@@ -37,11 +36,9 @@ export const GroupSettingsTab = React.memo(function GroupSettingsTab({
         </View>
       </View>
 
-      {isOwner && (
-        <Button variant="danger" size="md" onPress={onDeleteGroup}>
-          <Button.Label>Xóa nhóm</Button.Label>
-        </Button>
-      )}
+      <Button variant="danger" size="md" onPress={onDeleteGroup}>
+        <Button.Label>Xóa nhóm</Button.Label>
+      </Button>
     </>
   );
 });

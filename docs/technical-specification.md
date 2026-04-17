@@ -142,7 +142,7 @@ CREATE TABLE groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   avatar_url TEXT,
-  owner_id UUID NOT NULL REFERENCES users(id),
+  created_by UUID NOT NULL REFERENCES users(id), -- Người tạo nhóm (đồng thời là Admin duy nhất)
   invite_code TEXT UNIQUE NOT NULL, -- 6 ký tự alphanumeric, sinh bằng function
   created_at TIMESTAMPTZ DEFAULT now(),
   deleted_at TIMESTAMPTZ -- Soft delete
@@ -178,7 +178,7 @@ CREATE TABLE group_members (
   group_id UUID NOT NULL REFERENCES groups(id),
   user_id UUID REFERENCES users(id), -- NULL nếu là member ảo
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member')) DEFAULT 'member',
+  role TEXT NOT NULL CHECK (role IN ('admin', 'member')) DEFAULT 'member',
   is_virtual BOOLEAN DEFAULT false,
   joined_at TIMESTAMPTZ DEFAULT now(),
   left_at TIMESTAMPTZ, -- Soft-remove: NULL = active, NOT NULL = đã rời nhóm
@@ -198,14 +198,14 @@ CREATE TABLE join_requests (
   group_id UUID NOT NULL REFERENCES groups(id),
   user_id UUID NOT NULL REFERENCES users(id),
   status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
-  reviewed_by UUID REFERENCES users(id), -- Owner/Admin đã duyệt
+  reviewed_by UUID REFERENCES users(id), -- Admin đã duyệt
   created_at TIMESTAMPTZ DEFAULT now(),
   reviewed_at TIMESTAMPTZ,
   UNIQUE(group_id, user_id, status) -- Mỗi user chỉ có 1 pending request / group
 );
 ```
 
-> **Luồng:** User nhập mã mời → INSERT `join_requests` (pending) → Owner/Admin nhận notification → approve → INSERT `group_members` + UPDATE status = approved. Reject → UPDATE status = rejected.
+> **Luồng:** User nhập mã mời → INSERT `join_requests` (pending) → Admin nhận notification → approve → INSERT `group_members` + UPDATE status = approved. Reject → UPDATE status = rejected.
 
 ### 3.4b Table: `group_invitations` (BR-11) — Lời mời qua email
 
@@ -214,7 +214,7 @@ CREATE TABLE group_invitations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id UUID NOT NULL REFERENCES groups(id),
   invited_user_id UUID NOT NULL REFERENCES users(id),
-  invited_by UUID NOT NULL REFERENCES users(id), -- Owner/Admin gửi lời mời
+  invited_by UUID NOT NULL REFERENCES users(id), -- Admin gửi lời mời
   status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined')) DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT now(),
   responded_at TIMESTAMPTZ,
@@ -222,7 +222,7 @@ CREATE TABLE group_invitations (
 );
 ```
 
-> **Luồng:** Owner/Admin tìm user theo email → INSERT `group_invitations` (pending) → user nhận notification → accept = INSERT `group_members`, decline = UPDATE status.
+> **Luồng:** Admin tìm user theo email → INSERT `group_invitations` (pending) → user nhận notification → accept = INSERT `group_members`, decline = UPDATE status.
 
 ### 3.4 Table: `trips`
 
@@ -287,7 +287,7 @@ CREATE TABLE payments (
   recorded_by UUID NOT NULL REFERENCES users(id),
   date TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ DEFAULT now(),
-  deleted_at TIMESTAMPTZ -- Soft delete, chỉ Admin/Owner
+  deleted_at TIMESTAMPTZ -- Soft delete, chỉ Admin
 );
 ```
 
@@ -615,14 +615,14 @@ RETURNS BOOLEAN AS $$
   )
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
--- Kiểm tra user có phải admin/owner của group không
+-- Kiểm tra user có phải admin của group không
 CREATE OR REPLACE FUNCTION is_admin(p_group_id UUID)
 RETURNS BOOLEAN AS $$
   SELECT EXISTS(
     SELECT 1 FROM group_members
     WHERE group_id = p_group_id
       AND user_id = auth_user_id()
-      AND role IN ('owner', 'admin')
+      AND role = 'admin'
   )
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 

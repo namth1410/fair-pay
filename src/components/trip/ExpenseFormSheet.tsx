@@ -6,8 +6,8 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
-import { hapticSuccess } from '../../utils/haptics';
 import { getErrorMessage } from '../../utils/error';
+import { hapticSuccess } from '../../utils/haptics';
 import {
   type RatioMember,
   splitByRatio,

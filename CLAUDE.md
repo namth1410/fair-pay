@@ -42,9 +42,11 @@ src/
 - Hàm này có 30s cache — gọi `clearAuthCache()` khi user logout (đã tích hợp trong `auth.store.ts`).
 
 ### Authorization
+- Chỉ có 2 role: `'admin' | 'member'`. Mỗi nhóm có **đúng 1 admin** (người tạo nhóm). Admin không tự rời/bị xóa; chỉ member mới rời/bị xóa được.
 - Mọi hàm service thay đổi dữ liệu nhóm PHẢI gọi `assertRole()` ở đầu hàm (đã có trong `group.service.ts`).
-- `assertRole(groupId, ['owner', 'admin'])` — check caller có role trong danh sách cho phép.
-- `removeMember` phải chặn xóa owner (`target.role === 'owner'`).
+- `assertRole(groupId, ['admin'])` — check caller có role trong danh sách cho phép.
+- `removeMember` phải chặn xóa admin (`target.role === 'admin'`).
+- `updateMemberRole` hiện `@deprecated` — giữ signature cho tương lai (Transfer Admin atomic). Không gọi từ UI.
 
 ### Supabase queries
 - Mọi query liên quan `group_members` PHẢI có `.is('left_at', null)` trừ khi cần hiển thị lịch sử.

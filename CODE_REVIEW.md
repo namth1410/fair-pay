@@ -81,7 +81,7 @@ export async function createTrip(groupId: string, name: string, ...) {
 
 // Nên sửa
 export async function createTrip(groupId: string, name: string, ...) {
-  await assertRole(groupId, ['owner', 'admin']); // ✅
+  await assertRole(groupId, ['admin']); // ✅
   const userId = await getAuthUserId();
   ...
 }
@@ -110,7 +110,7 @@ export async function deleteExpense(expenseId: string): Promise<void> {
 }
 ```
 
-**Đề xuất:** Fetch expense trước, lấy `group_id`, rồi `assertRole(groupId, ['owner', 'admin'])`.
+**Đề xuất:** Fetch expense trước, lấy `group_id`, rồi `assertRole(groupId, ['admin'])`.
 
 ### 🟡 `[important]` SEC-03: Google OAuth token parsing fragile
 

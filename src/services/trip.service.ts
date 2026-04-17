@@ -1,6 +1,5 @@
 import { supabase } from '../config/supabase';
 import { validateName } from '../utils/validate';
-
 import { getAuthUserId } from './auth.helper';
 import { assertRole } from './group.service';
 
@@ -29,13 +28,13 @@ export async function fetchTrips(groupId: string): Promise<Trip[]> {
   return data || [];
 }
 
-/** Create a trip (admin/owner only) */
+/** Create a trip (admin only) */
 export async function createTrip(
   groupId: string,
   name: string,
   type: Trip['type'] = 'other'
 ): Promise<Trip> {
-  await assertRole(groupId, ['owner', 'admin']);
+  await assertRole(groupId, ['admin']);
 
   const nameErr = validateName(name, 'Tên chuyến');
   if (nameErr) throw new Error(nameErr);
@@ -53,7 +52,7 @@ export async function createTrip(
   return data;
 }
 
-/** Close a trip (admin/owner only) — BR-05: closed trips still readable */
+/** Close a trip (admin only) — BR-05: closed trips still readable */
 export async function closeTrip(tripId: string): Promise<void> {
   const { data: trip, error: fetchErr } = await supabase
     .from('trips')
@@ -61,7 +60,7 @@ export async function closeTrip(tripId: string): Promise<void> {
     .eq('id', tripId)
     .single();
   if (fetchErr || !trip) throw new Error('Chuyến đi không tồn tại');
-  await assertRole(trip.group_id, ['owner', 'admin']);
+  await assertRole(trip.group_id, ['admin']);
 
   const { error } = await supabase
     .from('trips')
@@ -79,7 +78,7 @@ export async function reopenTrip(tripId: string): Promise<void> {
     .eq('id', tripId)
     .single();
   if (fetchErr || !trip) throw new Error('Chuyến đi không tồn tại');
-  await assertRole(trip.group_id, ['owner', 'admin']);
+  await assertRole(trip.group_id, ['admin']);
 
   const { error } = await supabase
     .from('trips')

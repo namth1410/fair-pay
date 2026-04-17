@@ -1,266 +1,229 @@
-# Frontend Review — Fair Pay
+# Đánh giá giao diện — Màn Group (Fair Pay)
 
-**Ngày đánh giá:** 16/04/2026
-**Stack:** React Native 0.83 · Expo 55 · HeroUI Native 1.0 · Uniwind (Tailwind v4) · Reanimated 4 · Zustand 5
-
----
-
-## Bảng điểm tổng quan
-
-| Hạng mục                  | Điểm | Ghi chú ngắn                                                       |
-| ------------------------- | :--: | ------------------------------------------------------------------- |
-| **Typography**            |  A-  | Be Vietnam Pro phù hợp hoàn hảo; hệ thống variant rõ ràng          |
-| **Color & Theme**         |  A   | Sakura palette độc đáo, OKLCH chuyên nghiệp, dark mode hoàn chỉnh  |
-| **Motion & Animation**    |  B+  | Spring physics tốt, nhưng thiếu gesture-driven & page transitions   |
-| **Layout & Composition**  |  B+  | Cấu trúc card-based nhất quán; hero sections đẹp; ít bất ngờ       |
-| **Component Architecture**|  A-  | Tách tab/section hợp lý, React.memo đúng chỗ; vài điểm cải thiện   |
-| **Accessibility**         |  B+  | Roles, labels, live regions đầy đủ; thiếu focus management & a11y testing |
-| **Visual Polish**         |  A-  | Gradient avatars, SVG halos, brand decoration — chi tiết tinh tế    |
-
-**Điểm tổng: A- (Rất tốt)**
+> Phạm vi: `src/app/(main)/groups/[id].tsx` + 3 tab con (`TripsTab`, `MembersTab`, `GroupSettingsTab`) + các primitives liên quan (`SectionTabs`, `AppCard`, `AppText`, `EmptyState`).
+> Ngày review: 2026-04-17.
+> Tone: góp ý thẳng, có ưu tiên. Không sửa code trong lượt này.
 
 ---
 
-## 1. Typography
+## 1. Bảng điểm tổng (Scorecard)
 
-### Đánh giá: A-
+| Hạng mục | Điểm | Nhận định ngắn |
+|---|---|---|
+| Typography | B− | BeVietnamPro hợp tiếng Việt, nhưng thiếu display font tạo "personality"; không có hero text trên group screen. |
+| Color & Theme | B | Cam kết Sakura rõ ràng, nhưng ở light mode mọi surface đều hồng nhạt — dễ "washed out"; divider gần trùng primarySoft. |
+| Motion | A− | SectionTabs indicator spring + tab direction-aware transition + card press-in + haptic — điểm sáng nhất của màn. |
+| Layout | C+ | Cả 3 tab là list phẳng, không có hero/hierarchy, Settings tab quá trống. |
+| Component Architecture | B+ | Tách tab gọn, `React.memo`, props-driven; `AppCard.trailing` bị nhồi quá nhiều action. |
+| Accessibility | B | `accessibilityRole/label/hitSlop` đầy đủ; nhưng nhiều action là plain text 12px khó chạm, trạng thái disabled không rõ. |
+| Aesthetic Identity | C | Palette có DNA rõ nhưng thiếu "signature element" khiến group screen vẫn trông giống generic settings list. |
 
-**Điểm mạnh:**
-
-- **Be Vietnam Pro** — lựa chọn xuất sắc cho ứng dụng Việt Nam. Font hỗ trợ dấu tiếng Việt hoàn hảo, có tính cách riêng (không phải generic sans-serif như Inter/Roboto), và có đủ 4 weights (400–700) để tạo hierarchy rõ ràng.
-- Hệ thống `AppText` với 7 variants (display → label) tạo type scale nhất quán. `letterSpacing: -0.4` cho display và `-0.2` cho title là tight tracking hợp lý cho tiêu đề lớn.
-- `label` variant với `textTransform: 'uppercase'` + `letterSpacing: 0.6` tạo section headers phong cách chuyên nghiệp (ví dụ: "HỒ SƠ", "THÔNG BÁO" trong SettingsSheet).
-- `fontVariant: ['tabular-nums']` trên Money component — chi tiết nhỏ nhưng quan trọng, đảm bảo số tiền không nhảy layout khi animate.
-- Worklet-safe formatter (`formatAmount`) cho phép animated text trên UI thread mà không block JS thread.
-
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| Không có display font riêng | — | Be Vietnam Pro phục vụ tốt cho cả display lẫn body, nhưng một display font thứ hai (ví dụ: Playfair Display cho "Fair · Pay" wordmark) sẽ tạo thêm tính cách cho brand. Hiện tại Wordmark dùng cùng Be Vietnam Pro. |
-| Line-height ratio không đều | [AppText.tsx](src/components/ui/AppText.tsx#L18-L24) | `display: 38/32 = 1.19`, `body: 20/14 = 1.43`, `meta: 16/12 = 1.33`. Nên cân nhắc tỷ lệ đồng đều hơn (~1.4–1.5 cho body text). |
-| Caption vs Meta quá gần | [AppText.tsx](src/components/ui/AppText.tsx#L22-L23) | `caption: 13px` vs `meta: 12px` — chênh lệch chỉ 1px, khó phân biệt trực quan. Nên gộp hoặc tách rõ hơn (11px vs 13px). |
+**Tổng thể: B−** — nền tảng kỹ thuật tốt, motion tinh, nhưng màn Group chưa "khoe" được bản sắc Sakura, tab Settings đặc biệt thiếu chất.
 
 ---
 
-## 2. Color & Theme
+## 2. Typography
 
-### Đánh giá: A
+**Font stack** — `BeVietnamPro_400/500/600/700`, khai báo sạch trong [fonts.ts](src/config/fonts.ts).
 
-**Điểm mạnh:**
+### Ưu
+- Là font sans-serif thiết kế riêng cho tiếng Việt: dấu đầy đủ, cân đối — đúng đối tượng dùng.
+- Hệ thống variant trong [AppText.tsx:17-25](src/components/ui/AppText.tsx#L17-L25) khá chuẩn: `display/title/subtitle/body/caption/meta/label` có `letterSpacing` âm cho heading, `letterSpacing: 0.6 + uppercase` cho label — chi tiết tốt.
+- `letterSpacing: 2` áp vào invite code ở [MembersTab.tsx:199](src/components/group/MembersTab.tsx#L199) — đúng gu "serial number / ticket" — chi tiết cao cấp.
 
-- **Sakura palette** — hồng nhạt dịu dàng, hoàn toàn khác biệt so với đa số finance app (xanh dương/xanh lá). Tạo cảm giác thân thiện, phù hợp cho nhóm bạn chia tiền.
-- **Dual color system:** HSL tokens cho `StyleSheet` (qua `theme.ts`) + OKLCH variables cho Uniwind/HeroUI (`global.css`). OKLCH là perceptually-uniform — rất chuyên nghiệp cho mobile.
-- **Dark theme xử lý tốt:** giảm chroma (`0.72 × chroma`) trên accent colors để không chói trên nền plum đậm. Inset shadows thay vì drop shadows. Background `#1F1018` đủ tối mà vẫn ấm.
-- **Semantic color tokens đầy đủ:** `success`, `danger`, `warning` có cả base + soft variants cho cả light và dark, giúp badges/banners nhìn tự nhiên.
-- **Pink-tinted shadows** (`rgba(249, 168, 212, 0.08)`) — chi tiết tinh tế, shadow "thuộc về" palette thay vì generic gray/black.
-- **Theme transition overlay** ([ThemeTransitionOverlay.tsx](src/components/common/ThemeTransitionOverlay.tsx)) — crossfade 100ms in / 250ms out che giấu hard-flip rất mượt.
-- **Left-border accent trên cards** dùng `success` / `danger` — tạo visual hierarchy nhanh, user scan được ai nợ / được nợ chỉ bằng màu.
+### Khuyết
+- **Không có display/characterful font** đi kèm. Với concept Sakura mềm mại, đáng lẽ nên pair BeVietnamPro (body) với một display font mang tính nữ tính / thanh lịch (vd. serif/didone hoặc rounded display như `Fraunces`, `DM Serif Display`, `Recoleta`, `Unbounded`) cho tiêu đề nhóm, tiêu đề tab. Hiện tại mọi thứ dùng chung 1 family → thiếu nhịp.
+- **Không nơi nào trên màn Group dùng `variant="display"`** (32px). Tên nhóm chỉ nằm trên `Stack.Screen.options.title` ([groups/[id].tsx:224](src/app/(main)/groups/[id].tsx#L224)) — nghĩa là dùng font hệ thống của navigation, **không phải BeVietnamPro**. Lạc điệu với phần còn lại.
+- `variant="label"` có `textTransform: uppercase` — tiếng Việt có dấu khi uppercase ("YÊU CẦU THAM GIA") trông **nặng nề, dấu chạm baseline**. Ở [MembersTab.tsx:127-129](src/components/group/MembersTab.tsx#L127-L129) dùng `variant="label"` — cần tracking + line-height rộng hơn, hoặc bỏ uppercase cho tiếng Việt.
+- `RolePill` text dùng `variant="meta"` (12px) — khi đã có background tint, font này hơi bé, đặc biệt trên Android density thấp.
 
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| `inverse` tone hardcode `#FFFFFF` | [AppText.tsx](src/components/ui/AppText.tsx#L55) | Nên dùng token thay vì hardcode. Trên dark theme, "inverse" text vẫn là trắng — đúng cho most cases, nhưng thiếu linh hoạt nếu cần inverse trên colored backgrounds. |
-| Logout icon hardcode `#FFFFFF` | [SettingsSheet.tsx](src/components/common/SettingsSheet.tsx#L239) | `<LogOut size={18} color="#FFFFFF" />` — nên dùng semantic token (ví dụ: `c.dangerForeground` hoặc danger button foreground). |
-| Soft variants lặp trong dark theme | [theme.ts](src/config/theme.ts#L74-L79) | `successSoft` = `successSoftDark`, `dangerSoft` = `dangerSoftDark` — các giá trị giống nhau, tạo confusion. Nên xóa `*SoftDark` variants trong dark palette hoặc đổi mục đích. |
-| BottomSheet flash on iOS khi đổi theme | [ThemeTransitionOverlay.tsx](src/components/common/ThemeTransitionOverlay.tsx#L29-L31) | Known issue (documented) — FullWindowOverlay nằm trên overlay. Xem xét `captureRef` + snapshot approach hoặc delay sheet re-render. |
+### Gợi ý
+1. Thêm 1 display font (ưu tiên có bản Vietnamese subset) — áp cho tên nhóm ở header và các tiêu đề section lớn.
+2. Custom lại `Stack.Screen.options.headerTitle` để dùng `AppText` / display font.
+3. Review toàn bộ chỗ dùng `label` + uppercase với tiếng Việt có dấu — hoặc tách thành `label-en` (uppercase) và `label-vi` (sentence case + tracking 0.4).
 
 ---
 
-## 3. Motion & Animation
+## 3. Color & Theme
 
-### Đánh giá: B+
+### Ưu
+- **Commitment mạnh với palette Sakura** — [theme.ts](src/config/theme.ts) định nghĩa rõ light (white + pink-50 surface + deep plum foreground) và dark (plum bg + pink foreground). Đây là điểm cộng lớn: đa số app AI-generated dùng purple gradient / blue — palette này **có DNA riêng**.
+- Semantic color phân tách tốt: `primarySoft / accentSoft / primaryStrong / warmAccent` — cho phép dùng tint làm nền và strong làm text/badge.
+- Badge/soft variants (`successSoft`, `dangerSoft`, `accentSoft`) — đúng pattern modern design.
 
-**Điểm mạnh:**
+### Khuyết
+- **Light mode dễ "washed out"**: `background #FFFFFF`, `surface #FDF2F8`, `surfaceAlt #FCE7F3`, `divider #FBCFE8`, `primarySoft #FBCFE8` — **divider trùng chroma với primarySoft** → trên card `surface` thì divider gần như biến mất. Kiểm tra [GroupSettingsTab.tsx:28](src/components/group/GroupSettingsTab.tsx#L28): divider hầu như invisible.
+- **Thiếu "anchor color" đậm làm đối trọng**. Cả màn chỉ có `primaryStrong #EC4899` xuất hiện ở badge nhỏ và text button — không có khối màu đậm nào làm điểm nhấn. Banner invite ([MembersTab.tsx:111](src/components/group/MembersTab.tsx#L111)) dùng gradient `accentSoft → tint` tức `pink-100 → pink-50` — **gradient gần như vô hình**, không tạo được cảm giác "hero".
+- **Warning color `#F59E0B` (amber)** lệch tông Sakura — thay bằng một sắc hồng-cam (peach/coral) sẽ liền mạch hơn, tránh cảm giác "patch-in từ Tailwind default".
+- Dark mode `divider #3D2433` trùng `surfaceAlt` — cùng vấn đề ranh giới biến mất.
 
-- **Spring physics thực thụ:** `damping: 18, stiffness: 300` cho card press scale, `damping: 18, stiffness: 220` cho tab indicator — cảm giác tự nhiên, không linear.
-- **Staggered entrance** qua `AnimatedEntrance` — `FadeInDown` với delays tăng dần (0, 50, 100ms...), cap tại 500ms. Tạo cảm giác "xếp tầng" khi list load.
-- **Animated Money** — giá trị số chạy mượt bằng `withTiming(450ms)` qua Reanimated worklet, không block JS thread.
-- **Haptic feedback** phân tầng: Light (card press), Medium (swipe delete), Success (form submit) — multi-modal UX.
-- **Theme crossfade** — fade in → swap → fade out che giấu hard color flip.
-
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| Tab content chỉ có `FadeIn.duration(150)` | [trips/[id].tsx](src/app/(main)/trips/[id].tsx#L73) | Khi switch tab, content chỉ fade — thiếu slide direction (left/right theo tab order). Nên dùng `SlideInRight` / `SlideInLeft` tùy hướng chuyển tab. |
-| Không có exit animation trên tab content | [trips/[id].tsx](src/app/(main)/trips/[id].tsx#L73) | `Animated.View key={tab}` mount mới mỗi lần đổi tab nhưng component cũ bị unmount ngay, không có `exiting` animation. Nên thêm `FadeOut.duration(100)` hoặc layout animation. |
-| Skeleton không animate | — | `ListSkeleton` dùng static views. Nên thêm shimmer effect (pulse animation) — có thể dùng `useAnimatedStyle` với `withRepeat(withTiming(opacity, {duration: 1000}))`. |
-| Thiếu gesture-driven animations | — | SwipeableCard chỉ dùng cơ bản từ `react-native-gesture-handler`. Cơ hội tốt cho drag-to-reorder expenses, pull-to-refresh custom animation, parallax scroll hero. |
-| Hero card không có entering animation riêng | [index.tsx](src/app/(main)/index.tsx#L78) | `AnimatedEntrance delay={0}` trên hero — giống mọi card khác. Hero nên có animation đặc biệt hơn (scale up from 0.95 + fade, hoặc blur reveal). |
-| Không có shared element transitions | — | Khi navigate từ group card → group detail, avatar/title có thể shared element transition. React Navigation 7 hỗ trợ via `sharedTransitionTag`. |
+### Gợi ý
+1. Đẩy `divider` light sang pink-300 tint (vd. `#F5B6D2` với opacity 0.4) hoặc dùng `foreground` với opacity 0.08.
+2. Đổi gradient invite banner: `primaryStrong → warmAccent` (pink-500 → rose-300) với góc chéo 135° — có "oomph", vẫn Sakura. Text đổi sang `inverseForeground`.
+3. Thêm 1 "accent deep" (vd. burgundy `#6B1E3F`) cho CTA lớn và foreground alt — để mảng màu có đủ contrast ratio.
+4. Xem lại warning: thử `#F08080` hoặc `#D97757` (terracotta) để ở trong family ấm.
 
 ---
 
-## 4. Layout & Spatial Composition
+## 4. Motion
 
-### Đánh giá: B+
+### Ưu (đây là điểm sáng nhất)
+- [SectionTabs.tsx:44-49](src/components/ui/SectionTabs.tsx#L44-L49) — indicator dùng `withSpring({ damping: 18, stiffness: 220 })`, đo layout imperatively → chuyển tab mượt, rất premium.
+- [groups/[id].tsx:210-220](src/app/(main)/groups/[id].tsx#L210-L220) — tab content entering **biết hướng** (tab sau trượt từ phải, tab trước từ trái) nhờ `prevTabRef` + `GROUP_TAB_KEYS.indexOf`. Rất ít app RN làm đến mức này. Giữ.
+- [AppCard.tsx:44-52](src/components/ui/AppCard.tsx#L44-L52) — press-in `scale 0.97` + haptic light. Tactile tốt.
+- [EmptyState.tsx:23-45](src/components/ui/EmptyState.tsx#L23-L45) — SVG halo 3-blob radial gradient thay vì icon trơn → **đây là "signature detail"** duy nhất có tính aesthetic cao trên màn này.
 
-**Điểm mạnh:**
+### Khuyết
+- **Không có stagger reveal** khi tab render lần đầu. List trips/members xuất hiện đồng loạt → bỏ phí cơ hội gây ấn tượng.
+- `FormReveal` (tạo chuyến) — chưa xem code, nhưng tên gợi ý là expand/collapse. Nên có check xem có easing thẳng thớm không (thường dễ bị linear).
+- Invite banner không có micro-interaction (pulse nhẹ / shimmer) — với 1 CTA chia sẻ đây là chỗ đáng đầu tư.
+- `ConfirmDialog` — mở nhiều lần trong màn này (4 handler confirm). Không rõ có backdrop blur / scale spring không. Nếu chỉ fade thì phí.
 
-- **Card-based design** nhất quán: `borderRadius: 14`, `padding: 14`, uniform spacing tạo rhythm dễ chịu.
-- **Hero gradient sections** ([GradientHero.tsx](src/components/ui/GradientHero.tsx)) — SVG gradient diagonal tạo depth, không flat.
-- **Left-border accent pattern** trên balance cards — nhanh, visual, scannable.
-- **Empty states** có SVG radial gradient halos — không chỉ icon + text mà còn decorative background, tạo cảm giác "designed" thay vì placeholder.
-- **Auth screen** có `BrandDecoration` — 2 radial gradient blobs (top-right + bottom-left) tạo chiều sâu, không flat.
-- **ScrollShadow** wrapper trên lists — edge fade effect chuyên nghiệp.
-- **Consistent margin system**: `marginHorizontal: 16` cho content, `padding: 14` cho cards, `gap: 12` cho forms.
-
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| Layout quá an toàn / đồng nhất | Toàn bộ screens | Mọi screen đều: Hero (top) → Tabs → Scrollable list. Không có visual surprises — overlap, asymmetry, hay density variation. Phù hợp cho utility app, nhưng thiếu "memorable moments". |
-| Hero section lặp lại exact cùng pattern | [index.tsx](src/app/(main)/index.tsx#L79), [trips/[id].tsx](src/app/(main)/trips/[id].tsx#L61) | Cả Home hero và Trip hero đều: `GradientHero > paddingVertical: 18 > label + Money + meta`. Nên differentiate (thêm mini chart cho trip, avatar stack cho home, etc.). |
-| Spacing không theo system rõ ràng | Nhiều files | Mix: 2, 4, 8, 10, 12, 14, 16, 18, 20, 24, 28, 40px. Nên có spacing scale rõ ràng (4, 8, 12, 16, 24, 32, 48) và đặt tên (xs, sm, md, lg, xl). |
-| Settings sheet quá dọc / monotone | [SettingsSheet.tsx](src/components/common/SettingsSheet.tsx) | Chỉ cards xếp dọc liên tiếp. Profile section nên nổi bật hơn (centered layout, larger avatar). |
-| BalancesTab export summary box | [BalancesTab.tsx](src/components/trip/BalancesTab.tsx#L56-L62) | Box tổng chi nằm trên card list — nhìn giống thêm một card chứ không phải summary. Nên distinct hơn (gradient bg, different border radius, hoặc sticky header). |
+### Gợi ý
+1. Thêm `entering={FadeInDown.delay(i * 40).springify()}` cho từng `AppCard` trong list (stagger 40ms).
+2. Banner invite: thêm shimmer gradient chạy ngang chậm (3–4s loop) — rất phù hợp vibe "mã mời đang mời gọi".
+3. Kiểm tra `ConfirmDialog`: cần scale 0.95 → 1 spring + backdrop fade.
 
 ---
 
-## 5. Component Architecture
+## 5. Layout & Composition
 
-### Đánh giá: A-
+### Ưu
+- 3 tab có thứ tự logic: `Chuyến đi → Thành viên → Cài đặt`. Badge trên tab Thành viên khi có pending request — UX đúng.
+- `SectionTabs` dùng `alignSelf: flex-start` — pill indicator nằm gọn, không full-width bất cân — chọn lựa có chủ ý.
 
-**Điểm mạnh:**
+### Khuyết (nhiều)
+- **Không có hero/header cho group**. Vào màn group, người dùng chỉ thấy tên nhóm trên system nav header + tabs. Đáng lẽ cần 1 block trên cùng hiển thị: avatar nhóm, tên nhóm, meta (số thành viên / số chuyến đang mở / số dư bạn). Hiện tại phải nhảy sang tab Settings mới biết thống kê.
+- **Tab Settings quá trống** ([GroupSettingsTab.tsx](src/components/group/GroupSettingsTab.tsx)): 3 hàng info + nút "Xóa nhóm". Không có group avatar, không có tên nhóm editable, không có "Mã mời" (đang nằm bên tab Members), không có section "Vùng nguy hiểm". Với role admin đây là tab họ sẽ vào — nhưng không đáng vào.
+- **Tab Members trailing quá chật**: `AppCard.trailing` nhồi `RolePill` + 2 plain-text action ("Hạ quyền" / "Xóa") stack 2 chiều. Trên màn hình 360dp Android, pill + 2 text 12px rất dễ mis-tap. Xem [MembersTab.tsx:66-98](src/components/group/MembersTab.tsx#L66-L98).
+- **Pending request nằm giữa tab Members** — không nổi bật. Nên đẩy lên banner hoặc floating section ở tab Trips (vì admin cần action nhanh).
+- **Form tạo chuyến**: nút "Tạo chuyến" ở corner trên-phải, khi bấm show form inline phía dưới — OK, nhưng không có visual connection (không có arrow/border) giữa button và form — cảm giác tách rời.
+- **Không có asymmetry/grid-breaking**. Mọi thứ là list dọc 1 cột padding 16 — an toàn nhưng nhàm.
+- Banner invite dùng `paddingHorizontal: 16, marginBottom: 12` — margin không đối xứng với ScrollShadow bên dưới, gây cảm giác "nổi lềnh bềnh".
 
-- **Tách screen thành sub-components theo tab**: `ExpensesTab`, `BalancesTab`, `SettlementTab`, `HistoryTab` — mỗi tab là `React.memo()` component nhận data qua props, không gọi store trực tiếp. Pattern mẫu mực.
-- **Single theme hook** (`useAppTheme`) gọi `useUniwind()` đúng 1 lần, trả về flat object — đơn giản, dễ destructure.
-- **UI components thuần**: `AppText`, `AppCard`, `Money`, `Avatar` — không có side effects, dễ test, dễ compose.
-- **HeroUI Native compound pattern**: `Button.Label`, `Dialog.Title`, `BottomSheet.Content` — đúng pattern của library.
-- **Deterministic Avatar**: FNV-1a hash → gradient colors — cùng seed luôn ra cùng màu, không cần fetch/store avatar.
-- **Index barrel exports** (`components/ui/index.ts`) — clean imports.
-- **Error Boundary** đầy đủ với fallback UI có theme context.
-
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| `renderHeroDebt` là function inside component | [index.tsx](src/app/(main)/index.tsx#L51-L94) | Inline render function tạo new reference mỗi render. Nên extract thành `HeroDebtCard` component riêng với `React.memo()`. |
-| `renderGroupBalance` inline function | [index.tsx](src/app/(main)/index.tsx#L97-L109) | Tương tự — nên là component riêng để memo-izable. |
-| `SettingsSheet` làm quá nhiều việc | [SettingsSheet.tsx](src/components/common/SettingsSheet.tsx) | Profile CRUD + notification settings + theme toggle + logout — nên tách thành `ProfileSection`, `NotificationSection`, `AppearanceSection` sub-components. |
-| `AppCard` thiếu variant system | [AppCard.tsx](src/components/ui/AppCard.tsx) | Chỉ có 1 kiểu card. Nên có variants (elevated, outlined, ghost) để phân biệt visual hierarchy giữa các contexts. |
-| `EmptyState` Halo component inline | [EmptyState.tsx](src/components/ui/EmptyState.tsx#L22-L44) | `Halo` function component nằm trong cùng file nhưng không memo — mỗi lần EmptyState re-render, Halo SVG cũng re-render. SVG render không cheap. Nên wrap `React.memo()`. |
-| Thiếu Skeleton cho hero/tabs | — | Chỉ có `ListSkeleton` cho card lists. Hero section và tab bar hiện show content ngay hoặc empty — nên có skeleton cho full-screen loading state. |
+### Gợi ý
+1. Thêm **Group Hero Header**: avatar + tên nhóm (display font), dưới là 3 stat inline (Thành viên • Chuyến đang mở • Số dư). Hiển thị trên mọi tab. Khi scroll thì collapse sticky.
+2. Tab Settings: refactor thành card-based `[Thông tin] [Mời & liên kết] [Vùng nguy hiểm]`. Đưa invite code về đây (tab Members chỉ show list).
+3. Tab Members trailing: đổi 2 plain-text action thành **overflow menu (3-dot icon)** — tiết kiệm không gian, role pill được thở.
+4. Pending request: box riêng màu warning soft, có CTA "Xem tất cả" nếu >3 — hiện tại `pendingRequests.map` render toàn bộ, tràn nếu 10+.
+5. Phá layout: Invite banner dùng card chéo (skew -1°) hoặc border-radius bất đối xứng (top-left 24, bottom-right 8) → signature element.
 
 ---
 
-## 6. Accessibility (Trợ năng)
+## 6. Component Architecture
 
-### Đánh giá: B+
+### Ưu
+- Tách [TripsTab](src/components/group/TripsTab.tsx), [MembersTab](src/components/group/MembersTab.tsx), [GroupSettingsTab](src/components/group/GroupSettingsTab.tsx) — đúng quy tắc CLAUDE.md (screens >300 dòng phải tách).
+- `React.memo` cho mọi sub-tab — render-efficient.
+- Callbacks truyền qua props, không gọi store trực tiếp trong sub-components — đúng quy ước.
+- `ConfirmDialog` reuse cho 4 flow (change role, kick, approve, reject, delete group) — DRY.
 
-**Điểm mạnh:**
+### Khuyết
+- **State confirm tập trung ở parent quá nặng**: [groups/[id].tsx:60-201](src/app/(main)/groups/[id].tsx#L60-L201) có 5 handler confirm na ná nhau (set `ConfirmState` với title/desc/onConfirm khác nhau). Có thể tạo hook `useConfirm()` trả về `confirm({ title, desc, destructive, onConfirm })` — gọn hơn và tái dùng ở các màn khác.
+- **`AppCard.trailing: ReactNode`** — API quá phóng khoáng, dẫn tới nhồi nhét (xem tab Members). Nên thêm variant `trailingActions: { label, onPress, tone }[]` để ép kỷ luật.
+- `getChangeRoleColor` ở [MembersTab.tsx:55-59](src/components/group/MembersTab.tsx#L55-L59) — logic color inline, nên chuyển về token hoặc helper.
+- `ROLE_LABELS` định nghĩa **cả ở parent lẫn ở MembersTab** ([groups/[id].tsx:24-28](src/app/(main)/groups/[id].tsx#L24-L28) + [MembersTab.tsx:13-17](src/components/group/MembersTab.tsx#L13-L17)) — duplicate, dễ lệch khi thêm role.
 
-- **Semantic roles đầy đủ**: `button`, `tab`, `switch`, `text`, `image`, `alert`, `progressbar` — đúng chỗ, đúng component.
-- **Compound accessibility labels**: `AppCard` tự compose `title + subtitle` thành label. Money có label `{value} đồng`.
-- **`accessibilityLiveRegion="polite"`** trên OfflineBanner — screen reader auto-announce.
-- **`accessibilityLiveRegion="assertive"`** trên error messages (login) — lỗi được đọc ngay.
-- **Touch targets**: `minWidth: 44, minHeight: 44` trên header buttons, `hitSlop` trên small pressables.
-- **`accessibilityState: { selected }`** trên tabs.
-- **Error messages** trong login hiện conditional — chỉ show khi relevant field có vấn đề.
-
-**Điểm cần cải thiện:**
-
-| Vấn đề | File | Chi tiết |
-|--------|------|----------|
-| Thiếu `accessibilityRole="tablist"` | [SectionTabs.tsx](src/components/ui/SectionTabs.tsx#L63) | Container `<View style={styles.tabs}>` nên có `accessibilityRole="tablist"`. Hiện tại chỉ có `tab` trên individual items. |
-| Avatar `accessibilityLabel` conditional | [Avatar.tsx](src/components/ui/Avatar.tsx#L55) | `accessibilityLabel={label ? \`Avatar ${label}\` : undefined}` — khi `label` vắng, ảnh không có alt text. Nên fallback sang seed. |
-| Money animate mode accessibility | [Money.tsx](src/components/ui/Money.tsx#L100-L101) | Label đặt trên container `View` nhưng giá trị bên trong animate — screen reader có thể đọc giá trị cũ trong lúc animating. Nên dùng `accessibilityValue` dynamic. |
-| Thiếu focus management sau navigation | Toàn bộ screens | Khi navigate tới screen mới, không có `accessibilityFocus` được set. Screen reader users phải tự tìm content. |
-| `Wordmark` thiếu accessibility | [Wordmark.tsx](src/components/brand/Wordmark.tsx) | SVG logo không có `accessibilityLabel`. Nên thêm `accessibilityLabel="Fair Pay"` hoặc `accessibilityRole="header"`. |
-| Form validation không link tới field | [login.tsx](src/app/(auth)/login.tsx#L98-L108) | Error box hiện riêng, không `accessibilityLabelledBy` tới input — screen reader khó map lỗi nào thuộc field nào. |
-| Không có reduced motion support | — | Animations chạy cả khi user bật "Reduce Motion" trong OS settings. Nên check `AccessibilityInfo.isReduceMotionEnabled()` hoặc Reanimated's `ReducedMotionConfig`. |
+### Gợi ý
+1. Tạo `src/hooks/useConfirm.ts` bọc toàn bộ flow confirm dialog.
+2. Hoist `ROLE_LABELS` + `Role` type vào `src/types/roles.ts`.
+3. `AppCard`: thêm `actions` prop (mảng) thay cho `trailing` cho use-case action list.
 
 ---
 
-## 7. Đánh giá theo màn hình
+## 7. Accessibility
 
-### 7.1 Login / Register
+### Ưu
+- `accessibilityRole="tablist" / "tab"` + `accessibilityState={{ selected }}` ở SectionTabs — chuẩn.
+- `accessibilityLabel` có trên tất cả Pressable ([MembersTab.tsx:75, 90, 141, 148](src/components/group/MembersTab.tsx)).
+- `hitSlop: 8` cho mọi text button nhỏ — đúng.
 
-| Điểm | Chi tiết |
-|------|----------|
-| **Tốt** | `BrandDecoration` radial blobs tạo depth. Staggered entrance mượt. `KeyboardAvoidingView` xử lý đúng per-platform. Error display conditional thông minh. |
-| **Cải thiện** | Thiếu "Quên mật khẩu" link. Google button không có Google icon/logo — chỉ text. Nên thêm social icon. Register screen (không đọc chi tiết) nên validate real-time thay vì on-submit. |
+### Khuyết
+- **Text button 12px không có visual affordance**: "Hạ quyền / Lên admin / Xóa / Đóng / Mở lại / Duyệt / Từ chối" đều là plain text chỉ khác màu. Với người dùng lớn tuổi hoặc accessibility service, không rõ đây là button. Screen reader đọc được (nhờ role) nhưng **visual affordance kém**.
+- **State disabled không rõ ràng**: ở [MembersTab.tsx:73-83](src/components/group/MembersTab.tsx#L73-L83), khi `hasAdmin && role === 'member'` → màu chuyển sang `c.divider` (#FBCFE8), **nhưng `disabled` prop chỉ áp cho Pressable, text vẫn click-visible và không có icon/opacity giảm**. Người dùng bấm sẽ không thấy phản hồi → confusion.
+- **Contrast**: role pill với background `color + '22'` (13% alpha) trên `c.surface` — `c.warning` text `#F59E0B` với bg `#F59E0B22` ≈ pastel — contrast ratio ước tính ~3.2:1, **dưới chuẩn WCAG AA** cho text 12px.
+- Badge đỏ (danger) ở tab Members: ký tự trắng 10px trên `#E11D48` — OK ratio ~5:1 nhưng 10px là nhỏ — cân nhắc 11px.
+- Chưa thấy `accessibilityLabel` cho toàn bộ card trong Trips/Members khi chứa summary (đã có cho trường hợp subtitle trong AppCard — OK).
 
-### 7.2 Home (Dashboard)
-
-| Điểm | Chi tiết |
-|------|----------|
-| **Tốt** | Hero debt card 3 states (settled/owed/owing) rõ ràng. Gradient từ soft color → tint đẹp. Group cards có avatar + balance + left-border accent. Pending join banner contextual. |
-| **Cải thiện** | Không có search/filter groups. Không sort (alphabetical, balance, recent). Empty state action chỉ "Tạo nhóm" — thiếu "Nhập mã mời" option. `FlatList` thiếu `getItemLayout` cho performance với long lists. |
-
-### 7.3 Group Detail
-
-| Điểm | Chi tiết |
-|------|----------|
-| **Tốt** | Tab system with animated indicator. Badge count cho pending requests. Role-based UI (hide Settings tab cho non-admin). Share invite code. |
-| **Cải thiện** | Không có group avatar/header hero — nhảy thẳng vào tabs. Nên có group hero section (gradient + name + member count + avatar stack). |
-
-### 7.4 Trip Detail
-
-| Điểm | Chi tiết |
-|------|----------|
-| **Tốt** | 4 tabs đầy đủ. Hero tổng chi với animated Money. Metadata row (khoản · thanh toán · người) compact. |
-| **Cải thiện** | Tab switch thiếu direction animation (đã nêu ở Motion). BalancesTab "Lưu ảnh số dư" button nên nổi bật hơn — đây là killer feature nhưng hiện nhìn nhỏ. |
-
-### 7.5 Settings Sheet
-
-| Điểm | Chi tiết |
-|------|----------|
-| **Tốt** | Grouped sections rõ ràng. Dark mode toggle instant với crossfade. Profile inline edit UX tốt. |
-| **Cải thiện** | Thiếu app version info ở footer. Avatar chỉ 56px trong profile — nên lớn hơn (80–96px) cho phần profile header. Logout button nên ở cuối cùng với margin lớn hơn và visual separation rõ hơn (horizontal rule hoặc danger zone border). |
+### Gợi ý
+1. Đổi các text-only action thành Button/IconButton hoặc text có underline + icon prefix.
+2. Khi disabled: thêm `opacity: 0.4` + bỏ nhân hậu `Pressable` hoàn toàn.
+3. Tăng độ đặc của role pill fill: `color + '33'` (20%) và text dùng `color` shade đậm hơn (vd. `warning` text dùng `#92400E` trên `#F59E0B33`).
+4. Audit contrast với axe-like tool (có thể dùng `react-native-a11y`).
 
 ---
 
-## 8. Visual Polish & Signature Details
+## 8. Chi tiết từng tab
 
-### Đánh giá: A-
+### 8.1 Tab "Chuyến đi" (TripsTab)
 
-Những chi tiết tạo nên chất lượng "designed, not generated":
+| Vấn đề | Vị trí | Priority |
+|---|---|---|
+| Empty state không có CTA tạo chuyến | [TripsTab.tsx:115](src/components/group/TripsTab.tsx#L115) | **Cao** — user mới không biết làm gì tiếp. |
+| Nút "Đóng / Mở lại" là plain text, dễ nhầm là status label thay vì action | [TripsTab.tsx:70-72](src/components/group/TripsTab.tsx#L70-L72) | Cao |
+| Subtitle format `"Du lịch · Đang mở"` — trạng thái trộn chung với type, không có badge màu | [TripsTab.tsx:59](src/components/group/TripsTab.tsx#L59) | Trung |
+| Form inline không có close affordance khác ngoài bấm lại "Hủy" ở xa | — | Thấp |
+| Không có sort/filter (theo status/type) — khi nhiều chuyến sẽ khó tìm | — | Thấp |
 
-- **Deterministic gradient avatars** với FNV-1a hash — mỗi user có avatar unique nhưng consistent, hue range 320-355° giữ trong pink family.
-- **SVG radial gradient halos** trên empty states — 3 overlapping blobs với primary/warmAccent/accentSoft tạo organic glow.
-- **BrandDecoration** — asymmetric blobs (top-right 320px + bottom-left 380px) tạo depth cho auth screens.
-- **Pink-tinted shadows** — shadows dùng `rgba(249, 168, 212, ...)` và `rgba(74, 31, 56, ...)` thay vì generic black. Phần shadow "thuộc về" palette.
-- **Wordmark SVG** — "Fair · Pay" với dot gradient từ `primaryStrong → warmAccent`. Tinh tế.
-- **`GradientHero`** dùng SVG `preserveAspectRatio="none"` — gradient fill container bất kể aspect ratio.
-- **Haptic layering** — Light/Medium/Success phân tầng theo interaction weight.
+**Gợi ý**: Empty state truyền `action={{ label: 'Tạo chuyến đầu tiên', onPress: () => setShowForm(true) }}`. Trạng thái chuyến thành pill nhỏ tone success/muted cạnh title.
+
+### 8.2 Tab "Thành viên" (MembersTab)
+
+| Vấn đề | Vị trí | Priority |
+|---|---|---|
+| Gradient banner invite quá nhạt (pink-50 → pink-100) — không tạo contrast | [MembersTab.tsx:111](src/components/group/MembersTab.tsx#L111) | **Cao** |
+| Trailing nhồi role pill + 2 text action — mis-tap | [MembersTab.tsx:66-98](src/components/group/MembersTab.tsx#L66-L98) | **Cao** |
+| Pending request xen giữa list, không nổi | [MembersTab.tsx:125-159](src/components/group/MembersTab.tsx#L125-L159) | Trung |
+| Thành viên ảo chỉ khác nhau bằng `(ảo)` hậu tố — không có visual cue (icon/badge) | [MembersTab.tsx:63](src/components/group/MembersTab.tsx#L63) | Trung |
+| Disabled state cho "Lên admin" dùng `divider` color — vẫn click được | [MembersTab.tsx:57-59](src/components/group/MembersTab.tsx#L57-L59) | Trung |
+| Invite code `letterSpacing: 2` đẹp nhưng nếu code dài (>8 ký tự) có thể tràn | [MembersTab.tsx:199](src/components/group/MembersTab.tsx#L199) | Thấp |
+
+**Gợi ý**: chuyển 2 action thành 3-dot menu, thành viên ảo đánh dấu bằng `Sparkles` icon + viền dashed, pending requests thu gọn thành card ribbon `pink-100` ở trên cùng với count badge + "Xem".
+
+### 8.3 Tab "Cài đặt" (GroupSettingsTab)
+
+| Vấn đề | Vị trí | Priority |
+|---|---|---|
+| Nội dung quá thiếu — chỉ 3 hàng số liệu + nút xóa | [GroupSettingsTab.tsx:22-44](src/components/group/GroupSettingsTab.tsx#L22-L44) | **Rất cao** |
+| Không có "Vùng nguy hiểm" wrapper — nút Xóa nhóm nằm trần | [GroupSettingsTab.tsx:40-44](src/components/group/GroupSettingsTab.tsx#L40-L44) | Cao |
+| Không có cách đổi tên / avatar nhóm | — | Cao |
+| Không có cách rời nhóm (cho member) — nhưng tab này `hidden: !isAdmin` → member không có đường rời qua UI | [groups/[id].tsx:234](src/app/(main)/groups/[id].tsx#L234) | **Cao** (UX hole) |
+| Divider giữa các info row dùng `c.divider` → vô hình trên pink surface | [GroupSettingsTab.tsx:28, 33](src/components/group/GroupSettingsTab.tsx#L28) | Trung |
+
+**Gợi ý**:
+- Tách 3 section: **Thông tin nhóm** (avatar + tên editable), **Mời & liên kết** (invite code + share + revoke), **Vùng nguy hiểm** (border-left danger, "Rời nhóm" cho member, "Xóa nhóm" cho admin). Khi có Transfer Admin thì thêm nút chuyển quyền bên admin.
+- Trường hợp `!isAdmin` vẫn cần tab Settings (rút gọn) — đừng ẩn hoàn toàn.
 
 ---
 
-## 9. Hành động ưu tiên
+## 9. Action Items (theo ưu tiên)
 
-### Ưu tiên cao (UX Impact)
+### P0 — phải làm sớm
+1. **Bổ sung Group Hero Header** (avatar + tên nhóm display font + 3 stat) hiển thị trên mọi tab.
+2. **Tab Settings**: thêm editable tên nhóm, section Invite, section Vùng nguy hiểm; đừng ẩn tab cho member — cần đường "Rời nhóm".
+3. **MembersTab trailing**: gom action vào 3-dot overflow menu.
+4. **Empty state TripsTab**: thêm CTA tạo chuyến.
+5. **Banner invite**: đổi sang gradient `primaryStrong → warmAccent` + text inverse + shimmer nhẹ.
 
-1. **Thêm directional tab transitions** — `SlideInLeft`/`SlideInRight` dựa trên tab index change direction. File: [trips/[id].tsx](src/app/(main)/trips/[id].tsx#L73), [groups/[id].tsx](src/app/(main)/groups/[id].tsx).
-2. **Skeleton shimmer animation** — thêm pulse/shimmer cho `ListSkeleton`. Hiện tại static placeholder nhìn như broken UI.
-3. **Reduced motion support** — check `ReducedMotionConfig` từ Reanimated, disable entrance animations + money animation khi user bật Reduce Motion.
-4. **`accessibilityRole="tablist"`** — thêm vào `SectionTabs` container.
+### P1 — ảnh hưởng nhận diện
+6. Pair BeVietnamPro với 1 display font cho heading; custom `Stack.Screen` title.
+7. Sửa divider light/dark cho contrast rõ (opacity 0.08 của foreground là an toàn).
+8. Đổi `warning` khỏi amber sang peach/terracotta trong family ấm.
+9. Thêm stagger reveal khi list render lần đầu (40ms/cell).
 
-### Ưu tiên trung bình (Design Quality)
-
-5. **Differentiate hero sections** — Home hero nên khác Trip hero (thêm avatar stack, mini balance chart, hoặc illustration).
-6. **Extract inline render functions** — `renderHeroDebt`, `renderGroupBalance` trong `index.tsx` → separate memoized components.
-7. **Spacing scale token** — define `spacing` constant (`4, 8, 12, 16, 24, 32, 48`) và dùng throughout, thay vì magic numbers.
-8. **Group detail header** — thêm hero section (gradient + group name + avatar stack) trước tabs.
-9. **Login Google button** — thêm Google icon (SVG hoặc từ asset).
-10. **Settings profile section** — avatar lớn hơn (80px+), centered layout cho phần profile.
-
-### Ưu tiên thấp (Nice to Have)
-
-11. **Shared element transitions** — avatar/title từ group list → group detail.
-12. **Display font cho Wordmark** — secondary font (serif hoặc display) cho brand identity.
-13. **Consolidate caption/meta variants** — gộp hoặc tách rõ hơn (11px vs 14px thay vì 12 vs 13).
-14. **Group search/filter** — khi user có nhiều groups.
-15. **Export button prominence** — "Lưu ảnh số dư" nên floating hoặc highlighted hơn.
+### P2 — polish
+10. `useConfirm()` hook + hoist `ROLE_LABELS` / `Role` type.
+11. `AppCard` thêm `actions` API ép kỷ luật.
+12. Visual cue cho thành viên ảo (icon `Sparkles`, viền dashed).
+13. Trạng thái chuyến thành pill màu thay vì text trộn subtitle.
+14. Kiểm tra contrast role pill ở warning/primary/success (cần ≥4.5:1 với text 12px).
 
 ---
 
 ## 10. Kết luận
 
-Fair Pay có nền tảng design rất vững. **Sakura palette** là lựa chọn bold và thành công — tạo brand identity riêng biệt trong market finance app toàn xanh. Hệ thống **theme tokens**, **OKLCH variables**, **typography scale**, và **component architecture** đều ở mức production-grade.
+Fair Pay có một nền kỹ thuật RN rất tốt: hệ thống token rõ, theme 2 chế độ, motion cao cấp, accessibility cơ bản đầy đủ, architecture tách tab hợp lý. Palette Sakura là quyết định đúng — khác biệt ngay từ ấn tượng đầu.
 
-Điểm cải thiện chính nằm ở **motion depth** (transitions giữa screens/tabs) và **layout variety** (hero sections hiện quá giống nhau). Về accessibility, nền tảng tốt nhưng cần reduced motion support và focus management để đạt WCAG AA.
+Nhưng riêng **màn Group đang đánh mất cơ hội showcase bản sắc đó**: không có hero, tab Settings bỏ trống, banner invite "hiền" quá, mọi action quy về text 12px na ná nhau. Chỉ cần xử lý P0 + P1 ở trên, màn này sẽ từ "list CRUD an toàn" trở thành "màn nhóm có personality Sakura rõ rệt".
 
-Đây là một codebase frontend mà team có thể tự hào — clean, intentional, và có tính cách riêng.
+**Điểm tổng: B−. Mục tiêu sau khi fix P0–P1: A−.**

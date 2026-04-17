@@ -5,8 +5,6 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
-import { hapticLight } from '../../utils/haptics';
-import { transitionToTheme } from '../../utils/themeTransition';
 import {
   DEFAULT_SETTINGS,
   fetchCurrentUser,
@@ -17,6 +15,8 @@ import {
 } from '../../services/user.service';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
+import { hapticLight } from '../../utils/haptics';
+import { transitionToTheme } from '../../utils/themeTransition';
 import {
   AppText,
   AppTextField,
@@ -129,7 +129,12 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
             </AppText>
             <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
               <View style={styles.profileRow}>
-                <Avatar seed={avatarSeed} label={profile?.display_name} size={56} />
+                <Avatar
+                  seed={avatarSeed}
+                  label={profile?.display_name}
+                  photoUrl={profile?.photo_url}
+                  size={56}
+                />
                 <View style={styles.profileInfo}>
                   {isEditingName ? (
                     <View style={styles.editNameRow}>

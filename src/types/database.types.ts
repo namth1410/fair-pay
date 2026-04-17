@@ -16,7 +16,7 @@ export interface GroupRow {
   id: string;
   name: string;
   avatar_url: string | null;
-  owner_id: string;
+  created_by: string;
   invite_code: string;
   created_at: string;
   deleted_at: string | null;
@@ -27,7 +27,7 @@ export interface GroupMemberRow {
   group_id: string;
   user_id: string | null;
   display_name: string;
-  role: 'owner' | 'admin' | 'member';
+  role: 'admin' | 'member';
   is_virtual: number; // 0 = false, 1 = true
   joined_at: string;
   left_at: string | null;

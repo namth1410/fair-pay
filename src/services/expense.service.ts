@@ -2,7 +2,6 @@ import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
 import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
-
 import { getAuthUserId } from './auth.helper';
 import { assertRole } from './group.service';
 
@@ -119,7 +118,7 @@ export async function deleteExpense(expenseId: string): Promise<void> {
     .eq('id', expenseId)
     .single();
   if (fetchErr || !expense) throw new Error('Khoản chi không tồn tại');
-  await assertRole(expense.group_id, ['owner', 'admin']);
+  await assertRole(expense.group_id, ['admin']);
 
   const { error } = await supabase
     .from('expenses')

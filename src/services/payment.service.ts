@@ -1,6 +1,5 @@
 import { supabase } from '../config/supabase';
 import { validatePositiveAmount } from '../utils/validate';
-
 import { getAuthUserId } from './auth.helper';
 import { assertRole } from './group.service';
 
@@ -87,7 +86,7 @@ export async function deletePayment(paymentId: string): Promise<void> {
     .eq('id', paymentId)
     .single();
   if (fetchErr || !payment) throw new Error('Thanh toán không tồn tại');
-  await assertRole(payment.group_id, ['owner', 'admin']);
+  await assertRole(payment.group_id, ['admin']);
 
   const { error } = await supabase
     .from('payments')

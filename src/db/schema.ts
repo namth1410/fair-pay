@@ -16,11 +16,11 @@ export const CREATE_TABLES = [
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     avatar_url TEXT,
-    owner_id TEXT NOT NULL,
+    created_by TEXT NOT NULL,
     invite_code TEXT UNIQUE NOT NULL,
     created_at TEXT DEFAULT (datetime('now')),
     deleted_at TEXT,
-    FOREIGN KEY (owner_id) REFERENCES users(id)
+    FOREIGN KEY (created_by) REFERENCES users(id)
   )`,
 
   `CREATE TABLE IF NOT EXISTS group_members (
@@ -28,7 +28,7 @@ export const CREATE_TABLES = [
     group_id TEXT NOT NULL,
     user_id TEXT,
     display_name TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','admin','member')),
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin','member')),
     is_virtual INTEGER DEFAULT 0,
     joined_at TEXT DEFAULT (datetime('now')),
     left_at TEXT,

@@ -2,8 +2,8 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { useToast } from 'heroui-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
-import Animated, { withTiming } from 'react-native-reanimated';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
+import Animated, { withTiming } from 'react-native-reanimated';
 
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
@@ -19,13 +19,7 @@ import { useTripStore } from '../../../stores/trip.store';
 import { getErrorMessage } from '../../../utils/error';
 
 type Tab = 'trips' | 'members' | 'settings';
-type Role = 'owner' | 'admin' | 'member';
-
-const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Chủ nhóm',
-  admin: 'Quản trị',
-  member: 'Thành viên',
-};
+type Role = 'admin' | 'member';
 
 interface ConfirmState {
   isOpen: boolean;
@@ -49,7 +43,7 @@ export default function GroupDetailScreen() {
   const {
     groups, currentGroupMembers, pendingJoinRequests,
     loadMembers, loadPendingRequests, approveRequest, rejectRequest,
-    changeRole, kickMember, removeGroup,
+    kickMember, removeGroup,
   } = useGroupStore();
   const { trips, isLoading: tripsLoading, loadTrips, addTrip, toggleTripStatus } =
     useTripStore();
@@ -80,9 +74,7 @@ export default function GroupDetailScreen() {
     findMyRole();
   }, [user, currentGroupMembers]);
 
-  const isAdmin = myRole === 'owner' || myRole === 'admin';
-  const isOwner = myRole === 'owner';
-  const hasAdmin = currentGroupMembers.some((m) => m.role === 'admin' && !m.left_at);
+  const isAdmin = myRole === 'admin';
 
   useFocusEffect(
     useCallback(() => {
@@ -106,26 +98,6 @@ export default function GroupDetailScreen() {
     if (!group) return;
     await Share.share({
       message: `Tham gia nhóm "${group.name}" trên Fair Pay!\nMã mời: ${group.invite_code}`,
-    });
-  };
-
-  const handleChangeRole = (member: GroupMember) => {
-    if (member.role === 'owner') return;
-    const newRole = member.role === 'admin' ? 'member' : 'admin';
-    setConfirm({
-      isOpen: true,
-      title: 'Thay đổi vai trò',
-      description: `Đổi ${member.display_name} thành ${ROLE_LABELS[newRole as Role]}?`,
-      confirmLabel: 'Xác nhận',
-      destructive: false,
-      onConfirm: async () => {
-        try {
-          await changeRole(member.id, newRole, id);
-          toast.show({ variant: 'success', label: 'Đã thay đổi vai trò' });
-        } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
-        }
-      },
     });
   };
 
@@ -257,10 +229,7 @@ export default function GroupDetailScreen() {
             pendingRequests={pendingJoinRequests}
             inviteCode={group?.invite_code}
             isAdmin={isAdmin}
-            isOwner={isOwner}
-            hasAdmin={hasAdmin}
             onShare={handleShare}
-            onChangeRole={handleChangeRole}
             onKick={handleKick}
             onApprove={handleApprove}
             onReject={handleReject}
@@ -274,7 +243,6 @@ export default function GroupDetailScreen() {
             memberCount={currentGroupMembers.length}
             virtualMemberCount={currentGroupMembers.filter((m) => m.is_virtual).length}
             tripCount={trips.length}
-            isOwner={isOwner}
             onDeleteGroup={handleDeleteGroup}
           />
         </Animated.View>

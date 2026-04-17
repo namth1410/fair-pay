@@ -132,21 +132,20 @@ balance[member] =
 
 ## 7. Phân quyền trong nhóm
 
-Hệ thống 3 cấp quyền:
+Hệ thống 2 cấp quyền:
 
 | Vai trò | Mô tả | Quyền hạn |
 |---------|-------|-----------|
-| **Owner** (Chủ nhóm) | Người tạo nhóm, tự động được gán. Mỗi nhóm có đúng 1 Owner. | Tất cả quyền Admin + xóa nhóm + chuyển quyền Owner |
-| **Admin** (Quản trị) | Do Owner bổ nhiệm. **Mỗi nhóm tối đa 1 Admin.** | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + tạo/đóng chuyến + xóa ghi nhận thanh toán |
-| **Member** (Thành viên) | Mặc định khi tham gia nhóm. | Xem tất cả + thêm khoản chi mới + ghi nhận thanh toán + sửa/xóa khoản chi do chính mình tạo |
+| **Admin** (Quản trị) | Người tạo nhóm, tự động được gán. **Mỗi nhóm có đúng 1 Admin.** | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + tạo/đóng chuyến + xóa ghi nhận thanh toán + xóa nhóm |
+| **Member** (Thành viên) | Mặc định khi tham gia nhóm. | Xem tất cả + thêm khoản chi mới + ghi nhận thanh toán + sửa/xóa khoản chi do chính mình tạo + tự rời nhóm |
 
 ### Quy tắc phân quyền bổ sung
 
-- Chỉ Owner mới được thay đổi vai trò của thành viên (promote lên Admin hoặc demote xuống Member)
-- Mỗi nhóm chỉ có tối đa **1 Admin**. Muốn bổ nhiệm Admin mới, Owner phải hạ quyền Admin hiện tại trước
-- Owner không thể bị xóa khỏi nhóm trừ khi đã chuyển quyền Owner trước
-- Khi xóa khoản chi, nếu đã có Payment liên quan → cảnh báo, không tự động xóa Payment
-- Mọi hành động sửa/xóa đều được ghi lại trong **audit log** (ai làm gì, lúc nào)
+- Mỗi nhóm chỉ có tối đa **1 Admin**. Chưa hỗ trợ chuyển quyền Admin (sẽ bổ sung sau dưới dạng "Transfer Admin" — atomic swap).
+- Admin không thể tự rời nhóm và không thể bị xóa khỏi nhóm. Nếu Admin không muốn tiếp tục, họ phải xóa nhóm.
+- Member có thể tự rời nhóm hoặc bị Admin xóa.
+- Khi xóa khoản chi, nếu đã có Payment liên quan → cảnh báo, không tự động xóa Payment.
+- Mọi hành động sửa/xóa đều được ghi lại trong **audit log** (ai làm gì, lúc nào).
 
 ---
 
@@ -162,9 +161,9 @@ Hệ thống 3 cấp quyền:
 | BR-06 | Một User = nhiều Group | User tham gia Group qua invite link hoặc mã nhóm. Cần xác thực tài khoản trước khi tham gia. |
 | BR-07 | Đề xuất quyết toán chỉ là gợi ý | Thuật toán tối ưu giao dịch được hiển thị để tham khảo, không ảnh hưởng đến dữ liệu thực cho đến khi Payment được ghi nhận. |
 | BR-08 | Mã mời nhóm không trùng lặp | Mã mời 6 ký tự (`a-z, 0-9`) được sinh 1 lần duy nhất khi tạo nhóm. Sử dụng bảng chữ cái rộng (36^6 = ~2.1 tỷ tổ hợp) thay vì hex, kèm retry logic khi collision. Mã không thể đổi sau khi tạo. Column có UNIQUE constraint. |
-| BR-09 | Join nhóm cần Owner/Admin duyệt | Khi người dùng nhập mã mời, hệ thống tạo "yêu cầu tham gia" (join request) ở trạng thái `pending`. Owner hoặc Admin nhận notification và duyệt/từ chối. Chỉ khi được duyệt (`approved`) thì người dùng mới trở thành member. Áp dụng cho **mọi trường hợp** — kể cả user đã từng ở nhóm và rời đi. Mục đích: bảo vệ khi mã mời bị lộ. |
+| BR-09 | Join nhóm cần Admin duyệt | Khi người dùng nhập mã mời, hệ thống tạo "yêu cầu tham gia" (join request) ở trạng thái `pending`. Admin nhận notification và duyệt/từ chối. Chỉ khi được duyệt (`approved`) thì người dùng mới trở thành member. Áp dụng cho **mọi trường hợp** — kể cả user đã từng ở nhóm và rời đi. Mục đích: bảo vệ khi mã mời bị lộ. |
 | BR-10 | Badge tổng nợ trên Home | Màn hình Home hiển thị tổng hợp số dư của user qua tất cả nhóm/chuyến. Hiển thị: "Bạn đang nợ X" (đỏ) hoặc "Bạn được nợ X" (xanh). Tính từ tổng balance âm/dương của user trên mọi chuyến đang mở. |
-| BR-11 | Tìm và mời user qua email | Owner/Admin có thể tìm user đã đăng ký bằng email và gửi lời mời trực tiếp vào nhóm. User nhận notification và chấp nhận/từ chối. Không cần biết mã mời. |
+| BR-11 | Tìm và mời user qua email | Admin có thể tìm user đã đăng ký bằng email và gửi lời mời trực tiếp vào nhóm. User nhận notification và chấp nhận/từ chối. Không cần biết mã mời. |
 
 ---
 
@@ -184,11 +183,11 @@ Hệ thống 3 cấp quyền:
 
 | Trường | Nội dung |
 |--------|---------|
-| **Actor** | User đã đăng nhập (sẽ trở thành Owner) |
-| **Luồng chính** | 1. Tạo nhóm: nhập tên, chọn avatar nhóm → 2. App sinh mã mời 6 ký tự (alphanumeric, UNIQUE, không đổi) → 3. Chia sẻ mã/link qua Zalo/Messenger/copy → 4. Thành viên nhập mã → hệ thống tạo **join request** (`pending`) → 5. Owner/Admin nhận notification → duyệt hoặc từ chối → 6. Nếu duyệt → thành viên mới là `member`, danh sách cập nhật real-time |
-| **Luồng phụ 1** | Owner có thể thêm thành viên "ảo" (không có tài khoản) để ghi chi phí — họ không nhận được notification |
-| **Luồng phụ 2 — Mời qua email** | Owner/Admin vào "Thêm thành viên" → nhập email → hệ thống tìm user đã đăng ký → gửi lời mời (invitation) → user nhận notification → chấp nhận = join nhóm, từ chối = hủy |
-| **Quyền** | Chỉ Owner và Admin mới tạo được chuyến trong nhóm |
+| **Actor** | User đã đăng nhập (sẽ trở thành Admin của nhóm mới) |
+| **Luồng chính** | 1. Tạo nhóm: nhập tên, chọn avatar nhóm → 2. App sinh mã mời 6 ký tự (alphanumeric, UNIQUE, không đổi) → 3. Chia sẻ mã/link qua Zalo/Messenger/copy → 4. Thành viên nhập mã → hệ thống tạo **join request** (`pending`) → 5. Admin nhận notification → duyệt hoặc từ chối → 6. Nếu duyệt → thành viên mới là `member`, danh sách cập nhật real-time |
+| **Luồng phụ 1** | Admin có thể thêm thành viên "ảo" (không có tài khoản) để ghi chi phí — họ không nhận được notification |
+| **Luồng phụ 2 — Mời qua email** | Admin vào "Thêm thành viên" → nhập email → hệ thống tìm user đã đăng ký → gửi lời mời (invitation) → user nhận notification → chấp nhận = join nhóm, từ chối = hủy |
+| **Quyền** | Chỉ Admin mới tạo được chuyến trong nhóm |
 
 ### UC-03: Ghi nhận thanh toán thực tế
 
@@ -209,7 +208,7 @@ Hệ thống 3 cấp quyền:
 | F-01 | Đăng ký / Đăng nhập (Email, Google OAuth) | Must have | v1.0 |
 | F-02 | Tạo / chỉnh sửa / xóa nhóm (Group) | Must have | v1.0 |
 | F-03 | Invite thành viên qua link | Must have | v1.0 |
-| F-04 | Phân quyền Owner / Admin / Member | Must have | v1.0 |
+| F-04 | Phân quyền Admin / Member | Must have | v1.0 |
 | F-05 | Tạo / đóng chuyến đi trong nhóm | Must have | v1.0 |
 | F-06 | Thêm khoản chi — chia đều | Must have | v1.0 |
 | F-07 | Thêm khoản chi — chia theo tỷ lệ / số tiền tùy chỉnh | Must have | v1.0 |
@@ -240,14 +239,14 @@ Hệ thống 3 cấp quyền:
 - Danh sách các Group người dùng tham gia
 - Mỗi Group card: tên, avatar, số thành viên, tóm tắt số chuyến đang mở
 - **Badge tổng nợ** (BR-10): header hiển thị tổng nợ/được nợ qua tất cả nhóm. Mỗi group card hiển thị số dư riêng của user trong nhóm đó. Màu đỏ = nợ, xanh = được nợ.
-- **Join request badge**: hiện số lượng yêu cầu tham gia đang chờ duyệt (chỉ Owner/Admin thấy)
+- **Join request badge**: hiện số lượng yêu cầu tham gia đang chờ duyệt (chỉ Admin thấy)
 - Nút tạo nhóm mới, nút nhập mã mời
 
 ### Màn hình 2: Chi tiết nhóm
 
 - **Tab Chuyến đi:** danh sách trips trong nhóm (đang mở và đã đóng)
 - **Tab Thành viên:** danh sách member kèm role badge
-- **Tab Cài đặt** (chỉ Owner/Admin): quản lý quyền, đổi tên, xóa nhóm
+- **Tab Cài đặt** (chỉ Admin): đổi tên, xóa nhóm
 
 ### Màn hình 3: Chi tiết chuyến
 
@@ -346,7 +345,7 @@ Hệ thống 3 cấp quyền:
 | Cấu trúc dữ liệu | User → Trip (không có Group) | User → Group → Trip (hỗ trợ đa nhóm) |
 | Thanh toán | Đánh dấu "đã thanh toán" theo gợi ý thuật toán | Ghi nhận thanh toán tự do: ai trả ai, bao nhiêu, bất kỳ số tiền nào |
 | Đồng bộ dữ liệu | Không có — SQLite local only | SQLite local + Supabase Realtime sync |
-| Phân quyền | Không có | 3 cấp: Owner / Admin / Member |
+| Phân quyền | Không có | 2 cấp: Admin / Member |
 | Thông báo | Không có | FCM push notification: khoản mới, thanh toán, nhắc nợ |
 | Database | SQLite (local) | PostgreSQL (Supabase cloud) + SQLite (local cache) |
 | UI Library | NativeWind | HeroUI Native |

@@ -3,10 +3,9 @@ import { makeRedirectUri } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { create } from 'zustand';
 
-import { clearAuthCache } from '../services/auth.helper';
-
 import { APP_SCHEME } from '../config/constants';
 import { supabase } from '../config/supabase';
+import { clearAuthCache } from '../services/auth.helper';
 
 interface AuthState {
   session: Session | null;

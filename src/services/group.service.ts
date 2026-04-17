@@ -15,7 +15,7 @@ export interface Group {
   id: string;
   name: string;
   avatar_url: string | null;
-  owner_id: string;
+  created_by: string;
   invite_code: string;
   created_at: string;
   deleted_at: string | null;
@@ -26,7 +26,7 @@ export interface GroupMember {
   group_id: string;
   user_id: string | null;
   display_name: string;
-  role: 'owner' | 'admin' | 'member';
+  role: 'admin' | 'member';
   is_virtual: boolean;
   joined_at: string;
   left_at: string | null;
@@ -96,7 +96,7 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
   }));
 }
 
-/** Create a new group — caller becomes owner */
+/** Create a new group — caller becomes admin */
 export async function createGroup(name: string): Promise<Group> {
   const nameErr = validateName(name, 'Tên nhóm');
   if (nameErr) throw new Error(nameErr);
@@ -114,18 +114,18 @@ export async function createGroup(name: string): Promise<Group> {
   // Create group
   const { data: group, error: grpErr } = await supabase
     .from('groups')
-    .insert({ name, owner_id: userId })
+    .insert({ name, created_by: userId })
     .select()
     .single();
 
   if (grpErr) throw grpErr;
 
-  // Add creator as owner member
+  // Add creator as admin
   const { error: memErr } = await supabase.from('group_members').insert({
     group_id: group.id,
     user_id: userId,
-    display_name: user?.display_name || 'Chủ nhóm',
-    role: 'owner',
+    display_name: user?.display_name || 'Admin',
+    role: 'admin',
   });
 
   if (memErr) throw memErr;
@@ -135,7 +135,7 @@ export async function createGroup(name: string): Promise<Group> {
 
 /**
  * BR-09: Tạo join request thay vì join trực tiếp.
- * Mọi trường hợp (kể cả rejoin) đều cần Owner/Admin duyệt.
+ * Mọi trường hợp (kể cả rejoin) đều cần Admin duyệt.
  * Dùng upsert để handle: first-time, rejoin, re-request sau rejection.
  */
 export async function joinGroupByCode(code: string): Promise<JoinResult> {
@@ -193,11 +193,11 @@ export async function joinGroupByCode(code: string): Promise<JoinResult> {
   return { type: 'pending', group, requestId: request.id };
 }
 
-/** F-23: Lấy danh sách join requests đang pending của một nhóm (cho Owner/Admin) */
+/** F-23: Lấy danh sách join requests đang pending của một nhóm (cho Admin) */
 export async function fetchPendingJoinRequests(
   groupId: string
 ): Promise<JoinRequest[]> {
-  await assertRole(groupId, ['owner', 'admin']);
+  await assertRole(groupId, ['admin']);
 
   const { data, error } = await supabase
     .from('join_requests')
@@ -210,12 +210,12 @@ export async function fetchPendingJoinRequests(
   return data || [];
 }
 
-/** F-23: Owner/Admin duyệt join request → thêm vào group_members */
+/** F-23: Admin duyệt join request → thêm vào group_members */
 export async function approveJoinRequest(
   requestId: string,
   groupId: string
 ): Promise<void> {
-  await assertRole(groupId, ['owner', 'admin']);
+  await assertRole(groupId, ['admin']);
 
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
@@ -275,12 +275,12 @@ export async function approveJoinRequest(
   });
 }
 
-/** F-23: Owner/Admin từ chối join request */
+/** F-23: Admin từ chối join request */
 export async function rejectJoinRequest(
   requestId: string,
   groupId: string
 ): Promise<void> {
-  await assertRole(groupId, ['owner', 'admin']);
+  await assertRole(groupId, ['admin']);
 
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
@@ -313,7 +313,7 @@ export async function fetchGroupMembers(
     .select('*')
     .eq('group_id', groupId)
     .is('left_at', null)
-    .order('role', { ascending: true }) // owner first
+    .order('role', { ascending: true }) // admin first
     .order('joined_at', { ascending: true });
 
   if (error) throw error;
@@ -336,14 +336,15 @@ export async function fetchAllGroupMembers(
 }
 
 /**
- * Update a member's role (owner only).
- * Max 1 admin per group — throws if promoting to admin when one already exists.
+ * @deprecated Giữ lại để tương lai build Transfer Admin (atomic swap).
+ * Với chính sách "1 admin duy nhất / nhóm", admin hiện tại không thể tự demote
+ * và promote người khác (bị chặn bởi invariant 1-admin) → hàm này không gọi được
+ * qua UI nữa. Gỡ UI button, giữ signature cho refactor sau.
  */
 export async function updateMemberRole(
   memberId: string,
   newRole: 'admin' | 'member'
 ): Promise<void> {
-  // Lấy group_id của member này trước để kiểm tra quyền
   const { data: targetMember } = await supabase
     .from('group_members')
     .select('group_id, role')
@@ -351,7 +352,7 @@ export async function updateMemberRole(
     .single();
 
   if (!targetMember) throw new Error('Thành viên không tồn tại');
-  await assertRole(targetMember.group_id, ['owner']);
+  await assertRole(targetMember.group_id, ['admin']);
 
   if (newRole === 'admin') {
     const { count } = await supabase
@@ -376,9 +377,8 @@ export async function updateMemberRole(
   if (error) throw error;
 }
 
-/** Soft-remove a member from group (admin/owner only) — sets left_at */
+/** Soft-remove a member from group (admin only) — sets left_at */
 export async function removeMember(memberId: string): Promise<void> {
-  // Fetch target member to check group and prevent owner removal
   const { data: target } = await supabase
     .from('group_members')
     .select('group_id, role')
@@ -386,9 +386,10 @@ export async function removeMember(memberId: string): Promise<void> {
     .single();
 
   if (!target) throw new Error('Thành viên không tồn tại');
-  if (target.role === 'owner') throw new Error('Không thể xóa chủ nhóm');
+  if (target.role === 'admin')
+    throw new Error('Admin không thể rời/bị xóa khỏi nhóm. Hãy xóa nhóm thay thế.');
 
-  await assertRole(target.group_id, ['owner', 'admin']);
+  await assertRole(target.group_id, ['admin']);
 
   const { error } = await supabase
     .from('group_members')
@@ -398,12 +399,12 @@ export async function removeMember(memberId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Update group name (admin/owner only) */
+/** Update group name (admin only) */
 export async function updateGroup(
   groupId: string,
   updates: { name?: string }
 ): Promise<void> {
-  await assertRole(groupId, ['owner', 'admin']);
+  await assertRole(groupId, ['admin']);
 
   const { error } = await supabase
     .from('groups')
@@ -413,9 +414,9 @@ export async function updateGroup(
   if (error) throw error;
 }
 
-/** Soft delete group (owner only) */
+/** Soft delete group (admin only) */
 export async function deleteGroup(groupId: string): Promise<void> {
-  await assertRole(groupId, ['owner']);
+  await assertRole(groupId, ['admin']);
 
   const { error } = await supabase
     .from('groups')
@@ -552,7 +553,7 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
 }
 
 // ── Helpers ─────────────────────────────────
-export type Role = 'owner' | 'admin' | 'member';
+export type Role = 'admin' | 'member';
 
 /** Assert that the current user has one of the allowed roles in the group */
 export async function assertRole(
