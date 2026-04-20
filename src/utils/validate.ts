@@ -16,3 +16,10 @@ export function validatePositiveAmount(amount: number): string | null {
   }
   return null;
 }
+
+export function validateEmail(email: string): string | null {
+  const trimmed = email.trim();
+  if (!trimmed) return 'Email không được để trống';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return 'Email không hợp lệ';
+  return null;
+}

@@ -11,6 +11,13 @@ const ERROR_MAP: Record<string, string> = {
   'Password should be at least 6 characters':
     'Mật khẩu phải có ít nhất 6 ký tự',
   'Email rate limit exceeded': 'Gửi quá nhiều yêu cầu, vui lòng thử lại sau',
+  'User not found': 'Không tìm thấy tài khoản với email này',
+  'New password should be different from the old password':
+    'Mật khẩu mới phải khác mật khẩu cũ',
+  'Token has expired or is invalid':
+    'Link đặt lại mật khẩu đã hết hạn, vui lòng gửi lại',
+  'Auth session missing':
+    'Phiên xác thực không hợp lệ, vui lòng mở lại link từ email',
 
   // Supabase RLS / DB
   'new row violates row-level security policy':

@@ -10,11 +10,18 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, AppTextField } from '../../components/ui';
+import {
+  AnimatedEntrance,
+  AppText,
+  AppTextField,
+  GoogleIcon,
+  PasswordField,
+} from '../../components/ui';
 import { APP_SLOGAN } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
+import { validateEmail } from '../../utils/validate';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -28,8 +35,9 @@ export default function LoginScreen() {
       setError('Vui lòng nhập email và mật khẩu');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Email không hợp lệ');
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
       return;
     }
     setError('');
@@ -84,15 +92,21 @@ export default function LoginScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={220}>
-          <AppTextField
+          <PasswordField
             placeholder="Mật khẩu"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
             autoComplete="password"
             accessibilityLabel="Mật khẩu"
             error={error && email && !password ? error : undefined}
           />
+          <View style={styles.forgotLinkRow}>
+            <Link href="/(auth)/forgot-password">
+              <AppText variant="caption" tone="primary" weight="semibold">
+                Quên mật khẩu?
+              </AppText>
+            </Link>
+          </View>
         </AnimatedEntrance>
 
         {error && email && password ? (
@@ -135,9 +149,19 @@ export default function LoginScreen() {
             size="lg"
             onPress={handleGoogleLogin}
             isDisabled={isLoading}
-            style={styles.button}
+            style={[
+              styles.button,
+              styles.googleButton,
+              {
+                backgroundColor: c.isDark ? c.surface : '#FFFFFF',
+                borderColor: c.divider,
+              },
+            ]}
           >
-            <Button.Label>Đăng nhập với Google</Button.Label>
+            <GoogleIcon size={20} />
+            <Button.Label style={{ color: c.foreground }}>
+              Đăng nhập với Google
+            </Button.Label>
           </Button>
 
           <View style={styles.footer}>
@@ -177,6 +201,17 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '100%',
+  },
+  forgotLinkRow: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1,
   },
   divider: {
     flexDirection: 'row',

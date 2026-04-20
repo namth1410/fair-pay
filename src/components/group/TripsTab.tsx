@@ -45,12 +45,19 @@ export const TripsTab = React.memo(function TripsTab({
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<Trip['type']>('other');
+  const [busy, setBusy] = useState(false);
 
   const handleCreate = async () => {
-    if (!newName.trim()) return;
-    await onCreateTrip(newName.trim(), newType);
-    setNewName('');
-    setShowForm(false);
+    const name = newName.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    try {
+      await onCreateTrip(name, newType);
+      setNewName('');
+      setShowForm(false);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const renderTrip = ({ item }: { item: Trip }) => (
@@ -98,8 +105,13 @@ export const TripsTab = React.memo(function TripsTab({
           selected={newType}
           onSelect={setNewType}
         />
-        <Button variant="primary" size="sm" onPress={handleCreate}>
-          <Button.Label>Tạo</Button.Label>
+        <Button
+          variant="primary"
+          size="sm"
+          onPress={handleCreate}
+          isDisabled={busy || !newName.trim()}
+        >
+          <Button.Label>{busy ? 'Đang tạo...' : 'Tạo'}</Button.Label>
         </Button>
       </FormReveal>
 

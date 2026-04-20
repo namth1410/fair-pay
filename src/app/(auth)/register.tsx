@@ -10,10 +10,16 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, AppTextField } from '../../components/ui';
+import {
+  AnimatedEntrance,
+  AppText,
+  AppTextField,
+  PasswordField,
+} from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
+import { validateEmail } from '../../utils/validate';
 
 export default function RegisterScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -33,8 +39,9 @@ export default function RegisterScreen() {
       setError('Tên hiển thị phải từ 2 đến 50 ký tự');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Email không hợp lệ');
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
       return;
     }
     if (password.length < 6) {
@@ -107,22 +114,21 @@ export default function RegisterScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={290}>
-          <AppTextField
+          <PasswordField
             placeholder="Mật khẩu (ít nhất 6 ký tự)"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
             autoComplete="new-password"
             accessibilityLabel="Mật khẩu"
           />
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={330}>
-          <AppTextField
+          <PasswordField
             placeholder="Xác nhận mật khẩu"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            secureTextEntry
+            autoComplete="new-password"
             accessibilityLabel="Xác nhận mật khẩu"
           />
         </AnimatedEntrance>

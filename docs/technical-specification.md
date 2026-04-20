@@ -56,6 +56,52 @@
 
 **Chiến lược:** Dùng Supabase free tier làm chính. VPS dự phòng khi cần mở rộng hoặc chạy custom logic nặng (cron job nhắc nợ, batch processing).
 
+### 1.3 Password Reset Flow
+
+Flow đặt lại mật khẩu qua email deep link (scheme `fairpay://`):
+
+```
+┌─────────────┐   1. resetPasswordForEmail    ┌──────────────┐
+│   App       │──────────────────────────────▶│  Supabase    │
+│ (forgot)    │                                │   Auth       │
+└─────────────┘                                └──────┬───────┘
+                                                      │ 2. Gửi email với link
+                                                      ▼
+                              https://<proj>.supabase.co/auth/v1/verify
+                                  ?token=XXX&type=recovery
+                                  &redirect_to=fairpay://reset-password
+                                                      │
+                                                      │ 3. User click trong email
+                                                      ▼
+                                       ┌──────────────────────────────┐
+                                       │ Supabase verify token, redirect│
+                                       │ fairpay://reset-password       │
+                                       │   #access_token=...            │
+                                       │   &refresh_token=...           │
+                                       │   &type=recovery               │
+                                       └──────────┬───────────────────┘
+                                                  │ 4. OS mở app qua custom scheme
+                                                  ▼
+┌─────────────┐   5. setSession + updateUser(pw)  ┌──────────────┐
+│   App       │◀──────────────────────────────────▶│  Supabase    │
+│(reset-pwd)  │   6. router.replace('/(main)')     │              │
+└─────────────┘                                    └──────────────┘
+```
+
+**Flow type**: client đang ở `implicit` (mặc định, `flowType` không set trong `supabase.ts`) → tokens trả về qua URL fragment `#`. Code `reset-password.tsx` parse defensive: thử `#fragment` trước, fallback `?code=` + `exchangeCodeForSession` nếu tương lai chuyển sang PKCE.
+
+**AuthGate exception**: `src/app/_layout.tsx` KHÔNG redirect session active sang `(main)` khi `segments[1] === 'reset-password'`, để user hoàn tất đổi mật khẩu rồi mới về trang chính.
+
+**Rate limiting**:
+- Server-side: Supabase mặc định ~4 email reset/giờ.
+- Client-side: cooldown 60s persistent trong `expo-secure-store` (`fair_pay:reset_last_sent`) qua 2 helper trong `src/services/auth.helper.ts`: `getResetCooldownRemaining()` + `markResetSent()`. Nút "Gửi lại" disabled trong cooldown, đóng/mở app không reset timer.
+
+**Bảo mật / ghi chú vận hành**:
+- `resetPasswordForEmail` KHÔNG trả lỗi khi email không tồn tại (chống user enumeration). UI luôn hiển thị "đã gửi", KHÔNG phân biệt case không tìm thấy email.
+- Link email mặc định hết hạn sau 1 giờ (config Supabase).
+- **Prerequisite deploy**: Supabase Dashboard → Authentication → URL Configuration → Redirect URLs phải whitelist `fairpay://reset-password`. Thiếu bước này, Supabase từ chối redirect và toàn bộ flow fail silent.
+- Custom scheme `fairpay://` chỉ hoạt động trên dev-client / EAS build, **không trên Expo Go**.
+
 ---
 
 ## 2. Kiến trúc tổng thể

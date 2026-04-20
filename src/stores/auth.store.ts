@@ -5,7 +5,11 @@ import { create } from 'zustand';
 
 import { APP_SCHEME } from '../config/constants';
 import { supabase } from '../config/supabase';
-import { clearAuthCache } from '../services/auth.helper';
+import {
+  clearAuthCache,
+  getResetCooldownRemaining,
+  markResetSent,
+} from '../services/auth.helper';
 
 interface AuthState {
   session: Session | null;
@@ -21,6 +25,8 @@ interface AuthState {
     displayName: string
   ) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  sendPasswordResetEmail: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -114,6 +120,41 @@ export const useAuthStore = create<AuthState>((set) => ({
           set({ session: sessionData.session, user: sessionData.user });
         }
       }
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  sendPasswordResetEmail: async (email) => {
+    set({ isLoading: true });
+    try {
+      const remaining = await getResetCooldownRemaining();
+      if (remaining > 0) {
+        throw new Error(`Vui lòng chờ ${remaining}s trước khi gửi lại`);
+      }
+      const redirectTo = makeRedirectUri({
+        scheme: APP_SCHEME,
+        path: 'reset-password',
+      });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+      if (error) throw error;
+      await markResetSent();
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  updatePassword: async (newPassword) => {
+    set({ isLoading: true });
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (error) throw error;
+      // updateUser returns fresh user; session is already set from the deep link.
+      set({ user: data.user });
     } finally {
       set({ isLoading: false });
     }

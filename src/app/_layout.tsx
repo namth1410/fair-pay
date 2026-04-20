@@ -37,10 +37,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (!isInitialized) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    // Reset-password needs to stay mounted even with an active session so the
+    // user can finish updating their password before we redirect them to main.
+    const inResetPassword = (segments as string[]).includes('reset-password');
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !inResetPassword) {
       router.replace('/(main)');
     } else {
       SplashScreen.hideAsync();
@@ -50,8 +53,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (!isInitialized) return null;
 
   const inAuthGroup = segments[0] === '(auth)';
+  const inResetPassword = (segments as string[]).includes('reset-password');
   if (!session && !inAuthGroup) return null;
-  if (session && inAuthGroup) return null;
+  if (session && inAuthGroup && !inResetPassword) return null;
 
   return <>{children}</>;
 }

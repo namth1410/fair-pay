@@ -30,7 +30,7 @@ src/
 │   ├── trip/         # ExpensesTab, BalancesTab, SettlementTab, HistoryTab
 │   └── ui/           # AppCard, AppText, AppTextField, Money, ChipPicker, etc.
 ├── app/
-│   ├── (auth)/       # login.tsx, register.tsx
+│   ├── (auth)/       # login.tsx, register.tsx, forgot-password.tsx, reset-password.tsx
 │   └── (main)/       # index.tsx, groups/[id].tsx, trips/[id].tsx
 └── __tests__/        # balance.test.ts, settlement.test.ts, split.test.ts
 ```
@@ -40,6 +40,14 @@ src/
 ### Auth helper
 - **KHÔNG tạo `getAuthUserId()` cục bộ** trong service files. Luôn import từ `src/services/auth.helper.ts`.
 - Hàm này có 30s cache — gọi `clearAuthCache()` khi user logout (đã tích hợp trong `auth.store.ts`).
+
+### Password reset flow
+- 3 bước: `sendPasswordResetEmail(email)` → Supabase gửi email với link `fairpay://reset-password` → user click → app parse URL fragment (hoặc `?code=` cho PKCE) → `setSession` → `updatePassword(newPassword)` → `router.replace('/(main)')`.
+- `AuthGate` ở `src/app/_layout.tsx` có exception cho `segments[1] === 'reset-password'` — session active ở route này KHÔNG bị redirect sang `(main)`. Đừng bỏ exception đó.
+- `supabase.auth.resetPasswordForEmail` KHÔNG trả lỗi khi email không tồn tại (chống enumeration). Đừng build UI phân biệt case đó.
+- Cooldown 60s lưu trong `expo-secure-store` qua `getResetCooldownRemaining()` + `markResetSent()` — đừng bypass trong UI vì quota email Supabase giới hạn ~4 email/h.
+- SecureStore keys chỉ được chứa alphanumeric + `.`, `-`, `_` (KHÔNG `:`). Key hiện tại: `fair_pay_reset_last_sent`.
+- Prerequisite deploy: whitelist `fairpay://reset-password` trong Supabase Dashboard → Auth → URL Configuration → Redirect URLs.
 
 ### Authorization
 - Chỉ có 2 role: `'admin' | 'member'`. Mỗi nhóm có **đúng 1 admin** (người tạo nhóm). Admin không tự rời/bị xóa; chỉ member mới rời/bị xóa được.

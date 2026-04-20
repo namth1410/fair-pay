@@ -56,11 +56,13 @@ export const SettlementTab = React.memo(function SettlementTab({
   const [payAmountStr, setPayAmountStr] = useState('');
   const [payNote, setPayNote] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
 
   const handleSubmit = useCallback(async () => {
+    if (busy) return;
     if (!payFrom || !payTo || !payAmountStr.trim()) return;
     const amount = parseInt(payAmountStr, 10);
     if (isNaN(amount) || amount <= 0) {
@@ -71,6 +73,7 @@ export const SettlementTab = React.memo(function SettlementTab({
       toast.show({ variant: 'danger', label: 'Lỗi', description: 'Người trả và người nhận không được giống nhau' });
       return;
     }
+    setBusy(true);
     try {
       await onAddPayment({
         tripId, groupId,
@@ -83,8 +86,10 @@ export const SettlementTab = React.memo(function SettlementTab({
       setShowForm(false);
     } catch (e: unknown) {
       toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+    } finally {
+      setBusy(false);
     }
-  }, [payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment]);
+  }, [busy, payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment, toast]);
 
   return (
     <ScrollShadow LinearGradientComponent={LinearGradient}>
@@ -143,8 +148,13 @@ export const SettlementTab = React.memo(function SettlementTab({
             </View>
           )}
 
-          <Button variant="primary" size="md" onPress={handleSubmit}>
-            <Button.Label>Ghi nhận</Button.Label>
+          <Button
+            variant="primary"
+            size="md"
+            onPress={handleSubmit}
+            isDisabled={busy || !payFrom || !payTo || !payAmountStr.trim()}
+          >
+            <Button.Label>{busy ? 'Đang ghi...' : 'Ghi nhận'}</Button.Label>
           </Button>
         </FormReveal>
 
