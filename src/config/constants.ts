@@ -18,3 +18,21 @@ export const DB_NAME = 'fairpay.db';
 // Sync
 export const SYNC_RETRY_MAX = 3;
 export const SYNC_CLEANUP_AFTER_HOURS = 24;
+
+// Expense categories — shared single source of truth
+export type ExpenseCategory =
+  | 'food'
+  | 'transport'
+  | 'accommodation'
+  | 'fun'
+  | 'shopping'
+  | 'other';
+
+export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string }[] = [
+  { key: 'food', label: 'Ăn uống' },
+  { key: 'transport', label: 'Di chuyển' },
+  { key: 'accommodation', label: 'Chỗ ở' },
+  { key: 'fun', label: 'Vui chơi' },
+  { key: 'shopping', label: 'Mua sắm' },
+  { key: 'other', label: 'Khác' },
+];

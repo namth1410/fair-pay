@@ -7,7 +7,7 @@
 ## Lệnh thường dùng
 
 ```bash
-npx jest              # Chạy tests (74 test cases)
+npx jest              # Chạy tests (85 test cases)
 npx tsc --noEmit      # Type check
 npm start             # Expo dev server
 npm run lint          # ESLint check
@@ -56,6 +56,14 @@ src/
 - `removeMember` phải chặn xóa admin (`target.role === 'admin'`).
 - `updateMemberRole` hiện `@deprecated` — giữ signature cho tương lai (Transfer Admin atomic). Không gọi từ UI.
 
+### Thành viên ảo (virtual member)
+- Ghost/virtual member = `group_members` với `user_id = NULL` và `is_virtual = true`. UUID `group_members.id` vẫn tự sinh như thành viên thường.
+- Chỉ admin tạo được qua `addVirtualMember(groupId, displayName)` trong `group.service.ts`.
+- **CHO PHÉP trùng `display_name`** — phân biệt bằng `VirtualPill` badge trong UI, KHÔNG check duplicate ở service.
+- Ảo được là `paid_by`, `from_member_id`, `to_member_id` như member thường — balance/settlement không phân biệt.
+- Ảo KHÔNG có auth session → không tự gọi API. Mọi action do admin thực hiện, audit log `actor_id` là admin.
+- Type `is_virtual`: Postgres trả `boolean`, SQLite raw là `0|1`. Code hiện dùng truthy check (`item.is_virtual ? ... : ...`) — hoạt động với cả 2. Tránh so sánh `=== true` hoặc `=== 1`.
+
 ### Supabase queries
 - Mọi query liên quan `group_members` PHẢI có `.is('left_at', null)` trừ khi cần hiển thị lịch sử.
 - Expense + splits insert PHẢI có rollback nếu splits fail (đã có trong `expense.service.ts`).
@@ -82,6 +90,15 @@ src/
 - `logAction()` dùng `getAuthUserId()` (app user ID) — KHÔNG dùng `supabase.auth.getUser().id` (auth UUID).
 - Audit failures được bọc try/catch im lặng — KHÔNG throw ra ngoài.
 - `before_data` và `after_data` có type `Record<string, unknown> | null`.
+
+### Preset khoản chi
+- Per-user, scope qua `getAuthUserId()`. Bảng `expense_presets` có RLS: `user_id = auth_user_id()`.
+- Chỉ lưu `{title, amount, category}` — KHÔNG lưu `paid_by`, `splits` (đổi theo nhóm).
+- Hard delete (không có `deleted_at`).
+- `UNIQUE(user_id, title)` — service catch Postgres `23505` → throw "Đã có preset trùng tên".
+- Reuse `validateName` + `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ).
+- KHÔNG log audit (personal data, không liên quan group).
+- `EXPENSE_CATEGORIES` ở `src/config/constants.ts` là single source of truth — KHÔNG hardcode lại trong component.
 
 ### Testing
 - Tests nằm trong `src/__tests__/` — chỉ test hàm thuần (utils).

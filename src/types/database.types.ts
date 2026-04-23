@@ -104,6 +104,15 @@ export interface SettlementRow {
   generated_at: string;
 }
 
+export interface ExpensePresetRow {
+  id: string;
+  user_id: string;
+  title: string;
+  amount: number;
+  category: 'food' | 'transport' | 'accommodation' | 'fun' | 'shopping' | 'other';
+  created_at: string;
+}
+
 export interface SyncQueueRow {
   id: number;
   table_name: string;

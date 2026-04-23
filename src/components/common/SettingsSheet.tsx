@@ -1,6 +1,6 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button, useToast } from 'heroui-native';
-import { LogOut } from 'lucide-react-native';
+import { ChevronRight, LogOut } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -23,6 +23,7 @@ import {
   Avatar,
   SettingRow,
 } from '../ui';
+import { PresetManagerSheet } from './PresetManagerSheet';
 
 interface SettingsSheetProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [presetManagerOpen, setPresetManagerOpen] = useState(false);
 
   // Load on sheet open. Profile rarely changes, so no need to poll.
   useEffect(() => {
@@ -115,6 +117,7 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
   const avatarSeed = profile?.display_name || user?.email || 'user';
 
   return (
+    <>
     <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
       <BottomSheet.Portal>
         <BottomSheet.Overlay />
@@ -225,6 +228,27 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
               />
             </View>
 
+            {/* ── Cá nhân ── */}
+            <AppText variant="label" tone="muted" style={styles.sectionTitle}>
+              CÁ NHÂN
+            </AppText>
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+              <Pressable
+                style={styles.navRow}
+                onPress={() => setPresetManagerOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Quản lý preset khoản chi"
+              >
+                <View style={styles.navInfo}>
+                  <AppText variant="body" weight="medium">Preset khoản chi</AppText>
+                  <AppText variant="meta" tone="muted" style={styles.navHint}>
+                    Lưu khoản chi hay dùng để nhập nhanh
+                  </AppText>
+                </View>
+                <ChevronRight size={20} color={c.muted} />
+              </Pressable>
+            </View>
+
             {/* ── Giao diện ── */}
             <AppText variant="label" tone="muted" style={styles.sectionTitle}>
               GIAO DIỆN
@@ -249,6 +273,12 @@ export function SettingsSheet({ isOpen, onOpenChange }: SettingsSheetProps) {
         </BottomSheet.Content>
       </BottomSheet.Portal>
     </BottomSheet>
+
+    <PresetManagerSheet
+      isOpen={presetManagerOpen}
+      onOpenChange={setPresetManagerOpen}
+    />
+    </>
   );
 }
 
@@ -278,4 +308,12 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginVertical: 14 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   logoutSection: { marginTop: 28, paddingHorizontal: 4 },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  navInfo: { flex: 1, marginRight: 12 },
+  navHint: { marginTop: 2 },
 });

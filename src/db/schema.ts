@@ -125,6 +125,17 @@ export const CREATE_TABLES = [
     FOREIGN KEY (to_member_id) REFERENCES group_members(id)
   )`,
 
+  `CREATE TABLE IF NOT EXISTS expense_presets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    category TEXT NOT NULL CHECK (category IN ('food','transport','accommodation','fun','shopping','other')),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, title),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )`,
+
   // Local-only: sync queue
   `CREATE TABLE IF NOT EXISTS sync_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

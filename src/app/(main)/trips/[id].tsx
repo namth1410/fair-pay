@@ -8,7 +8,7 @@ import { BalancesTab } from '../../../components/trip/BalancesTab';
 import { ExpensesTab } from '../../../components/trip/ExpensesTab';
 import { HistoryTab } from '../../../components/trip/HistoryTab';
 import { SettlementTab } from '../../../components/trip/SettlementTab';
-import { AppText, GradientHero, Money, SectionTabs } from '../../../components/ui';
+import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { type AuditLog, fetchAuditLogs } from '../../../services/audit.service';
 import { useGroupStore } from '../../../stores/group.store';
@@ -81,8 +81,13 @@ export default function TripDetailScreen() {
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
 
-      {/* Summary hero */}
-      <GradientHero fromColor={c.accentSoft} toColor={c.tint} style={styles.heroWrap}>
+      {/* Summary hero — animated mesh gradient (Skia) */}
+      <SkiaMeshGradient
+        baseColor={c.tint}
+        colors={[c.accentSoft, c.primarySoft, c.warmAccent]}
+        speed={0.9}
+        style={styles.heroWrap}
+      >
         <View style={styles.heroInner}>
           <AppText variant="label" tone="muted">TỔNG CHI</AppText>
           <Money value={totalExpenses} variant="hero" tone="primary" animate />
@@ -90,7 +95,7 @@ export default function TripDetailScreen() {
             {currentExpenses.length} khoản · {currentPayments.length} thanh toán · {currentGroupMembers.length} người
           </AppText>
         </View>
-      </GradientHero>
+      </SkiaMeshGradient>
 
       <SectionTabs items={TAB_ITEMS} selected={tab} onSelect={(key) => setTab(key as Tab)} />
 

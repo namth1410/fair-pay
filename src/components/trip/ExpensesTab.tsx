@@ -4,6 +4,7 @@ import { Receipt } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { EXPENSE_CATEGORIES as CATEGORIES } from '../../config/constants';
 import type { ExpenseWithSplits } from '../../services/expense.service';
 import type { GroupMember } from '../../services/group.service';
 import type { SplitResult } from '../../utils/split';
@@ -16,15 +17,6 @@ import {
   SwipeableCard,
 } from '../ui';
 import { ExpenseFormSheet } from './ExpenseFormSheet';
-
-const CATEGORIES = [
-  { key: 'food', label: 'Ăn uống' },
-  { key: 'transport', label: 'Di chuyển' },
-  { key: 'accommodation', label: 'Chỗ ở' },
-  { key: 'fun', label: 'Vui chơi' },
-  { key: 'shopping', label: 'Mua sắm' },
-  { key: 'other', label: 'Khác' },
-];
 
 interface ExpensesTabProps {
   tripId: string;

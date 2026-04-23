@@ -1,14 +1,15 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useToast } from 'heroui-native';
+import { Button, useToast } from 'heroui-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
 import Animated, { withTiming } from 'react-native-reanimated';
 
+import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { TripsTab } from '../../../components/group/TripsTab';
-import { ConfirmDialog, SectionTabs } from '../../../components/ui';
+import { BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
 import type { GroupMember, JoinRequest } from '../../../services/group.service';
@@ -53,6 +54,8 @@ export default function GroupDetailScreen() {
   const prevTabRef = useRef<Tab>(tab);
   const [myRole, setMyRole] = useState<Role>('member');
   const [confirm, setConfirm] = useState<ConfirmState>(CONFIRM_CLOSED);
+  const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
+  const [addVirtualOpen, setAddVirtualOpen] = useState(false);
 
   const group = groups.find((g) => g.id === id);
 
@@ -155,22 +158,16 @@ export default function GroupDetailScreen() {
     });
   };
 
-  const handleDeleteGroup = () => {
-    setConfirm({
-      isOpen: true,
-      title: 'Xóa nhóm',
-      description: `Bạn có chắc muốn xóa nhóm "${group?.name}"?`,
-      confirmLabel: 'Xóa',
-      destructive: true,
-      onConfirm: async () => {
-        try {
-          await removeGroup(id!);
-          router.back();
-        } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
-        }
-      },
-    });
+  const handleDeleteGroup = () => setDeleteGroupOpen(true);
+
+  const confirmDeleteGroup = async () => {
+    setDeleteGroupOpen(false);
+    try {
+      await removeGroup(id!);
+      router.back();
+    } catch (e: unknown) {
+      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+    }
   };
 
   const GROUP_TAB_KEYS: Tab[] = ['trips', 'members', 'settings'];
@@ -233,6 +230,7 @@ export default function GroupDetailScreen() {
             onKick={handleKick}
             onApprove={handleApprove}
             onReject={handleReject}
+            onAddVirtual={() => setAddVirtualOpen(true)}
           />
         </Animated.View>
       )}
@@ -257,6 +255,39 @@ export default function GroupDetailScreen() {
         destructive={confirm.destructive}
         onConfirm={confirm.onConfirm}
       />
+
+      {id ? (
+        <AddVirtualMemberSheet
+          isOpen={addVirtualOpen}
+          onOpenChange={setAddVirtualOpen}
+          groupId={id}
+          onSuccess={(name) =>
+            toast.show({
+              variant: 'success',
+              label: 'Đã thêm thành viên ảo',
+              description: name,
+            })
+          }
+        />
+      ) : null}
+
+      <BouncyDialog
+        isOpen={deleteGroupOpen}
+        onClose={() => setDeleteGroupOpen(false)}
+      >
+        <BouncyDialog.Title>Xóa nhóm</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          Bạn có chắc muốn xóa nhóm &quot;{group?.name}&quot;?
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setDeleteGroupOpen(false)}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button variant="danger" size="sm" onPress={confirmDeleteGroup}>
+            <Button.Label>Xóa</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
     </View>
   );
 }

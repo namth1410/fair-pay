@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import {
+  addVirtualMember,
   approveJoinRequest,
   type BalanceSummary,
   createGroup,
@@ -36,6 +37,7 @@ interface GroupState {
   rejectRequest: (requestId: string, groupId: string) => Promise<void>;
   changeRole: (memberId: string, role: 'admin' | 'member', groupId: string) => Promise<void>;
   kickMember: (memberId: string, groupId: string) => Promise<void>;
+  addVirtualMember: (groupId: string, displayName: string) => Promise<void>;
   removeGroup: (groupId: string) => Promise<void>;
 }
 
@@ -106,6 +108,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   kickMember: async (memberId, groupId) => {
     await removeMember(memberId);
+    await get().loadMembers(groupId);
+  },
+
+  addVirtualMember: async (groupId, displayName) => {
+    await addVirtualMember(groupId, displayName);
     await get().loadMembers(groupId);
   },
 

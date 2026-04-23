@@ -1,6 +1,6 @@
 import { Button, useToast } from 'heroui-native';
 import { X } from 'lucide-react-native';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -12,9 +12,11 @@ import {
   View,
 } from 'react-native';
 
+import { EXPENSE_CATEGORIES as CATEGORIES, type ExpenseCategory } from '../../config/constants';
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
+import { usePresetStore } from '../../stores/preset.store';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
 import {
@@ -25,16 +27,7 @@ import {
   validateAmount,
   validateSplits,
 } from '../../utils/split';
-import { AppText, AppTextField, ChipPicker, Money } from '../ui';
-
-const CATEGORIES = [
-  { key: 'food', label: 'Ăn uống' },
-  { key: 'transport', label: 'Di chuyển' },
-  { key: 'accommodation', label: 'Chỗ ở' },
-  { key: 'fun', label: 'Vui chơi' },
-  { key: 'shopping', label: 'Mua sắm' },
-  { key: 'other', label: 'Khác' },
-];
+import { AppText, AppTextField, BouncyDialog, ChipPicker, Money } from '../ui';
 
 const SPLIT_TYPE_OPTIONS = [
   { key: 'equal' as const, label: 'Đều' },
@@ -63,16 +56,23 @@ interface ExpenseFormSheetProps {
   }) => Promise<void>;
 }
 
+interface PresetPromptData {
+  title: string;
+  amount: number;
+  category: ExpenseCategory;
+}
+
 export function ExpenseFormSheet({
   isOpen, onOpenChange, tripId, groupId, members, onSubmit,
 }: ExpenseFormSheetProps) {
   const c = useAppTheme();
   const { toast } = useToast();
+  const { presets, loaded: presetsLoaded, loadPresets, addPreset } = usePresetStore();
 
   const [step, setStep] = useState<'basic' | 'split'>('basic');
   const [title, setTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
-  const [category, setCategory] = useState('food');
+  const [category, setCategory] = useState<ExpenseCategory>('food');
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('equal');
@@ -80,11 +80,16 @@ export function ExpenseFormSheet({
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
+  const [presetPrompt, setPresetPrompt] = useState<PresetPromptData | null>(null);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
+  const presetTitles = useMemo(() => new Set(presets.map((p) => p.title)), [presets]);
 
   useEffect(() => {
     if (!isOpen) return;
+    if (!presetsLoaded) {
+      loadPresets().catch(() => { /* silent */ });
+    }
     setStep('basic');
     setTitle('');
     setAmountStr('');
@@ -96,7 +101,29 @@ export function ExpenseFormSheet({
     setCustomAmounts({});
     setBusy(false);
     setFormError('');
-  }, [isOpen, members]);
+  }, [isOpen, members, presetsLoaded, loadPresets]);
+
+  const handleApplyPreset = useCallback(
+    (preset: { title: string; amount: number; category: ExpenseCategory }) => {
+      setTitle(preset.title);
+      setAmountStr(String(preset.amount));
+      setCategory(preset.category);
+      setFormError('');
+    },
+    [],
+  );
+
+  const handleSavePresetPrompt = useCallback(async () => {
+    if (!presetPrompt) return;
+    try {
+      await addPreset(presetPrompt);
+      toast.show({ variant: 'success', label: 'Đã lưu preset', description: presetPrompt.title });
+    } catch (e: unknown) {
+      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+    } finally {
+      setPresetPrompt(null);
+    }
+  }, [presetPrompt, addPreset, toast]);
 
   const splitInputStyle = [styles.splitInput, {
     color: c.foreground,
@@ -167,15 +194,24 @@ export function ExpenseFormSheet({
         splitType, splits, note: note.trim() || undefined,
       });
       const submittedTitle = title.trim();
+      const submittedAmount = amount;
+      const submittedCategory = category;
       onOpenChange(false);
       hapticSuccess();
       toast.show({ variant: 'success', label: 'Đã thêm khoản chi', description: submittedTitle });
+      if (!presetTitles.has(submittedTitle)) {
+        setPresetPrompt({
+          title: submittedTitle,
+          amount: submittedAmount,
+          category: submittedCategory,
+        });
+      }
     } catch (e: unknown) {
       setFormError(getErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [amountStr, members, splitType, ratios, customAmounts, title, category, paidBy, note, tripId, groupId, onSubmit, onOpenChange, toast]);
+  }, [amountStr, members, splitType, ratios, customAmounts, title, category, paidBy, note, tripId, groupId, onSubmit, onOpenChange, toast, presetTitles]);
 
   const amount = parseInt(amountStr, 10) || 0;
 
@@ -191,6 +227,7 @@ export function ExpenseFormSheet({
       : [];
 
   return (
+    <>
     <Modal
       visible={isOpen}
       onRequestClose={() => onOpenChange(false)}
@@ -234,6 +271,39 @@ export function ExpenseFormSheet({
           >
             {step === 'basic' ? (
               <View style={styles.formArea}>
+                {presets.length > 0 ? (
+                  <View>
+                    <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
+                      Preset
+                    </AppText>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.presetRow}
+                    >
+                      {presets.map((p) => (
+                        <Pressable
+                          key={p.id}
+                          style={[
+                            styles.presetChip,
+                            { backgroundColor: c.surfaceAlt, borderColor: c.divider },
+                          ]}
+                          onPress={() =>
+                            handleApplyPreset({ title: p.title, amount: p.amount, category: p.category })
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Áp dụng preset ${p.title}`}
+                        >
+                          <AppText variant="caption" weight="semibold">{p.title}</AppText>
+                          <AppText variant="meta" tone="muted">
+                            {p.amount.toLocaleString('vi-VN')}đ
+                          </AppText>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
+
                 <AppTextField
                   placeholder="Tên khoản chi"
                   value={title}
@@ -251,7 +321,11 @@ export function ExpenseFormSheet({
                 <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                   Danh mục
                 </AppText>
-                <ChipPicker options={CATEGORIES} selected={category} onSelect={setCategory} />
+                <ChipPicker
+                  options={CATEGORIES}
+                  selected={category}
+                  onSelect={(k) => setCategory(k as ExpenseCategory)}
+                />
 
                 <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                   Người trả
@@ -389,6 +463,25 @@ export function ExpenseFormSheet({
         </View>
       </KeyboardAvoidingView>
     </Modal>
+
+    <BouncyDialog
+      isOpen={!!presetPrompt}
+      onClose={() => setPresetPrompt(null)}
+    >
+      <BouncyDialog.Title>Lưu làm preset?</BouncyDialog.Title>
+      <BouncyDialog.Description>
+        Lưu &quot;{presetPrompt?.title}&quot; ({presetPrompt?.amount.toLocaleString('vi-VN')}đ) để dùng nhanh lần sau.
+      </BouncyDialog.Description>
+      <BouncyDialog.Actions>
+        <Button variant="ghost" size="sm" onPress={() => setPresetPrompt(null)}>
+          <Button.Label>Bỏ qua</Button.Label>
+        </Button>
+        <Button variant="primary" size="sm" onPress={handleSavePresetPrompt}>
+          <Button.Label>Lưu preset</Button.Label>
+        </Button>
+      </BouncyDialog.Actions>
+    </BouncyDialog>
+    </>
   );
 }
 
@@ -432,6 +525,21 @@ const styles = StyleSheet.create({
   fieldLabel: {
     marginTop: 4,
     marginBottom: -4,
+  },
+  presetRow: {
+    gap: 8,
+    paddingTop: 6,
+    paddingBottom: 4,
+    paddingRight: 4,
+  },
+  presetChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 120,
+    alignItems: 'flex-start',
+    gap: 2,
   },
   errorBox: {
     padding: 12,

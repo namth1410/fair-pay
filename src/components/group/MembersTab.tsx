@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { ScrollShadow } from 'heroui-native';
+import { Button, ScrollShadow } from 'heroui-native';
 import { Share2 } from 'lucide-react-native';
 import React from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -25,6 +25,16 @@ function RolePill({ role, color }: { role: Role; color: string }) {
   );
 }
 
+function VirtualPill({ color }: { color: string }) {
+  return (
+    <View style={[styles.rolePill, { backgroundColor: color + '22', borderColor: color }]}>
+      <AppText variant="meta" weight="semibold" style={{ color }}>
+        Ảo
+      </AppText>
+    </View>
+  );
+}
+
 interface MembersTabProps {
   members: GroupMember[];
   pendingRequests: JoinRequest[];
@@ -34,11 +44,12 @@ interface MembersTabProps {
   onKick: (member: GroupMember) => void;
   onApprove: (req: JoinRequest) => void;
   onReject: (req: JoinRequest) => void;
+  onAddVirtual: () => void;
 }
 
 export const MembersTab = React.memo(function MembersTab({
   members, pendingRequests, inviteCode, isAdmin,
-  onShare, onKick, onApprove, onReject,
+  onShare, onKick, onApprove, onReject, onAddVirtual,
 }: MembersTabProps) {
   const c = useAppTheme();
 
@@ -49,11 +60,14 @@ export const MembersTab = React.memo(function MembersTab({
 
   const renderMember = ({ item }: { item: GroupMember }) => (
     <AppCard
-      title={`${item.display_name}${item.is_virtual ? ' (ảo)' : ''}`}
+      title={item.display_name}
       leading={<Avatar seed={item.id} label={item.display_name} size={40} />}
       trailing={
         <View style={styles.memberTrailing}>
-          <RolePill role={item.role as Role} color={roleColor[item.role as Role]} />
+          <View style={styles.pillRow}>
+            {item.is_virtual ? <VirtualPill color={c.muted} /> : null}
+            <RolePill role={item.role as Role} color={roleColor[item.role as Role]} />
+          </View>
           {isAdmin && item.role !== 'admin' ? (
             <View style={styles.memberActions}>
               <Pressable
@@ -92,6 +106,15 @@ export const MembersTab = React.memo(function MembersTab({
           </View>
         </GradientHero>
       </Pressable>
+
+      {/* Admin-only: thêm thành viên ảo */}
+      {isAdmin && (
+        <View style={styles.addVirtualSection}>
+          <Button variant="secondary" size="sm" onPress={onAddVirtual}>
+            <Button.Label>+ Thêm thành viên ảo</Button.Label>
+          </Button>
+        </View>
+      )}
 
       {/* Pending join requests */}
       {isAdmin && pendingRequests.length > 0 && (
@@ -145,6 +168,12 @@ export const MembersTab = React.memo(function MembersTab({
 const styles = StyleSheet.create({
   memberActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   memberTrailing: { alignItems: 'flex-end', gap: 6 },
+  pillRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  addVirtualSection: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    alignItems: 'flex-start',
+  },
   rolePill: {
     paddingHorizontal: 8,
     paddingVertical: 3,

@@ -304,6 +304,43 @@ export async function rejectJoinRequest(
   });
 }
 
+/**
+ * Tạo thành viên ảo (virtual member) — không có user_id, không có auth session.
+ * Chỉ admin tạo được. Cho phép trùng display_name.
+ */
+export async function addVirtualMember(
+  groupId: string,
+  displayName: string
+): Promise<GroupMember> {
+  await assertRole(groupId, ['admin']);
+
+  const nameErr = validateName(displayName, 'Tên thành viên');
+  if (nameErr) throw new Error(nameErr);
+
+  const { data, error } = await supabase
+    .from('group_members')
+    .insert({
+      group_id: groupId,
+      user_id: null,
+      display_name: displayName,
+      role: 'member',
+      is_virtual: true,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await logAction({
+    groupId,
+    action: 'member.virtual_add',
+    targetId: data.id,
+    afterData: { display_name: displayName, is_virtual: true },
+  });
+
+  return data;
+}
+
 /** Fetch active members of a group (left_at IS NULL) */
 export async function fetchGroupMembers(
   groupId: string

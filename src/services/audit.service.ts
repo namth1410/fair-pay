@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   'member.role_change':    'Thay đổi vai trò',
   'member.join_approved':  'Duyệt yêu cầu tham gia',
   'member.join_rejected':  'Từ chối yêu cầu tham gia',
+  'member.virtual_add':    'Thêm thành viên ảo',
 };
 
 export function getActionLabel(action: string): string {
