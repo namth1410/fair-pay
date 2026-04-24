@@ -111,6 +111,7 @@ export interface ExpensePresetRow {
   amount: number;
   category: 'food' | 'transport' | 'accommodation' | 'fun' | 'shopping' | 'other';
   created_at: string;
+  updated_at: string;
 }
 
 export interface SyncQueueRow {

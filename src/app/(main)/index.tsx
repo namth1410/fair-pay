@@ -1,5 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
-import { Plus, Users } from 'lucide-react-native';
+import { ChevronRight, Plus, Users } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
   FlatList,
@@ -16,8 +16,10 @@ import { PendingRibbon } from '../../components/home/PendingRibbon';
 import { SectionHeader } from '../../components/home/SectionHeader';
 import {
   AnimatedEntrance,
+  AppText,
   EmptyState,
   ListSkeleton,
+  SkiaStarNest,
 } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupWithMemberCount } from '../../services/group.service';
@@ -96,6 +98,22 @@ export default function HomeScreen() {
           renderItem={renderGroup}
           ListHeaderComponent={
             <View>
+              <Pressable
+                onPress={() => router.push('/(main)/skia-lab')}
+                style={styles.labBanner}
+              >
+                <SkiaStarNest quality="medium" interactive style={styles.labBannerBg}>
+                  <View style={styles.labBannerInner}>
+                    <AppText variant="label" tone="inverse">
+                      SKIA LAB
+                    </AppText>
+                    <AppText variant="caption" tone="inverse">
+                      Tap để mở lab · kéo để xoay Star Nest
+                    </AppText>
+                    <ChevronRight size={20} color="#fff" style={styles.labBannerChevron} />
+                  </View>
+                </SkiaStarNest>
+              </Pressable>
               {showHero && <HeroDebt total={balanceSummary.total} />}
               {joinPendingGroup && (
                 <PendingRibbon
@@ -159,4 +177,26 @@ const styles = StyleSheet.create({
   list: { paddingTop: 4, paddingBottom: 28 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
   rowGutter: { marginHorizontal: 16 },
+
+  labBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  labBannerBg: {
+    height: 96,
+    borderRadius: 18,
+  },
+  labBannerInner: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  labBannerChevron: {
+    position: 'absolute',
+    right: 16,
+    top: '50%',
+    marginTop: -10,
+  },
 });

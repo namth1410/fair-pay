@@ -6,6 +6,7 @@ import {
   deletePreset,
   type ExpensePreset,
   fetchPresets,
+  updatePreset,
 } from '../services/preset.service';
 
 interface PresetState {
@@ -19,6 +20,14 @@ interface PresetState {
     amount: number;
     category: ExpenseCategory;
   }) => Promise<ExpensePreset>;
+  editPreset: (
+    id: string,
+    params: {
+      title: string;
+      amount: number;
+      category: ExpenseCategory;
+    },
+  ) => Promise<ExpensePreset>;
   removePreset: (id: string) => Promise<void>;
   reset: () => void;
 }
@@ -42,6 +51,14 @@ export const usePresetStore = create<PresetState>((set, get) => ({
     const preset = await createPreset(params);
     set({ presets: [preset, ...get().presets] });
     return preset;
+  },
+
+  editPreset: async (id, params) => {
+    const updated = await updatePreset(id, params);
+    set({
+      presets: [updated, ...get().presets.filter((p) => p.id !== id)],
+    });
+    return updated;
   },
 
   removePreset: async (id) => {

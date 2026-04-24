@@ -7,7 +7,7 @@ import { getAuthUserId } from './auth.helper';
 
 export type ExpensePreset = ExpensePresetRow;
 
-/** Lấy preset của user hiện tại. */
+/** Lấy preset của user hiện tại, sort theo updated_at DESC (mới cập nhật ở đầu). */
 export async function fetchPresets(): Promise<ExpensePreset[]> {
   const userId = await getAuthUserId();
   if (!userId) return [];
@@ -16,7 +16,7 @@ export async function fetchPresets(): Promise<ExpensePreset[]> {
     .from('expense_presets')
     .select('*')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('updated_at', { ascending: false });
 
   if (error) throw error;
   return data || [];
@@ -44,6 +44,42 @@ export async function createPreset(params: {
       amount: params.amount,
       category: params.category,
     })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') throw new Error('Đã có preset trùng tên');
+    throw error;
+  }
+  return data;
+}
+
+/** Cập nhật preset. Không cascade vào expense đã dùng (preset chỉ là template). */
+export async function updatePreset(
+  presetId: string,
+  params: {
+    title: string;
+    amount: number;
+    category: ExpenseCategory;
+  },
+): Promise<ExpensePreset> {
+  const titleErr = validateName(params.title, 'Tên preset');
+  if (titleErr) throw new Error(titleErr);
+  const amountErr = validateAmount(params.amount);
+  if (amountErr) throw new Error(amountErr);
+
+  const userId = await getAuthUserId();
+  if (!userId) throw new Error('Chưa đăng nhập');
+
+  const { data, error } = await supabase
+    .from('expense_presets')
+    .update({
+      title: params.title.trim(),
+      amount: params.amount,
+      category: params.category,
+    })
+    .eq('id', presetId)
+    .eq('user_id', userId)
     .select()
     .single();
 

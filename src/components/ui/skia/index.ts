@@ -5,3 +5,4 @@ export type { SkiaConfettiBurstHandle } from './SkiaConfettiBurst';
 export { SkiaConfettiBurst } from './SkiaConfettiBurst';
 export { SkiaMeshGradient } from './SkiaMeshGradient';
 export { SkiaShimmerCard } from './SkiaShimmerCard';
+export { SkiaStarNest } from './SkiaStarNest';

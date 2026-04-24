@@ -15,6 +15,9 @@ if (__DEV__ && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
 // Database
 export const DB_NAME = 'fairpay.db';
 
+// User
+export const DISPLAY_NAME_MAX_LENGTH = 30;
+
 // Sync
 export const SYNC_RETRY_MAX = 3;
 export const SYNC_CLEANUP_AFTER_HOURS = 24;

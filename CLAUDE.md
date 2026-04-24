@@ -26,12 +26,12 @@ src/
 ├── hooks/            # useAppTheme (trả về { isDark, ...colors })
 ├── db/               # SQLite schema, database init, migrations
 ├── components/
-│   ├── common/       # ErrorBoundary, SettingsSheet, CreateJoinSheet, OfflineBanner
+│   ├── common/       # ErrorBoundary, CreateJoinSheet, OfflineBanner, PresetFormModal
 │   ├── trip/         # ExpensesTab, BalancesTab, SettlementTab, HistoryTab
 │   └── ui/           # AppCard, AppText, AppTextField, Money, ChipPicker, etc.
 ├── app/
 │   ├── (auth)/       # login.tsx, register.tsx, forgot-password.tsx, reset-password.tsx
-│   └── (main)/       # index.tsx, groups/[id].tsx, trips/[id].tsx
+│   └── (main)/       # index.tsx, settings.tsx, presets.tsx, groups/[id].tsx, trips/[id].tsx
 └── __tests__/        # balance.test.ts, settlement.test.ts, split.test.ts
 ```
 
@@ -86,6 +86,11 @@ src/
 - Sub-components dùng `React.memo()` và nhận data qua props — không gọi store trực tiếp.
 - `useAppTheme()` trả về `{ isDark, ...colors }` — KHÔNG import `useIsDark()` riêng (deprecated).
 
+### User profile
+- Màn Cài đặt là route `(main)/settings.tsx` — mở bằng `router.push('/settings')` (stack animation `slide_from_right`), KHÔNG còn là BottomSheet.
+- `display_name` giới hạn `DISPLAY_NAME_MAX_LENGTH = 30` ký tự (ở `src/config/constants.ts`) — enforce ở service `updateDisplayName()` và input `maxLength` trong UI. Đổi giá trị thì phải đồng bộ cả hai chỗ.
+- Text dài (display_name, email) trong card profile PHẢI có `numberOfLines={1}` + `ellipsizeMode="tail"` và cha có `minWidth: 0` để flex shrink đúng.
+
 ### Audit logging
 - `logAction()` dùng `getAuthUserId()` (app user ID) — KHÔNG dùng `supabase.auth.getUser().id` (auth UUID).
 - Audit failures được bọc try/catch im lặng — KHÔNG throw ra ngoài.
@@ -94,11 +99,20 @@ src/
 ### Preset khoản chi
 - Per-user, scope qua `getAuthUserId()`. Bảng `expense_presets` có RLS: `user_id = auth_user_id()`.
 - Chỉ lưu `{title, amount, category}` — KHÔNG lưu `paid_by`, `splits` (đổi theo nhóm).
-- Hard delete (không có `deleted_at`).
-- `UNIQUE(user_id, title)` — service catch Postgres `23505` → throw "Đã có preset trùng tên".
-- Reuse `validateName` + `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ).
+- Hard delete (không có `deleted_at`). Xóa có confirm qua `BouncyDialog`.
+- `UNIQUE(user_id, title)` — service catch Postgres `23505` ở cả `createPreset` và `updatePreset` → throw "Đã có preset trùng tên".
+- Reuse `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ) + `validateName` (từ `src/utils/validate.ts`).
+- Sort theo `updated_at DESC` — mới cập nhật/tạo ở đầu. Cột `updated_at` tự động refresh qua trigger `set_updated_at`.
+- **Edit preset KHÔNG cascade** vào expense đã dùng — preset chỉ là template, expense đã có bản sao dữ liệu riêng.
 - KHÔNG log audit (personal data, không liên quan group).
 - `EXPENSE_CATEGORIES` ở `src/config/constants.ts` là single source of truth — KHÔNG hardcode lại trong component.
+
+### Preset UI flow
+- Màn quản lý riêng: route `(main)/presets.tsx` — list + CRUD đầy đủ (thêm/sửa/xóa). Entry từ Settings → "Preset khoản chi" (`router.push('/presets')`).
+- Form thêm/sửa dùng chung `PresetFormModal` (BottomSheet); `preset` prop = null → thêm, có giá trị → sửa.
+- Trong `ExpenseFormSheet`: pick preset bằng chip row horizontal (auto-fill title/amount/category). Tạo preset mới qua **Switch "Lưu làm preset"** trong step basic — tạo preset ngay sau khi submit expense thành công, KHÔNG có popup xác nhận riêng.
+- Pre-check trùng title: khi Switch ON + title trim trùng preset cũ → `presetConflict` = true → disable nút "Tiếp tục"/"Thêm khoản chi" + hint inline. Title rỗng không trigger check.
+- Khi user pick preset có sẵn → auto tắt Switch (tránh lưu lại bản thân nó).
 
 ### Testing
 - Tests nằm trong `src/__tests__/` — chỉ test hàm thuần (utils).

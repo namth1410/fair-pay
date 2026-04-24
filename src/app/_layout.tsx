@@ -19,6 +19,7 @@ import { Uniwind } from 'uniwind';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
+import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { fetchCurrentUser } from '../services/user.service';
@@ -129,9 +130,11 @@ export default function RootLayout() {
           <HeroUINativeProvider>
             <StatusBar style={isDark ? 'light' : 'dark'} />
             <OfflineBanner />
-            <AuthGate>
-              <Slot />
-            </AuthGate>
+            <MorphTransitionProvider>
+              <AuthGate>
+                <Slot />
+              </AuthGate>
+            </MorphTransitionProvider>
             <ThemeTransitionOverlay />
           </HeroUINativeProvider>
         </SafeAreaProvider>

@@ -15,6 +15,7 @@ interface AppTextFieldProps {
   returnKeyType?: 'done' | 'next' | 'search' | 'go' | 'send';
   onSubmitEditing?: () => void;
   accessibilityLabel?: string;
+  maxLength?: number;
 }
 
 export function AppTextField({
@@ -31,6 +32,7 @@ export function AppTextField({
   returnKeyType,
   onSubmitEditing,
   accessibilityLabel,
+  maxLength,
 }: AppTextFieldProps) {
   return (
     <TextField isInvalid={!!error} accessibilityLabel={accessibilityLabel}>
@@ -46,6 +48,7 @@ export function AppTextField({
         autoFocus={autoFocus}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmitEditing}
+        maxLength={maxLength}
       />
       {error ? <FieldError>{error}</FieldError> : null}
     </TextField>

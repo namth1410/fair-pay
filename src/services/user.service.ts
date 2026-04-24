@@ -1,3 +1,4 @@
+import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 
 export interface UserProfile {
@@ -65,6 +66,9 @@ export async function updateDisplayName(name: string): Promise<void> {
 
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Tên không được để trống');
+  if (trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
+    throw new Error(`Tên không được quá ${DISPLAY_NAME_MAX_LENGTH} ký tự`);
+  }
 
   const { error } = await supabase
     .from('users')

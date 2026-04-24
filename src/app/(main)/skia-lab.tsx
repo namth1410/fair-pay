@@ -12,6 +12,7 @@ import {
   type SkiaConfettiBurstHandle,
   SkiaMeshGradient,
   SkiaShimmerCard,
+  SkiaStarNest,
 } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 
@@ -50,6 +51,19 @@ export default function SkiaLabScreen() {
                 </AppText>
               </View>
             </SkiaMeshGradient>
+          </Section>
+
+          <Section title="Star Nest (kéo để xoay)">
+            <SkiaStarNest quality="medium" interactive style={styles.heroLg}>
+              <View style={styles.heroInner}>
+                <AppText variant="title" tone="inverse">
+                  Star Nest
+                </AppText>
+                <AppText variant="caption" tone="inverse">
+                  Pablo Roman Andrioli — MIT. Kéo ngón tay để đổi góc nhìn.
+                </AppText>
+              </View>
+            </SkiaStarNest>
           </Section>
 
           <Section title="Shimmer skeleton">

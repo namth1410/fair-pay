@@ -4,15 +4,15 @@ import { StyleSheet, View } from 'react-native';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
 import Animated, { withTiming } from 'react-native-reanimated';
 
-import { BalancesTab } from '../../../components/trip/BalancesTab';
-import { ExpensesTab } from '../../../components/trip/ExpensesTab';
-import { HistoryTab } from '../../../components/trip/HistoryTab';
-import { SettlementTab } from '../../../components/trip/SettlementTab';
-import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../components/ui';
-import { useAppTheme } from '../../../hooks/useAppTheme';
-import { type AuditLog, fetchAuditLogs } from '../../../services/audit.service';
-import { useGroupStore } from '../../../stores/group.store';
-import { useTripStore } from '../../../stores/trip.store';
+import { BalancesTab } from '../../../../components/trip/BalancesTab';
+import { ExpensesTab } from '../../../../components/trip/ExpensesTab';
+import { HistoryTab } from '../../../../components/trip/HistoryTab';
+import { SettlementTab } from '../../../../components/trip/SettlementTab';
+import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../../components/ui';
+import { useAppTheme } from '../../../../hooks/useAppTheme';
+import { type AuditLog, fetchAuditLogs } from '../../../../services/audit.service';
+import { useGroupStore } from '../../../../stores/group.store';
+import { useTripStore } from '../../../../stores/trip.store';
 
 type Tab = 'expenses' | 'balances' | 'settle' | 'history';
 
@@ -30,7 +30,7 @@ export default function TripDetailScreen() {
   const {
     trips, currentExpenses, currentPayments, balances, settlements,
     isLoading,
-    loadExpenses, addExpense, removeExpense,
+    loadExpenses, removeExpense,
     loadPayments, addPayment, removePayment,
     loadBalances,
   } = useTripStore();
@@ -103,12 +103,10 @@ export default function TripDetailScreen() {
         {tab === 'expenses' && (
           <ExpensesTab
             tripId={tripId}
-            groupId={trip?.group_id || ''}
             tripStatus={trip?.status || 'open'}
             expenses={currentExpenses}
             members={currentGroupMembers}
             isLoading={isLoading}
-            onAddExpense={addExpense}
             onDeleteExpense={removeExpense}
           />
         )}
