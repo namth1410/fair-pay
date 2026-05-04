@@ -1,12 +1,13 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
+import { Pencil } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Share, StyleSheet, View } from 'react-native';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
 import Animated, { withTiming } from 'react-native-reanimated';
 
 import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
-import { GroupAvatarSheet } from '../../../components/group/GroupAvatarSheet';
+import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { TripsTab } from '../../../components/group/TripsTab';
@@ -58,7 +59,8 @@ export default function GroupDetailScreen() {
   const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
   const [addVirtualOpen, setAddVirtualOpen] = useState(false);
   const [tripToToggle, setTripToToggle] = useState<Trip | null>(null);
-  const [avatarSheetOpen, setAvatarSheetOpen] = useState(false);
+  const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const sharingRef = useRef(false);
 
   const group = groups.find((g) => g.id === id);
 
@@ -101,10 +103,15 @@ export default function GroupDetailScreen() {
   };
 
   const handleShare = async () => {
-    if (!group) return;
-    await Share.share({
-      message: `Tham gia nhóm "${group.name}" trên Fair Pay!\nMã mời: ${group.invite_code}`,
-    });
+    if (!group || sharingRef.current) return;
+    sharingRef.current = true;
+    try {
+      await Share.share({
+        message: `Tham gia nhóm "${group.name}" trên Fair Pay!\nMã mời: ${group.invite_code}`,
+      });
+    } finally {
+      setTimeout(() => { sharingRef.current = false; }, 1500);
+    }
   };
 
   const handleKick = (member: GroupMember) => {
@@ -213,30 +220,46 @@ export default function GroupDetailScreen() {
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
 
       {group ? (
-        <View style={styles.avatarHero}>
-          <Pressable
-            onPress={() => isAdmin && setAvatarSheetOpen(true)}
-            disabled={!isAdmin}
-            style={({ pressed }) => [
-              styles.avatarPressable,
-              { opacity: pressed && isAdmin ? 0.7 : 1 },
-            ]}
-          >
+        <Pressable
+          onPress={() => isAdmin && setEditSheetOpen(true)}
+          disabled={!isAdmin}
+          style={({ pressed }) => [
+            styles.heroBlock,
+            { opacity: pressed && isAdmin ? 0.7 : 1 },
+          ]}
+          accessibilityRole={isAdmin ? 'button' : undefined}
+          accessibilityLabel={isAdmin ? 'Sửa thông tin nhóm' : undefined}
+        >
+          <View style={styles.heroAvatarWrap}>
             <Avatar
               seed={group.id}
               label={group.name}
               photoUrl={group.avatar_url}
-              size={72}
+              size={96}
             />
             {isAdmin ? (
-              <View style={[styles.avatarEditBadge, { backgroundColor: c.primary }]}>
-                <AppText variant="caption" weight="semibold" style={{ color: c.background }}>
-                  Sửa
-                </AppText>
+              <View
+                style={[
+                  styles.editBadge,
+                  { backgroundColor: c.primary, borderColor: c.background },
+                ]}
+              >
+                <Pencil size={12} color={c.background} />
               </View>
             ) : null}
-          </Pressable>
-        </View>
+          </View>
+          <AppText
+            variant="title"
+            weight="semibold"
+            numberOfLines={1}
+            style={styles.heroName}
+          >
+            {group.name}
+          </AppText>
+          <AppText variant="caption" tone="muted">
+            {currentGroupMembers.length} thành viên · {trips.length} chuyến đi
+          </AppText>
+        </Pressable>
       ) : null}
 
       <SectionTabs
@@ -288,6 +311,7 @@ export default function GroupDetailScreen() {
             memberCount={currentGroupMembers.length}
             virtualMemberCount={currentGroupMembers.filter((m) => m.is_virtual).length}
             tripCount={trips.length}
+            onEditGroup={() => setEditSheetOpen(true)}
             onDeleteGroup={handleDeleteGroup}
           />
         </Animated.View>
@@ -319,9 +343,9 @@ export default function GroupDetailScreen() {
       ) : null}
 
       {id && group ? (
-        <GroupAvatarSheet
-          isOpen={avatarSheetOpen}
-          onOpenChange={setAvatarSheetOpen}
+        <GroupEditSheet
+          isOpen={editSheetOpen}
+          onOpenChange={setEditSheetOpen}
           groupId={id}
           groupName={group.name}
           currentAvatarUrl={group.avatar_url}
@@ -367,20 +391,29 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   tabContent: { flex: 1 },
   settingsContent: { padding: 16, gap: 16 },
-  avatarHero: {
+  heroBlock: {
     alignItems: 'center',
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 20,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+    gap: 8,
   },
-  avatarPressable: {
+  heroAvatarWrap: {
     position: 'relative',
   },
-  avatarEditBadge: {
+  editBadge: {
     position: 'absolute',
-    bottom: -4,
-    right: -4,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
     borderRadius: 999,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroName: {
+    maxWidth: '85%',
+    textAlign: 'center',
   },
 });

@@ -17,6 +17,7 @@ import {
   type JoinResult,
   rejectJoinRequest,
   removeMember,
+  updateGroup,
   updateMemberRole,
 } from '../services/group.service';
 
@@ -40,6 +41,8 @@ interface GroupState {
   addVirtualMember: (groupId: string, displayName: string) => Promise<void>;
   removeGroup: (groupId: string) => Promise<void>;
   setGroupAvatar: (groupId: string, avatarUrl: string | null) => void;
+  setGroupName: (groupId: string, name: string) => void;
+  editGroupName: (groupId: string, name: string) => Promise<void>;
 }
 
 const EMPTY_SUMMARY: BalanceSummary = { total: 0, groupBalances: {} };
@@ -128,5 +131,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         g.id === groupId ? { ...g, avatar_url: avatarUrl } : g
       ),
     }));
+  },
+
+  setGroupName: (groupId, name) => {
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, name } : g
+      ),
+    }));
+  },
+
+  editGroupName: async (groupId, name) => {
+    await updateGroup(groupId, { name });
+    get().setGroupName(groupId, name);
   },
 }));
