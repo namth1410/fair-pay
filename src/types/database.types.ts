@@ -8,7 +8,7 @@ export interface UserRow {
   email: string;
   photo_url: string | null;
   fcm_token: string | null;
-  settings: string; // JSON: { dark_mode, notify_expense, notify_reminder }
+  settings: string; // JSON: UserSettings — see services/user.service.ts
   created_at: string;
 }
 
@@ -56,6 +56,7 @@ export interface ExpenseRow {
   split_type: 'equal' | 'ratio' | 'custom';
   date: string;
   note: string | null;
+  image_url: string | null;
   created_by: string;
   version: number;
   created_at: string;
@@ -112,6 +113,36 @@ export interface ExpensePresetRow {
   category: 'food' | 'transport' | 'accommodation' | 'fun' | 'shopping' | 'other';
   created_at: string;
   updated_at: string;
+}
+
+export interface GroupAvatarUploadRow {
+  id: string;
+  group_id: string;
+  uploaded_by: string;
+  file_key: string;
+  created_at: string;
+}
+
+export interface ExpenseImageUploadRow {
+  id: string;
+  expense_id: string;
+  group_id: string;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  group_id: string | null;
+  trip_id: string | null;
+  type: string;
+  actor_id: string | null;
+  title: string;
+  body: string | null;
+  data: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
 }
 
 export interface SyncQueueRow {

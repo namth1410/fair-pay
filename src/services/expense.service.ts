@@ -3,6 +3,7 @@ import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentD
 import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
 import { getAuthUserId } from './auth.helper';
+import { removeExpenseImage } from './expenseImage.service';
 import { assertRole } from './group.service';
 
 export interface Expense {
@@ -16,6 +17,7 @@ export interface Expense {
   split_type: 'equal' | 'ratio' | 'custom';
   date: string;
   note: string | null;
+  image_url: string | null;
   created_by: string;
   version: number;
   created_at: string;
@@ -51,6 +53,11 @@ export async function fetchExpenses(
 
 /** Create an expense with splits — BR-02 validated before calling */
 export async function createExpense(params: {
+  /**
+   * Optional client-generated UUID. Cho phép upload ảnh expense trước khi
+   * INSERT (key R2 cần ID cuối cùng) — nếu không truyền, Postgres tự sinh.
+   */
+  id?: string;
   tripId: string;
   groupId: string;
   title: string;
@@ -61,6 +68,7 @@ export async function createExpense(params: {
   splits: SplitResult[];
   note?: string;
   date?: string;
+  imageUrl?: string | null;
 }): Promise<Expense> {
   const titleErr = validateName(params.title, 'Tên khoản chi');
   if (titleErr) throw new Error(titleErr);
@@ -71,20 +79,24 @@ export async function createExpense(params: {
   if (!userId) throw new Error('Chưa đăng nhập');
 
   // Insert expense
+  const insertPayload: Record<string, unknown> = {
+    trip_id: params.tripId,
+    group_id: params.groupId,
+    title: params.title,
+    amount: params.amount,
+    category: params.category,
+    paid_by: params.paidByMemberId,
+    split_type: params.splitType,
+    date: params.date || new Date().toISOString(),
+    note: params.note || null,
+    image_url: params.imageUrl ?? null,
+    created_by: userId,
+  };
+  if (params.id) insertPayload.id = params.id;
+
   const { data: expense, error: expErr } = await supabase
     .from('expenses')
-    .insert({
-      trip_id: params.tripId,
-      group_id: params.groupId,
-      title: params.title,
-      amount: params.amount,
-      category: params.category,
-      paid_by: params.paidByMemberId,
-      split_type: params.splitType,
-      date: params.date || new Date().toISOString(),
-      note: params.note || null,
-      created_by: userId,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -114,7 +126,7 @@ export async function createExpense(params: {
 export async function deleteExpense(expenseId: string): Promise<void> {
   const { data: expense, error: fetchErr } = await supabase
     .from('expenses')
-    .select('group_id')
+    .select('group_id, image_url')
     .eq('id', expenseId)
     .single();
   if (fetchErr || !expense) throw new Error('Khoản chi không tồn tại');
@@ -126,6 +138,15 @@ export async function deleteExpense(expenseId: string): Promise<void> {
     .eq('id', expenseId);
 
   if (error) throw error;
+
+  // Best-effort R2 cleanup nếu expense có ảnh — không block kết quả delete.
+  if (expense.image_url) {
+    removeExpenseImage(expenseId).catch((err) => {
+      if (__DEV__) {
+        console.warn('[expense] removeExpenseImage failed:', err);
+      }
+    });
+  }
 }
 
 /**

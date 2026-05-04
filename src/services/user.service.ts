@@ -12,14 +12,26 @@ export interface UserProfile {
 
 export interface UserSettings {
   dark_mode: 'system' | 'light' | 'dark';
-  notify_expense: boolean;
-  notify_reminder: boolean;
+  /** Expense + trip events (created/edited/deleted/closed). */
+  notify_activity: boolean;
+  /** Payment recorded/received. */
+  notify_payment: boolean;
+  /** Join request, approve/reject, role change. */
+  notify_member: boolean;
+  /** Smart suggestions (settle reminder…). */
+  notify_smart: boolean;
+  haptics_enabled: boolean;
+  animations_enabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
   dark_mode: 'system',
-  notify_expense: true,
-  notify_reminder: true,
+  notify_activity: true,
+  notify_payment: true,
+  notify_member: true,
+  notify_smart: true,
+  haptics_enabled: true,
+  animations_enabled: true,
 };
 
 /** Fetch current user profile, falling back to auth metadata if the users

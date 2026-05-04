@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { fonts } from '../../config/fonts';
+import { getInitials, hashSeed, pickGradient } from '../../utils/seedGradient';
 
 interface AvatarProps {
   seed: string;
@@ -10,39 +11,6 @@ interface AvatarProps {
   photoUrl?: string | null; // nếu có sẽ hiển thị ảnh, fail thì fallback về initials
   size?: number;
   style?: ViewStyle;
-}
-
-// FNV-1a 32-bit hash — đủ tốt cho màu, 0 collision issue ở app scale
-function hashSeed(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-// Map hash sang 2 pink tones kề nhau trên color wheel (hue 320-355) với lightness
-// và chroma dịu. Hai stop khác hue ~15° để tạo gradient mềm.
-function pickGradient(seed: string): { from: string; to: string; text: string } {
-  const h = hashSeed(seed);
-  const baseHue = 320 + (h % 36);         // 320-355°
-  const nextHue = baseHue + 12;            // kề bên
-  const lightness1 = 78 + ((h >> 8) % 8);  // 78-85%
-  const lightness2 = 68 + ((h >> 16) % 8); // 68-75%
-
-  return {
-    from: `hsl(${baseHue}, 85%, ${lightness1}%)`,
-    to: `hsl(${nextHue}, 82%, ${lightness2}%)`,
-    text: `hsl(${baseHue}, 55%, 25%)`, // plum chữ tối trên bg hồng nhạt
-  };
-}
-
-function getInitials(s: string): string {
-  const parts = s.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0]!.charAt(0).toUpperCase();
-  return (parts[0]!.charAt(0) + parts[parts.length - 1]!.charAt(0)).toUpperCase();
 }
 
 export function Avatar({ seed, label, photoUrl, size = 40, style }: AvatarProps) {

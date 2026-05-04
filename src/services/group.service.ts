@@ -3,6 +3,7 @@ import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentD
 import { validateName } from '../utils/validate';
 import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
+import { notifyJoinRequested, notifyJoinResolved } from './notification.service';
 
 export interface BalanceSummary {
   /** Tổng số dư qua tất cả nhóm/chuyến đang mở (dương = được nợ, âm = đang nợ) */
@@ -190,6 +191,15 @@ export async function joinGroupByCode(code: string): Promise<JoinResult> {
     .single();
 
   if (reqErr) throw reqErr;
+
+  // Notify admins (parallel, non-blocking)
+  await notifyJoinRequested({
+    groupId: group.id,
+    groupName: group.name,
+    requesterUserId: userId,
+    requesterName: displayName,
+  });
+
   return { type: 'pending', group, requestId: request.id };
 }
 
@@ -273,6 +283,19 @@ export async function approveJoinRequest(
     targetId: req.user_id,
     afterData: { display_name: req.display_name, request_id: requestId },
   });
+
+  // Notify requester
+  const { data: groupRow } = await supabase
+    .from('groups')
+    .select('name')
+    .eq('id', groupId)
+    .single();
+  await notifyJoinResolved('member.join_approved', {
+    groupId,
+    groupName: groupRow?.name ?? '',
+    reviewerId,
+    requesterUserId: req.user_id,
+  });
 }
 
 /** F-23: Admin từ chối join request */
@@ -284,6 +307,14 @@ export async function rejectJoinRequest(
 
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
+
+  // Cần fetch user_id của requester TRƯỚC khi update status (để notify)
+  const { data: req } = await supabase
+    .from('join_requests')
+    .select('user_id')
+    .eq('id', requestId)
+    .eq('status', 'pending')
+    .maybeSingle();
 
   const { error } = await supabase
     .from('join_requests')
@@ -302,6 +333,20 @@ export async function rejectJoinRequest(
     action: 'member.join_rejected',
     targetId: requestId,
   });
+
+  if (req?.user_id) {
+    const { data: groupRow } = await supabase
+      .from('groups')
+      .select('name')
+      .eq('id', groupId)
+      .single();
+    await notifyJoinResolved('member.join_rejected', {
+      groupId,
+      groupName: groupRow?.name ?? '',
+      reviewerId,
+      requesterUserId: req.user_id,
+    });
+  }
 }
 
 /**
@@ -449,6 +494,65 @@ export async function updateGroup(
     .eq('id', groupId);
 
   if (error) throw error;
+}
+
+// ── Group avatar (R2 upload pipeline) ─────────────
+// All three calls hit Supabase Edge Functions; auth is auto-injected by the
+// SDK. Errors arrive as `FunctionsHttpError` whose response body has shape
+// `{ error: string, retryAfter?: number }` — see invokeAvatarFunction below.
+
+interface AvatarFunctionError {
+  error?: string;
+  retryAfter?: number;
+}
+
+async function invokeAvatarFunction<T>(
+  name: 'group-avatar-presign' | 'group-avatar-commit' | 'group-avatar-remove',
+  body: Record<string, unknown>
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T>(name, { body });
+  if (error) {
+    // The SDK doesn't expose the response body on errors directly; refetch.
+    let parsed: AvatarFunctionError | null = null;
+    const ctx = (error as unknown as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        parsed = (await ctx.json()) as AvatarFunctionError;
+      } catch {
+        parsed = null;
+      }
+    }
+    if (__DEV__) {
+      console.error(`[avatar] ${name} failed:`, {
+        rawMessage: error.message,
+        status: (error as unknown as { context?: { status?: number } }).context?.status,
+        parsedBody: parsed,
+      });
+    }
+    const message = parsed?.error || error.message || 'Lỗi mạng, thử lại sau';
+    const wrapped = new Error(message) as Error & { retryAfter?: number };
+    if (parsed?.retryAfter) wrapped.retryAfter = parsed.retryAfter;
+    throw wrapped;
+  }
+  return data as T;
+}
+
+export async function requestGroupAvatarUploadUrl(
+  groupId: string,
+  sizeBytes: number
+): Promise<{ uploadUrl: string; fileKey: string; publicUrl: string }> {
+  return invokeAvatarFunction('group-avatar-presign', { groupId, sizeBytes });
+}
+
+export async function commitGroupAvatar(
+  groupId: string,
+  fileKey: string
+): Promise<{ avatar_url: string }> {
+  return invokeAvatarFunction('group-avatar-commit', { groupId, fileKey });
+}
+
+export async function removeGroupAvatar(groupId: string): Promise<void> {
+  await invokeAvatarFunction('group-avatar-remove', { groupId });
 }
 
 /** Soft delete group (admin only) */

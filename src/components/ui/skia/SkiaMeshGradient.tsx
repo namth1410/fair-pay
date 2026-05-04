@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useDerivedValue } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
 import { hexToRgb } from './hexToRgb';
 
 // Layered soft-light blobs trên nền base color.
@@ -84,9 +85,11 @@ export const SkiaMeshGradient = memo(function SkiaMeshGradient({
     if (width !== size.w || height !== size.h) setSize({ w: width, h: height });
   };
 
+  const animationsEnabled = useAnimationsEnabled();
+
   return (
     <View style={[styles.wrap, { backgroundColor: baseColor }, style]} onLayout={onLayout}>
-      {effect && size.w > 0 ? (
+      {animationsEnabled && effect && size.w > 0 ? (
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
           <Fill>
             <Shader source={effect} uniforms={uniforms} />

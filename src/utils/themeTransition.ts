@@ -2,6 +2,7 @@ import { Appearance } from 'react-native';
 import { Uniwind } from 'uniwind';
 
 import { colors } from '../config/theme';
+import { getAnimationsEnabled } from './userPreferences';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -21,6 +22,10 @@ export function registerThemeTransitionTrigger(fn: (to: ThemePref) => void) {
 }
 
 export function transitionToTheme(to: ThemePref) {
+  if (!getAnimationsEnabled()) {
+    Uniwind.setTheme(to);
+    return;
+  }
   state.trigger(to);
 }
 

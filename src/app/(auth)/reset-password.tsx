@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
 import { Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import {

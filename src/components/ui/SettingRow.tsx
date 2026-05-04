@@ -1,6 +1,5 @@
 import { Switch } from 'heroui-native';
-import { StyleSheet, View } from 'react-native';
-import { Pressable } from 'react-native-gesture-handler';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from './AppText';
 
@@ -12,10 +11,10 @@ interface SettingRowProps {
 }
 
 export function SettingRow({ label, hint, value, onValueChange }: SettingRowProps) {
-  // Whole row is the tap target — heroui Switch doesn't reliably receive
-  // taps when nested inside @gorhom BottomSheetScrollView (gesture-handler
-  // intercepts). The Switch becomes a visual indicator (pointerEvents="none")
-  // and a single Pressable from react-native-gesture-handler drives the toggle.
+  // Whole row là tap target — Switch để pointerEvents="none" làm visual,
+  // Pressable RN drive toggle. Trước dùng RNGH Pressable cho gorhom
+  // BottomSheet compatibility, nhưng SettingRow hiện chỉ dùng ở settings
+  // ScrollView nên RN Pressable đủ + đỡ tốn 1 TapGestureHandler/row.
   return (
     <Pressable
       style={styles.row}

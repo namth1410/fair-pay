@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { fonts } from '../../config/fonts';
@@ -9,34 +9,21 @@ interface SectionHeaderProps {
   title: string;
   count?: number;
   tagline?: string;
+  /** Optional slot rendered after the count chip, before the trailing rule. */
+  right?: ReactNode;
 }
 
 export const SectionHeader = memo(function SectionHeader({
   title,
   count,
   tagline,
+  right,
 }: SectionHeaderProps) {
   const c = useAppTheme();
 
   return (
     <View style={styles.wrap}>
       <View style={styles.titleRow}>
-        {/* Editorial index mark: "01 /" style */}
-        <View style={styles.indexMark}>
-          <AppText
-            variant="meta"
-            style={{
-              color: c.primaryStrong,
-              fontFamily: fonts.bold,
-              letterSpacing: 1.6,
-              fontSize: 10,
-            }}
-          >
-            01
-          </AppText>
-          <View style={[styles.slash, { backgroundColor: c.primaryStrong }]} />
-        </View>
-
         <AppText
           variant="label"
           style={{
@@ -67,6 +54,8 @@ export const SectionHeader = memo(function SectionHeader({
 
         {/* Horizontal rule filling the remaining width */}
         <View style={[styles.rule, { backgroundColor: c.divider }]} />
+
+        {right ? <View style={styles.rightSlot}>{right}</View> : null}
       </View>
 
       {tagline && (
@@ -76,7 +65,6 @@ export const SectionHeader = memo(function SectionHeader({
             color: c.muted,
             fontFamily: fonts.medium,
             marginTop: 6,
-            marginLeft: 30,
           }}
         >
           {tagline}
@@ -97,17 +85,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  indexMark: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  slash: {
-    width: 1,
-    height: 12,
-    transform: [{ rotate: '18deg' }],
-    opacity: 0.6,
-  },
   countChip: {
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -118,5 +95,8 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 1,
     opacity: 0.8,
+  },
+  rightSlot: {
+    marginLeft: 4,
   },
 });

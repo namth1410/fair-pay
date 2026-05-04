@@ -39,6 +39,7 @@ interface GroupState {
   kickMember: (memberId: string, groupId: string) => Promise<void>;
   addVirtualMember: (groupId: string, displayName: string) => Promise<void>;
   removeGroup: (groupId: string) => Promise<void>;
+  setGroupAvatar: (groupId: string, avatarUrl: string | null) => void;
 }
 
 const EMPTY_SUMMARY: BalanceSummary = { total: 0, groupBalances: {} };
@@ -119,5 +120,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   removeGroup: async (groupId) => {
     await deleteGroup(groupId);
     await get().loadGroups();
+  },
+
+  setGroupAvatar: (groupId, avatarUrl) => {
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, avatar_url: avatarUrl } : g
+      ),
+    }));
   },
 }));

@@ -9,6 +9,11 @@ import {
   fetchExpenses,
 } from '../services/expense.service';
 import {
+  notifyExpenseEvent,
+  notifyPaymentRecorded,
+  notifyTripClosed,
+} from '../services/notification.service';
+import {
   calculateSettlements,
   createPayment,
   deletePayment,
@@ -23,6 +28,7 @@ import {
   type Trip,
 } from '../services/trip.service';
 import type { SplitResult } from '../utils/split';
+import { useAuthStore } from './auth.store';
 
 interface BalanceEntry {
   memberId: string;
@@ -52,6 +58,7 @@ interface TripState {
 
   loadExpenses: (tripId: string) => Promise<void>;
   addExpense: (params: {
+    id?: string;
     tripId: string;
     groupId: string;
     title: string;
@@ -61,6 +68,7 @@ interface TripState {
     splitType: 'equal' | 'ratio' | 'custom';
     splits: SplitResult[];
     note?: string;
+    imageUrl?: string | null;
   }) => Promise<void>;
   removeExpense: (expenseId: string, tripId: string) => Promise<void>;
 
@@ -104,6 +112,16 @@ export const useTripStore = create<TripState>((set, get) => ({
   toggleTripStatus: async (trip) => {
     if (trip.status === 'open') {
       await closeTrip(trip.id);
+      const profile = useAuthStore.getState().profile;
+      if (profile) {
+        await notifyTripClosed({
+          groupId: trip.group_id,
+          tripId: trip.id,
+          tripName: trip.name,
+          actorId: profile.id,
+          actorName: profile.display_name,
+        });
+      }
     } else {
       await reopenTrip(trip.id);
     }
@@ -121,14 +139,40 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   addExpense: async (params) => {
-    const result = await createExpense(params);
-    await logAction({
-      groupId: params.groupId,
+    const result = await createExpense({
+      id: params.id,
       tripId: params.tripId,
-      action: 'expense.create',
-      targetId: result.id,
-      afterData: { title: params.title, amount: params.amount, category: params.category, paidBy: params.paidByMemberId },
+      groupId: params.groupId,
+      title: params.title,
+      amount: params.amount,
+      category: params.category,
+      paidByMemberId: params.paidByMemberId,
+      splitType: params.splitType,
+      splits: params.splits,
+      note: params.note,
+      imageUrl: params.imageUrl,
     });
+    const profile = useAuthStore.getState().profile;
+    await Promise.all([
+      logAction({
+        groupId: params.groupId,
+        tripId: params.tripId,
+        action: 'expense.create',
+        targetId: result.id,
+        afterData: { title: params.title, amount: params.amount, category: params.category, paidBy: params.paidByMemberId },
+      }),
+      profile
+        ? notifyExpenseEvent('expense.created', {
+            groupId: params.groupId,
+            tripId: params.tripId,
+            actorId: profile.id,
+            actorName: profile.display_name,
+            expenseId: result.id,
+            expenseTitle: params.title,
+            amount: params.amount,
+          })
+        : Promise.resolve(),
+    ]);
     await get().loadExpenses(params.tripId);
     await get().loadBalances(params.tripId);
   },
@@ -137,14 +181,28 @@ export const useTripStore = create<TripState>((set, get) => ({
     // Get data before deleting for audit log
     const expense = get().currentExpenses.find((e) => e.id === expenseId);
     await deleteExpense(expenseId);
+    const profile = useAuthStore.getState().profile;
     if (expense) {
-      await logAction({
-        groupId: expense.group_id,
-        tripId,
-        action: 'expense.delete',
-        targetId: expenseId,
-        beforeData: { title: expense.title, amount: expense.amount },
-      });
+      await Promise.all([
+        logAction({
+          groupId: expense.group_id,
+          tripId,
+          action: 'expense.delete',
+          targetId: expenseId,
+          beforeData: { title: expense.title, amount: expense.amount },
+        }),
+        profile
+          ? notifyExpenseEvent('expense.deleted', {
+              groupId: expense.group_id,
+              tripId,
+              actorId: profile.id,
+              actorName: profile.display_name,
+              expenseId,
+              expenseTitle: expense.title,
+              amount: expense.amount,
+            })
+          : Promise.resolve(),
+      ]);
     }
     await get().loadExpenses(tripId);
     await get().loadBalances(tripId);
@@ -157,13 +215,28 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   addPayment: async (params) => {
     const result = await createPayment(params);
-    await logAction({
-      groupId: params.groupId,
-      tripId: params.tripId,
-      action: 'payment.create',
-      targetId: result.id,
-      afterData: { from: params.fromMemberId, to: params.toMemberId, amount: params.amount },
-    });
+    const profile = useAuthStore.getState().profile;
+    await Promise.all([
+      logAction({
+        groupId: params.groupId,
+        tripId: params.tripId,
+        action: 'payment.create',
+        targetId: result.id,
+        afterData: { from: params.fromMemberId, to: params.toMemberId, amount: params.amount },
+      }),
+      profile
+        ? notifyPaymentRecorded({
+            groupId: params.groupId,
+            tripId: params.tripId,
+            actorId: profile.id,
+            actorName: profile.display_name,
+            paymentId: result.id,
+            fromMemberId: params.fromMemberId,
+            toMemberId: params.toMemberId,
+            amount: params.amount,
+          })
+        : Promise.resolve(),
+    ]);
     await get().loadPayments(params.tripId);
     await get().loadBalances(params.tripId);
   },

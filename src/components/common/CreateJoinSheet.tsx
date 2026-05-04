@@ -1,19 +1,12 @@
-import { Button } from 'heroui-native';
-import { X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheet, Button } from 'heroui-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText, AppTextField, SectionTabs } from '../ui';
+import { AppText, SectionTabs } from '../ui';
 
 type Mode = 'create' | 'join';
 
@@ -29,28 +22,55 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
   const { createGroup, joinByCode } = useGroupStore();
 
   const [mode, setMode] = useState<Mode>('create');
-  const [groupName, setGroupName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const valueRef = useRef('');
+  const [resetKey, setResetKey] = useState(0);
+  const [showInput, setShowInput] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setShowInput(false);
+      return;
+    }
     setMode('create');
-    setGroupName('');
-    setInviteCode('');
+    valueRef.current = '';
+    setResetKey((k) => k + 1);
+    setHasContent(false);
     setBusy(false);
     setFormError('');
   }, [isOpen]);
 
-  const handleCreate = async () => {
-    const name = groupName.trim();
-    if (!name || busy) return;
+  const handleModeChange = (next: Mode) => {
+    if (next === mode) return;
+    setMode(next);
+    valueRef.current = '';
+    setResetKey((k) => k + 1);
+    setHasContent(false);
+    setFormError('');
+  };
+
+  const handleChangeText = (text: string) => {
+    valueRef.current = text;
+    const next = text.trim().length > 0;
+    setHasContent((prev) => (prev === next ? prev : next));
+  };
+
+  const handleSubmit = async () => {
+    const trimmed = valueRef.current.trim();
+    if (!trimmed || busy) return;
     setFormError('');
     setBusy(true);
     try {
-      await createGroup(name);
-      onOpenChange(false);
+      if (mode === 'create') {
+        await createGroup(trimmed);
+        onOpenChange(false);
+      } else {
+        const result = await joinByCode(trimmed);
+        onOpenChange(false);
+        onJoinPending(result.group.name);
+      }
     } catch (e: unknown) {
       setFormError(getErrorMessage(e));
     } finally {
@@ -58,156 +78,112 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
     }
   };
 
-  const handleJoin = async () => {
-    const code = inviteCode.trim();
-    if (!code || busy) return;
-    setFormError('');
-    setBusy(true);
-    try {
-      const result = await joinByCode(code);
-      onOpenChange(false);
-      onJoinPending(result.group.name);
-    } catch (e: unknown) {
-      setFormError(getErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const isCreate = mode === 'create';
+  const submitLabel = isCreate
+    ? busy ? 'Đang tạo...' : 'Tạo nhóm'
+    : busy ? 'Đang gửi...' : 'Tham gia';
 
   return (
-    <Modal
-      visible={isOpen}
-      onRequestClose={() => onOpenChange(false)}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.root}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={() => onOpenChange(false)}
-          accessibilityLabel="Đóng"
-        />
-        <View style={[styles.sheet, { backgroundColor: c.surface }]}>
-          <View style={styles.header}>
-            <AppText variant="subtitle" weight="semibold">
-              {mode === 'create' ? 'Tạo nhóm mới' : 'Tham gia nhóm'}
-            </AppText>
-            <Pressable
-              onPress={() => onOpenChange(false)}
-              style={styles.closeBtn}
-              accessibilityLabel="Đóng"
-            >
-              <X size={20} color={c.muted} />
-            </Pressable>
-          </View>
-
-          <View style={styles.body}>
-            <SectionTabs
-              items={[
-                { key: 'create', label: 'Tạo nhóm' },
-                { key: 'join', label: 'Nhập mã mời' },
-              ]}
-              selected={mode}
-              onSelect={(k) => setMode(k as Mode)}
-            />
-
-            <View style={styles.formArea}>
-              {mode === 'create' ? (
-                <>
-                  <AppText variant="caption" tone="muted" style={styles.hint}>
-                    Đặt tên nhóm để bắt đầu chia sẻ chi tiêu với mọi người.
-                  </AppText>
-                  <AppTextField
-                    placeholder="Tên nhóm mới"
-                    value={groupName}
-                    onChangeText={setGroupName}
-                    returnKeyType="done"
-                    onSubmitEditing={handleCreate}
-                    accessibilityLabel="Tên nhóm mới"
-                  />
-                  {formError ? (
-                    <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                      <AppText variant="caption" tone="danger">{formError}</AppText>
-                    </View>
-                  ) : null}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onPress={handleCreate}
-                    isDisabled={busy || !groupName.trim()}
-                  >
-                    <Button.Label>{busy ? 'Đang tạo...' : 'Tạo nhóm'}</Button.Label>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <AppText variant="caption" tone="muted" style={styles.hint}>
-                    Nhập mã 6 ký tự được người quản trị chia sẻ.
-                  </AppText>
-                  <AppTextField
-                    placeholder="a1b2c3"
-                    value={inviteCode}
-                    onChangeText={setInviteCode}
-                    autoCapitalize="none"
-                    returnKeyType="done"
-                    onSubmitEditing={handleJoin}
-                    accessibilityLabel="Mã mời"
-                  />
-                  {formError ? (
-                    <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                      <AppText variant="caption" tone="danger">{formError}</AppText>
-                    </View>
-                  ) : null}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onPress={handleJoin}
-                    isDisabled={busy || !inviteCode.trim()}
-                  >
-                    <Button.Label>{busy ? 'Đang gửi...' : 'Tham gia'}</Button.Label>
-                  </Button>
-                </>
-              )}
+    <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
+      <BottomSheet.Portal>
+        <BottomSheet.Overlay />
+        <BottomSheet.Content
+          enableDynamicSizing={false}
+          snapPoints={['50%', '90%']}
+          keyboardBehavior="extend"
+          keyboardBlurBehavior="restore"
+          android_keyboardInputMode="adjustResize"
+          onChange={(index) => setShowInput(index >= 0)}
+        >
+          <BottomSheetView style={styles.container}>
+            <View style={styles.header}>
+              <BottomSheet.Title>
+                {isCreate ? 'Tạo nhóm mới' : 'Tham gia nhóm'}
+              </BottomSheet.Title>
             </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+
+            <View style={styles.body}>
+              <SectionTabs
+                items={[
+                  { key: 'create', label: 'Tạo nhóm' },
+                  { key: 'join', label: 'Nhập mã mời' },
+                ]}
+                selected={mode}
+                onSelect={(k) => handleModeChange(k as Mode)}
+              />
+
+              <View style={styles.formArea}>
+                <AppText variant="caption" tone="muted" style={styles.hint}>
+                  {isCreate
+                    ? 'Đặt tên nhóm để bắt đầu chia sẻ chi tiêu với mọi người.'
+                    : 'Nhập mã 6 ký tự được người quản trị chia sẻ.'}
+                </AppText>
+
+                {showInput ? (
+                  <BottomSheetTextInput
+                    key={`${mode}-${resetKey}`}
+                    placeholder={isCreate ? 'Tên nhóm mới' : 'a1b2c3'}
+                    placeholderTextColor={c.muted}
+                    defaultValue=""
+                    onChangeText={handleChangeText}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSubmit}
+                    autoCapitalize={isCreate ? 'sentences' : 'none'}
+                    accessibilityLabel={isCreate ? 'Tên nhóm mới' : 'Mã mời'}
+                    autoFocus
+                    style={[
+                      styles.input,
+                      {
+                        color: c.foreground,
+                        backgroundColor: c.surfaceAlt,
+                        borderColor: c.divider,
+                      },
+                    ]}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: c.surfaceAlt,
+                        borderColor: c.divider,
+                      },
+                    ]}
+                  />
+                )}
+
+                {formError ? (
+                  <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                    <AppText variant="caption" tone="danger">{formError}</AppText>
+                  </View>
+                ) : null}
+
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onPress={handleSubmit}
+                  isDisabled={busy || !hasContent}
+                >
+                  <Button.Label>{submitLabel}</Button.Label>
+                </Button>
+              </View>
+            </View>
+          </BottomSheetView>
+        </BottomSheet.Content>
+      </BottomSheet.Portal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
+  container: {
+    paddingHorizontal: 20,
     paddingBottom: 24,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  closeBtn: {
-    padding: 6,
-    borderRadius: 20,
+    paddingVertical: 8,
   },
   body: {
-    paddingHorizontal: 20,
     paddingTop: 4,
   },
   formArea: {
@@ -216,6 +192,13 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginBottom: 2,
+  },
+  input: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    fontSize: 16,
   },
   errorBox: {
     padding: 12,

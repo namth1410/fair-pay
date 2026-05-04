@@ -20,6 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from './AppText';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -52,6 +53,7 @@ export function BouncyDialog({
   dismissOnBackdrop = true,
 }: BouncyDialogProps) {
   const { isDark, surface, divider, foreground } = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
   const [mounted, setMounted] = useState(false);
   // Track transition false→true để chỉ reset khi thật sự mở mới
   const prevOpenRef = useRef(false);
@@ -81,6 +83,14 @@ export function BouncyDialog({
       wiggle.value = 0;
 
       setMounted(true);
+
+      if (!animationsEnabled) {
+        // Instant: dialog xuất hiện ngay tại vị trí cuối, dragon đứng yên
+        backdrop.value = 1;
+        translateX.value = 0;
+        return;
+      }
+
       backdrop.value = withTiming(1, { duration: 320 });
 
       // Bay vào theo hướng đã chọn
@@ -124,8 +134,17 @@ export function BouncyDialog({
         ),
       );
     } else if (justClosed && mounted) {
-      backdrop.value = withTiming(0, { duration: 420 });
       const dir = directionRef.current;
+      // Lật direction cho lần mở tiếp theo
+      directionRef.current = dir === 'rtl' ? 'ltr' : 'rtl';
+
+      if (!animationsEnabled) {
+        backdrop.value = 0;
+        setMounted(false);
+        return;
+      }
+
+      backdrop.value = withTiming(0, { duration: 420 });
       const exitX = dir === 'rtl' ? -SCREEN_W * 1.1 : SCREEN_W * 1.1;
       // Bay tiếp theo đúng hướng đã vào (không quay đầu)
       translateX.value = withTiming(
@@ -135,16 +154,14 @@ export function BouncyDialog({
           if (finished) runOnJS(setMounted)(false);
         },
       );
-      // Lật direction cho lần mở tiếp theo
-      directionRef.current = dir === 'rtl' ? 'ltr' : 'rtl';
     }
-  }, [isOpen, mounted, translateX, bob, wiggle, backdrop, dragonScale]);
+  }, [isOpen, mounted, animationsEnabled, translateX, bob, wiggle, backdrop, dragonScale]);
 
-  // Recolor dragon theo palette Sakura — body plum/pink, wings pink/light
+  // Recolor dragon theo palette monochrome — body neutral, wings xám, accent black/white
   const dragonColorFilters = useMemo(() => {
-    const bodyColor = isDark ? '#F0B5D2' : '#4A1F38';     // plum tối / pink sáng
-    const wingColor = isDark ? '#FBE4EF' : '#F9A8D4';     // light pink / primary pink
-    const accentColor = isDark ? '#F9A8D4' : '#EC4899';   // highlight cho eye/eyebrow
+    const bodyColor = isDark ? '#FAFAFA' : '#1A1A1F';     // snow / eclipse
+    const wingColor = isDark ? '#D4D4D8' : '#71717A';     // zinc-300 / zinc-500
+    const accentColor = isDark ? '#FFFFFF' : '#000000';   // highlight cho eye/eyebrow
 
     const bodyLayers = [
       'BODY Outlines',
@@ -212,6 +229,7 @@ export function BouncyDialog({
             <View
               style={[
                 styles.card,
+                animationsEnabled ? null : styles.cardNoClaw,
                 {
                   backgroundColor: surface,
                   borderColor: divider,
@@ -222,20 +240,23 @@ export function BouncyDialog({
               {children}
             </View>
 
-            {/* Dragon absolute — render sau card để nằm trên, claws "cắm" xuống top của card */}
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.dragonWrap, dragonWrapStyle]}
-            >
-              <LottieView
-                source={require('../../../assets/dragon.json')}
-                autoPlay
-                loop
-                resizeMode="contain"
-                style={styles.dragon}
-                colorFilters={dragonColorFilters}
-              />
-            </Animated.View>
+            {/* Dragon chỉ render khi animations ON — không có anim thì rồng đứng hình
+                trông kỳ. Khi off, card hiển thị đứng độc lập với padding chuẩn. */}
+            {animationsEnabled ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.dragonWrap, dragonWrapStyle]}
+              >
+                <LottieView
+                  source={require('../../../assets/dragon.json')}
+                  autoPlay
+                  loop
+                  resizeMode="contain"
+                  style={styles.dragon}
+                  colorFilters={dragonColorFilters}
+                />
+              </Animated.View>
+            ) : null}
           </Animated.View>
         </View>
       </View>
@@ -308,6 +329,10 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
     elevation: 18,
+  },
+  cardNoClaw: {
+    // Khi không có dragon (animations OFF), padding top chuẩn
+    paddingTop: 24,
   },
   title: {
     marginBottom: 6,

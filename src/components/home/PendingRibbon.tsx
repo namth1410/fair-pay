@@ -12,6 +12,7 @@ import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from '../ui';
 
 interface PendingRibbonProps {
@@ -24,15 +25,20 @@ export const PendingRibbon = memo(function PendingRibbon({
   onDismiss,
 }: PendingRibbonProps) {
   const c = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
   const pulse = useSharedValue(0);
 
   useEffect(() => {
+    if (!animationsEnabled) {
+      pulse.value = 0;
+      return;
+    }
     pulse.value = withRepeat(
       withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.ease) }),
       -1,
       true,
     );
-  }, [pulse]);
+  }, [pulse, animationsEnabled]);
 
   const haloStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 + pulse.value * 1.8 }],

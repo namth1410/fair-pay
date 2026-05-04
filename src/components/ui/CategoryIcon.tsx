@@ -46,26 +46,12 @@ interface CategoryIconProps {
   style?: ViewStyle;
 }
 
-// Deterministic hue per category — soft pink family với 1-2 accent color
-const HUE_MAP: Record<string, string> = {
-  travel: '#F9A8D4',       // pink primary
-  meal: '#FDA4AF',         // rose warm
-  event: '#E8879A',        // rose deeper
-  food: '#FDA4AF',
-  transport: '#F0ABFC',    // light plum
-  accommodation: '#F9A8D4',
-  fun: '#E8879A',
-  shopping: '#FBCFE8',     // pink-200
-  other: '#D8B4D8',        // muted plum-pink
-};
-
 export function CategoryIcon({ kind, value, size = 44, style }: CategoryIconProps) {
   const c = useAppTheme();
   const Icon =
     kind === 'trip'
       ? TRIP_ICONS[value as TripType] ?? MoreHorizontal
       : EXPENSE_ICONS[value as ExpenseCategory] ?? MoreHorizontal;
-  const bg = HUE_MAP[value] ?? c.primarySoft;
 
   return (
     <View
@@ -75,7 +61,7 @@ export function CategoryIcon({ kind, value, size = 44, style }: CategoryIconProp
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: bg + '33', // 20% opacity tint
+          backgroundColor: c.primarySoft,
         },
         style,
       ]}

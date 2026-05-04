@@ -1,8 +1,10 @@
+import { File } from 'expo-file-system';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Button, Switch, useToast } from 'heroui-native';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,10 +16,14 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText, AppTextField, ChipPicker, Money } from '../../../../../components/ui';
+import { AppText, AppTextField, ChipPicker, Money, MoneyTextField } from '../../../../../components/ui';
 import { EXPENSE_CATEGORIES as CATEGORIES, type ExpenseCategory } from '../../../../../config/constants';
 import { fonts } from '../../../../../config/fonts';
 import { useAppTheme } from '../../../../../hooks/useAppTheme';
+import {
+  removeExpenseImage,
+  requestExpenseImageUploadUrl,
+} from '../../../../../services/expenseImage.service';
 import { useGroupStore } from '../../../../../stores/group.store';
 import { usePresetStore } from '../../../../../stores/preset.store';
 import { useTripStore } from '../../../../../stores/trip.store';
@@ -41,7 +47,13 @@ const SPLIT_TYPE_OPTIONS = [
 type SplitType = 'equal' | 'ratio' | 'custom';
 
 export default function NewExpenseScreen() {
-  const { id: tripId } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    expenseId?: string;
+    imageUri?: string;
+    imageSizeBytes?: string;
+  }>();
+  const tripId = params.id;
   const c = useAppTheme();
   const { toast } = useToast();
 
@@ -49,6 +61,19 @@ export default function NewExpenseScreen() {
   const addExpense = useTripStore((s) => s.addExpense);
   const trip = trips.find((t) => t.id === tripId);
   const groupId = trip?.group_id ?? '';
+
+  // Quick-add từ AppDock truyền pre-gen UUID + imageUri qua query. Lock 1 lần
+  // ở mount — mỗi lần screen reload (vd sau back) sẽ có state riêng.
+  const [presetExpenseId] = useState<string | undefined>(params.expenseId);
+  const [pendingImage, setPendingImage] = useState<{
+    uri: string;
+    sizeBytes: number;
+  } | null>(() => {
+    if (!params.imageUri || !params.imageSizeBytes) return null;
+    const sizeBytes = parseInt(params.imageSizeBytes, 10);
+    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return null;
+    return { uri: params.imageUri, sizeBytes };
+  });
 
   const members = useGroupStore((s) => s.currentGroupMembers);
   const { presets, loaded: presetsLoaded, loadPresets, addPreset } = usePresetStore();
@@ -143,11 +168,47 @@ export default function NewExpenseScreen() {
       const submittedTitle = title.trim();
       const submittedAmount = amount;
       const submittedCategory = category;
-      await addExpense({
-        tripId, groupId,
-        title: submittedTitle, amount, category, paidByMemberId: paidBy,
-        splitType, splits, note: note.trim() || undefined,
-      });
+
+      let imageUrl: string | null = null;
+      let uploadedExpenseId: string | undefined = presetExpenseId;
+      if (pendingImage && presetExpenseId) {
+        // Upload to R2 trước, expense INSERT sau với image_url đã sẵn.
+        // Nếu upload fail → throw, KHÔNG insert (tránh row mất ảnh).
+        const presign = await requestExpenseImageUploadUrl(
+          presetExpenseId,
+          tripId,
+          pendingImage.sizeBytes,
+        );
+        const file = new File(pendingImage.uri);
+        const arrayBuffer = await file.arrayBuffer();
+        const putRes = await fetch(presign.uploadUrl, {
+          method: 'PUT',
+          body: arrayBuffer,
+          headers: { 'Content-Type': 'image/jpeg' },
+        });
+        if (!putRes.ok) {
+          throw new Error(`Tải ảnh thất bại (${putRes.status})`);
+        }
+        imageUrl = presign.publicUrl;
+        uploadedExpenseId = presetExpenseId;
+      }
+
+      try {
+        await addExpense({
+          id: uploadedExpenseId,
+          tripId, groupId,
+          title: submittedTitle, amount, category, paidByMemberId: paidBy,
+          splitType, splits, note: note.trim() || undefined,
+          imageUrl,
+        });
+      } catch (insertErr) {
+        // Best-effort cleanup ảnh đã upload nếu INSERT fail.
+        if (imageUrl && uploadedExpenseId) {
+          removeExpenseImage(uploadedExpenseId).catch(() => {});
+        }
+        throw insertErr;
+      }
+
       hapticSuccess();
       toast.show({ variant: 'success', label: 'Đã thêm khoản chi', description: submittedTitle });
       if (savePreset && !presetTitles.has(submittedTitle)) {
@@ -168,7 +229,7 @@ export default function NewExpenseScreen() {
     } finally {
       setBusy(false);
     }
-  }, [amountStr, members, splitType, ratios, customAmounts, title, category, paidBy, note, tripId, groupId, addExpense, toast, presetTitles, savePreset, addPreset]);
+  }, [amountStr, members, splitType, ratios, customAmounts, title, category, paidBy, note, tripId, groupId, addExpense, toast, presetTitles, savePreset, addPreset, pendingImage, presetExpenseId]);
 
   const amount = parseInt(amountStr, 10) || 0;
 
@@ -216,6 +277,27 @@ export default function NewExpenseScreen() {
             <Animated.View entering={FadeInDown.duration(260)} style={styles.formArea}>
               <AppText variant="meta" tone="muted">Bước 1/2 · Thông tin cơ bản</AppText>
 
+              {pendingImage ? (
+                <View style={styles.imagePreviewWrap}>
+                  <Image
+                    source={{ uri: pendingImage.uri }}
+                    style={styles.imagePreview}
+                  />
+                  <Pressable
+                    onPress={() => setPendingImage(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Bỏ ảnh đính kèm"
+                    hitSlop={8}
+                    style={[
+                      styles.imageRemoveBtn,
+                      { backgroundColor: c.foreground },
+                    ]}
+                  >
+                    <X size={16} color={c.inverseForeground} strokeWidth={2.5} />
+                  </Pressable>
+                </View>
+              ) : null}
+
               {presets.length > 0 ? (
                 <View>
                   <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
@@ -255,11 +337,10 @@ export default function NewExpenseScreen() {
                 onChangeText={setTitle}
                 accessibilityLabel="Tên khoản chi"
               />
-              <AppTextField
+              <MoneyTextField
                 placeholder="Số tiền (VND)"
                 value={amountStr}
                 onChangeText={setAmountStr}
-                keyboardType="number-pad"
                 accessibilityLabel="Số tiền"
               />
 
@@ -454,6 +535,27 @@ const styles = StyleSheet.create({
   },
   formArea: {
     gap: 12,
+  },
+  imagePreviewWrap: {
+    alignSelf: 'center',
+    width: 160,
+    height: 160,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: 160,
+    height: 160,
+  },
+  imageRemoveBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fieldLabel: {
     marginTop: 4,

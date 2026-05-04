@@ -22,6 +22,24 @@ export const DISPLAY_NAME_MAX_LENGTH = 30;
 export const SYNC_RETRY_MAX = 3;
 export const SYNC_CLEANUP_AFTER_HOURS = 24;
 
+// Group avatar (Cloudflare R2 storage)
+export const GROUP_AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2 MB sau compress
+export const GROUP_AVATAR_QUOTA_PER_GROUP_PER_WEEK = 3;
+export const GROUP_AVATAR_QUOTA_PER_USER_PER_DAY = 20;
+export const R2_PUBLIC_BASE_URL = process.env.EXPO_PUBLIC_R2_PUBLIC_BASE_URL ?? '';
+
+// Expense image (Cloudflare R2 — bucket dùng chung với avatar, prefix khác)
+export const EXPENSE_IMAGE_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+export const EXPENSE_IMAGE_QUOTA_PER_USER_PER_DAY = 100;
+export const EXPENSE_IMAGE_QUOTA_PER_GROUP_PER_DAY = 50;
+
+// Notifications
+export const NOTIF_PAGE_SIZE = 30;
+export const NOTIF_DEDUP_WINDOW_MS = 10 * 60 * 1000; // 10 phút — gộp duplicate notif chưa đọc
+export const SETTLE_SUGGEST_MIN_AMOUNT = 200_000;     // VND — ngưỡng gợi ý settle
+export const SETTLE_SUGGEST_AGE_DAYS = 3;             // số ngày trip không hoạt động trước khi gợi ý
+export const SETTLE_SUGGEST_COOLDOWN_DAYS = 7;        // không gửi lại settle suggest cùng cặp trong N ngày
+
 // Expense categories — shared single source of truth
 export type ExpenseCategory =
   | 'food'

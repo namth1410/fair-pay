@@ -10,10 +10,12 @@ import {
   getResetCooldownRemaining,
   markResetSent,
 } from '../services/auth.helper';
+import type { UserProfile } from '../services/user.service';
 
 interface AuthState {
   session: Session | null;
   user: User | null;
+  profile: UserProfile | null;
   isLoading: boolean;
   isInitialized: boolean;
 
@@ -28,13 +30,17 @@ interface AuthState {
   sendPasswordResetEmail: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
+  setProfile: (profile: UserProfile | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
+  profile: null,
   isLoading: false,
   isInitialized: false,
+
+  setProfile: (profile) => set({ profile }),
 
   initialize: async () => {
     try {
@@ -163,6 +169,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     await supabase.auth.signOut();
     clearAuthCache();
-    set({ session: null, user: null });
+    set({ session: null, user: null, profile: null });
   },
 }));

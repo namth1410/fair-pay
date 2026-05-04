@@ -1,5 +1,7 @@
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../utils/userPreferences';
+
 interface AnimatedEntranceProps {
   children: React.ReactNode;
   delay?: number;
@@ -11,6 +13,12 @@ export function AnimatedEntrance({
   delay = 0,
   direction = 'down',
 }: AnimatedEntranceProps) {
+  const animationsEnabled = useAnimationsEnabled();
+
+  if (!animationsEnabled) {
+    return <Animated.View>{children}</Animated.View>;
+  }
+
   const entering =
     direction === 'down'
       ? FadeInDown.delay(delay).duration(350).springify()

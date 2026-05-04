@@ -3,6 +3,8 @@ import { forwardRef, memo, useImperativeHandle, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useDerivedValue, useSharedValue } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
+
 const PARTICLE_COUNT = 52;
 const LIFETIME_MS = 2400;
 const GRAVITY = 900; // px/s^2
@@ -31,6 +33,7 @@ export const SkiaConfettiBurst = memo(
     { colors },
     ref,
   ) {
+    const animationsEnabled = useAnimationsEnabled();
     const clock = useClock();
     const startTime = useSharedValue<number>(-1);
     const originX = useSharedValue(0);
@@ -39,7 +42,7 @@ export const SkiaConfettiBurst = memo(
 
     const particles = useMemo<Particle[]>(() => {
       const list: Particle[] = [];
-      const palette = colors.length > 0 ? colors : ['#F9A8D4'];
+      const palette = colors.length > 0 ? colors : ['#71717A'];
       for (let i = 0; i < PARTICLE_COUNT; i += 1) {
         const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.9;
         list.push({
@@ -47,7 +50,7 @@ export const SkiaConfettiBurst = memo(
           speed: 280 + Math.random() * 260,
           rot0: Math.random() * Math.PI * 2,
           rotSpeed: (Math.random() - 0.5) * 10,
-          color: palette[i % palette.length] ?? '#F9A8D4',
+          color: palette[i % palette.length] ?? '#71717A',
           w: 6 + Math.random() * 6,
           h: 10 + Math.random() * 8,
           driftX: (Math.random() - 0.5) * 60,
@@ -58,6 +61,7 @@ export const SkiaConfettiBurst = memo(
 
     useImperativeHandle(ref, () => ({
       fire: (origin) => {
+        if (!animationsEnabled) return;
         const o = origin ?? {
           x: sizeRef.current.w / 2,
           y: sizeRef.current.h / 2,
@@ -67,6 +71,10 @@ export const SkiaConfettiBurst = memo(
         startTime.value = clock.value;
       },
     }));
+
+    if (!animationsEnabled) {
+      return <View style={StyleSheet.absoluteFill} pointerEvents="none" />;
+    }
 
     return (
       <View

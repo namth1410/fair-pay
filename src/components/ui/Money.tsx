@@ -8,6 +8,7 @@ import Animated, {
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from './AppText';
 
 type Variant = 'hero' | 'display' | 'default' | 'compact';
@@ -62,6 +63,8 @@ export function Money({
   style,
 }: MoneyProps) {
   const c = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
+  const shouldAnimate = animate && animationsEnabled;
   const v = VARIANT[variant];
 
   const toneColor: Record<Tone, string> = {
@@ -82,12 +85,12 @@ export function Money({
   const shared = useSharedValue(value);
 
   useEffect(() => {
-    if (animate) {
+    if (shouldAnimate) {
       shared.value = withTiming(value, { duration: 450 });
     } else {
       shared.value = value;
     }
-  }, [value, animate]);
+  }, [value, shouldAnimate]);
 
   const animatedProps = useAnimatedProps(() => {
     const display = `${sign}${formatAmount(shared.value)}`;
@@ -100,7 +103,7 @@ export function Money({
       accessibilityRole="text"
       accessibilityLabel={`${sign}${formatAmount(value)} đồng`}
     >
-      {animate ? (
+      {shouldAnimate ? (
         <AnimatedText
           editable={false}
           animatedProps={animatedProps}

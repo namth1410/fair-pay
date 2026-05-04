@@ -6,8 +6,8 @@ import { AppText } from '../ui/AppText';
 
 // Fallback colors when theme context is unavailable (e.g. error during provider init)
 const FALLBACK = {
-  light: { bg: '#FFFFFF', fg: '#1A1A2E', primary: '#F472B6', muted: '#6B7280' },
-  dark: { bg: '#1A1A2E', fg: '#F8F8FF', primary: '#F472B6', muted: '#9CA3AF' },
+  light: { bg: '#FFFFFF', fg: '#1A1A1F', primary: '#1A1A1F', muted: '#71717A' },
+  dark: { bg: '#1A1A1F', fg: '#FAFAFA', primary: '#FAFAFA', muted: '#A1A1AA' },
 };
 
 function getFallbackColors() {

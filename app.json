@@ -11,12 +11,12 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FDF2F8"
+      "backgroundColor": "#F7F7F7"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FDF2F8"
+        "backgroundColor": "#F7F7F7"
       },
       "package": "com.fairpay.app"
     },
@@ -32,14 +32,28 @@
       "expo-web-browser",
       "expo-font",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép Fair Pay truy cập ảnh để đặt avatar nhóm.",
+          "cameraPermission": "Cho phép Fair Pay dùng camera để chụp avatar nhóm."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép Fair Pay dùng camera để chụp ảnh hoá đơn và avatar.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
-          "backgroundColor": "#FDF2F8",
+          "backgroundColor": "#F7F7F7",
           "dark": {
             "image": "./assets/splash-icon.png",
-            "backgroundColor": "#1F1018"
+            "backgroundColor": "#1A1A1F"
           }
         }
       ]

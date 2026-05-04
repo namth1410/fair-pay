@@ -22,6 +22,7 @@ import Animated, {
 
 import { hexToRgb } from '../components/ui/skia/hexToRgb';
 import { fonts } from '../config/fonts';
+import { getAnimationsEnabled } from '../utils/userPreferences';
 
 export interface MorphRect {
   x: number;
@@ -201,6 +202,15 @@ export function MorphTransitionProvider({ children }: { children: React.ReactNod
 
   const run = useCallback(
     (o: MorphOptions) => {
+      // Khi user tắt animation: skip overlay/morph, gọi onCovered ngay để
+      // caller `router.push(...)` chạy → expo-router native stack lo slide.
+      if (!getAnimationsEnabled()) {
+        requestAnimationFrame(() => {
+          o.onCovered?.();
+        });
+        return;
+      }
+
       setOpts(o);
       textProgress.value = 0;
       radius.value = 0;

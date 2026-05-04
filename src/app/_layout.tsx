@@ -10,23 +10,33 @@ import {
 import { Slot, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ReducedMotionConfig,ReduceMotion } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Uniwind } from 'uniwind';
 
+import { CameraCaptureHost } from '../components/common/CameraCaptureHost';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { OfflineBanner } from '../components/common/OfflineBanner';
+import { SplashScene } from '../components/common/SplashScene';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
+import { BlackHoleTransitionProvider } from '../contexts/BlackHoleTransition';
+import { LightningTransitionProvider } from '../contexts/LightningTransition';
 import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
+import { bootstrapPreferences, getDarkMode } from '../utils/userPreferences';
 
 SplashScreen.preventAutoHideAsync();
+
+// Module-level flag: splash chỉ chạy 1 lần / cold boot. Nếu RootLayout có remount
+// (theme change, navigation cross-group khi login/logout, hot reload…), state
+// component sẽ reset nhưng cờ này giữ nguyên → splash không phát lại.
+let __splashShown = false;
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
@@ -68,17 +78,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  */
 function useThemeHydration() {
   const userId = useAuthStore((s) => s.session?.user.id);
+  const setProfile = useAuthStore((s) => s.setProfile);
 
   useEffect(() => {
     if (!userId) {
-      Uniwind.setTheme('system');
+      setProfile(null);
       return;
     }
     let cancelled = false;
     fetchCurrentUser()
       .then((profile) => {
         if (cancelled || !profile) return;
-        Uniwind.setTheme(profile.settings.dark_mode);
+        setProfile(profile);
+        // Only re-apply if it differs from the locally-cached value (which was
+        // already applied at boot). Avoids a redundant theme flip when Supabase
+        // confirms the same value the user picked previously.
+        if (profile.settings.dark_mode !== getDarkMode()) {
+          Uniwind.setTheme(profile.settings.dark_mode);
+        }
       })
       .catch((err) => {
         console.warn('[Theme] Failed to load preference:', err);
@@ -86,13 +103,14 @@ function useThemeHydration() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, setProfile]);
 }
 
 export default function RootLayout() {
   const { isDark, ...c } = useAppTheme();
   const initialize = useAuthStore((s) => s.initialize);
   const setDatabaseReady = useAppStore((s) => s.setDatabaseReady);
+  const [splashDone, setSplashDone] = useState(__splashShown);
 
   const [fontsLoaded] = useFonts({
     BeVietnamPro_400Regular,
@@ -103,6 +121,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function boot() {
+      // Hydrate haptics/animations/dark-mode preferences from SecureStore BEFORE
+      // Splash mounts, so non-component code (haptics helper, splash, transitions)
+      // reads the user's persisted choice instead of defaults — and so the theme
+      // is applied synchronously instead of flashing system → user-pref after
+      // the Supabase round-trip on first paint.
+      await bootstrapPreferences();
+      Uniwind.setTheme(getDarkMode());
       try {
         await initDatabase();
         setDatabaseReady(true);
@@ -131,11 +156,24 @@ export default function RootLayout() {
             <StatusBar style={isDark ? 'light' : 'dark'} />
             <OfflineBanner />
             <MorphTransitionProvider>
-              <AuthGate>
-                <Slot />
-              </AuthGate>
+              <LightningTransitionProvider>
+                <BlackHoleTransitionProvider>
+                  <AuthGate>
+                    <Slot />
+                  </AuthGate>
+                </BlackHoleTransitionProvider>
+              </LightningTransitionProvider>
             </MorphTransitionProvider>
             <ThemeTransitionOverlay />
+            <CameraCaptureHost />
+            {!splashDone && (
+              <SplashScene
+                onComplete={() => {
+                  __splashShown = true;
+                  setSplashDone(true);
+                }}
+              />
+            )}
           </HeroUINativeProvider>
         </SafeAreaProvider>
       </ErrorBoundary>

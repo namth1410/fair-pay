@@ -21,6 +21,7 @@ import Svg, {
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AnimatedEntrance, AppText, Money } from '../ui';
 
 interface HeroDebtProps {
@@ -107,6 +108,7 @@ const PETALS: { cx: number; cy: number; rx: number; ry: number; rot: number; o: 
 
 export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
   const c = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
 
   let mode: Mode;
   let label: string;
@@ -149,6 +151,10 @@ export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
 
   useEffect(() => {
     if (wrapSize.width === 0) return;
+    if (!animationsEnabled) {
+      progress.value = 0;
+      return;
+    }
     progress.value = 0;
     progress.value = withRepeat(
       withSequence(
@@ -158,7 +164,7 @@ export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
       ),
       -1,
     );
-  }, [progress, wrapSize.width]);
+  }, [progress, wrapSize.width, animationsEnabled]);
 
   const SHINE_WIDTH = 90;
   const TRAVEL_PAD = SHINE_WIDTH * 1.6;
@@ -182,9 +188,8 @@ export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
     };
   });
 
-  // Shine color — white on light (pink bg), soft white on dark.
-  // Opacity stays modest so it reads as a gloss pass, not a flashlight.
-  const shineColor = c.isDark ? '#FFE8F4' : '#FFFFFF';
+  // Shine color — white pass on both modes; opacity modest so nó đọc như gloss.
+  const shineColor = '#FFFFFF';
 
   return (
     <AnimatedEntrance delay={0}>
@@ -322,9 +327,10 @@ export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 10,
+    // Margin moved to caller (gutter View around SuckTarget) — nếu để margin
+    // ở wrap, SuckTarget bounds = wrap+margin → Skia Mask round 4 góc của
+    // margin box (rỗng) trong khi visual rect bên trong vẫn vuông khi
+    // makeImageFromView capture SVG bg trên Android.
     borderRadius: 24,
     overflow: 'hidden',
     minHeight: 188,

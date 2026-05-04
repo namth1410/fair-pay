@@ -1,15 +1,16 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
+import { Pressable, Share, StyleSheet, View } from 'react-native';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
 import Animated, { withTiming } from 'react-native-reanimated';
 
 import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
+import { GroupAvatarSheet } from '../../../components/group/GroupAvatarSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { TripsTab } from '../../../components/group/TripsTab';
-import { BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
+import { AppText, Avatar, BouncyDialog, ConfirmDialog, SectionTabs, VoroConfirmDialog } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
 import type { GroupMember, JoinRequest } from '../../../services/group.service';
@@ -56,6 +57,8 @@ export default function GroupDetailScreen() {
   const [confirm, setConfirm] = useState<ConfirmState>(CONFIRM_CLOSED);
   const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
   const [addVirtualOpen, setAddVirtualOpen] = useState(false);
+  const [tripToToggle, setTripToToggle] = useState<Trip | null>(null);
+  const [avatarSheetOpen, setAvatarSheetOpen] = useState(false);
 
   const group = groups.find((g) => g.id === id);
 
@@ -158,6 +161,23 @@ export default function GroupDetailScreen() {
     });
   };
 
+  const handleToggleTripRequest = (trip: Trip) => setTripToToggle(trip);
+
+  const confirmToggleTrip = async () => {
+    const trip = tripToToggle;
+    if (!trip) return;
+    try {
+      await toggleTripStatus(trip);
+      toast.show({
+        variant: 'success',
+        label: trip.status === 'open' ? 'Đã đóng chuyến' : 'Đã mở lại chuyến',
+        description: trip.name,
+      });
+    } catch (e: unknown) {
+      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+    }
+  };
+
   const handleDeleteGroup = () => setDeleteGroupOpen(true);
 
   const confirmDeleteGroup = async () => {
@@ -192,6 +212,33 @@ export default function GroupDetailScreen() {
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
 
+      {group ? (
+        <View style={styles.avatarHero}>
+          <Pressable
+            onPress={() => isAdmin && setAvatarSheetOpen(true)}
+            disabled={!isAdmin}
+            style={({ pressed }) => [
+              styles.avatarPressable,
+              { opacity: pressed && isAdmin ? 0.7 : 1 },
+            ]}
+          >
+            <Avatar
+              seed={group.id}
+              label={group.name}
+              photoUrl={group.avatar_url}
+              size={72}
+            />
+            {isAdmin ? (
+              <View style={[styles.avatarEditBadge, { backgroundColor: c.primary }]}>
+                <AppText variant="caption" weight="semibold" style={{ color: c.background }}>
+                  Sửa
+                </AppText>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
+      ) : null}
+
       <SectionTabs
         items={[
           { key: 'trips', label: `Chuyến đi (${trips.length})` },
@@ -213,7 +260,7 @@ export default function GroupDetailScreen() {
             isLoading={tripsLoading}
             isAdmin={isAdmin}
             onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
-            onToggleStatus={toggleTripStatus}
+            onToggleStatus={handleToggleTripRequest}
             onCreateTrip={handleCreateTrip}
           />
         </Animated.View>
@@ -271,6 +318,30 @@ export default function GroupDetailScreen() {
         />
       ) : null}
 
+      {id && group ? (
+        <GroupAvatarSheet
+          isOpen={avatarSheetOpen}
+          onOpenChange={setAvatarSheetOpen}
+          groupId={id}
+          groupName={group.name}
+          currentAvatarUrl={group.avatar_url}
+        />
+      ) : null}
+
+      <VoroConfirmDialog
+        isOpen={tripToToggle !== null}
+        onClose={() => setTripToToggle(null)}
+        title={tripToToggle?.status === 'open' ? 'Đóng chuyến đi' : 'Mở lại chuyến đi'}
+        description={
+          tripToToggle?.status === 'open'
+            ? `Đóng chuyến "${tripToToggle?.name}"? Bạn vẫn có thể mở lại sau.`
+            : `Mở lại chuyến "${tripToToggle?.name}" để tiếp tục ghi chi phí.`
+        }
+        confirmLabel={tripToToggle?.status === 'open' ? 'Đóng chuyến' : 'Mở lại'}
+        destructive={tripToToggle?.status === 'open'}
+        onConfirm={confirmToggleTrip}
+      />
+
       <BouncyDialog
         isOpen={deleteGroupOpen}
         onClose={() => setDeleteGroupOpen(false)}
@@ -296,4 +367,20 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   tabContent: { flex: 1 },
   settingsContent: { padding: 16, gap: 16 },
+  avatarHero: {
+    alignItems: 'center',
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  avatarPressable: {
+    position: 'relative',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
 });

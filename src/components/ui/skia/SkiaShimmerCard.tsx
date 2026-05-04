@@ -8,6 +8,8 @@ import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useDerivedValue } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
+
 interface SkiaShimmerCardProps {
   width: number;
   height: number;
@@ -44,6 +46,19 @@ export const SkiaShimmerCard = memo(function SkiaShimmerCard({
     const x = -highlightWidth + t * span + highlightWidth;
     return { x, y: 0 };
   });
+
+  const animationsEnabled = useAnimationsEnabled();
+
+  if (!animationsEnabled) {
+    return (
+      <View
+        style={[
+          styles.wrap,
+          { width, height, borderRadius, backgroundColor: baseColor },
+        ]}
+      />
+    );
+  }
 
   return (
     <View style={[styles.wrap, { width, height, borderRadius }]}>

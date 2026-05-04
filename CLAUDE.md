@@ -83,8 +83,17 @@ src/
 
 ### Component organization
 - Screens lớn (>300 dòng) PHẢI tách thành sub-components theo tab/section.
-- Sub-components dùng `React.memo()` và nhận data qua props — không gọi store trực tiếp.
+- Sub-components dùng `React.memo()`. Nguồn data linh hoạt: props, store (Zustand), context — chọn cái hợp lý nhất theo từng case (data đã có sẵn ở parent → props; cross-tree shared state → store/context). Không có quy tắc cứng.
 - `useAppTheme()` trả về `{ isDark, ...colors }` — KHÔNG import `useIsDark()` riêng (deprecated).
+
+### TextInput trong BottomSheet (gorhom / heroui-native)
+- IME tiếng Việt (telex/VNI) **bị loạn dấu/nhân ký tự** khi gõ trong `BottomSheetTextInput` controlled. Mọi re-render trong lúc compose dấu sẽ reset IME state. Lỗi gốc ở RN (issue #19339 đã lock không có resolution); gorhom #902/#1494 là cùng triệu chứng. Input ngoài bottom sheet KHÔNG bị.
+- Pattern fix bắt buộc: input **uncontrolled** — `defaultValue=""` + `onChangeText` ghi vào `useRef` (không trigger render). Track riêng `hasContent` boundary boolean để bật/tắt nút submit (chỉ flip khi rỗng↔không rỗng, không re-render mỗi keystroke). Đọc giá trị từ ref ở `handleSubmit`.
+- Reset input khi mở lại sheet: đổi `key={resetKey}` để remount. KHÔNG dùng `inputRef.current.clear()` — `BottomSheetTextInput` dùng GH `TextInput` branded type, không match `RefObject<RnTextInput>`.
+- `autoFocus` trên `BottomSheetTextInput` luôn render gây 2 bug: (1) bàn phím tự mở khi screen mount (input mount từ đầu dù sheet đóng) và (2) sheet không extend khi focus lần đầu (gorhom keyboard listener chưa kịp gắn).
+- Fix: chỉ render input sau khi sheet animate xong qua `onChange={(index) => setShowInput(index >= 0)}` trên `BottomSheet.Content`. `showInput=false` thì render placeholder `View` cùng kích thước input (tránh layout shift). `autoFocus` chỉ chạy khi sheet đã ở snap point ổn định → keyboardBehavior="extend" hoạt động đúng.
+- Snap points + keyboard: `enableDynamicSizing={false}` + `snapPoints={['X%', 'Y%']}` + `keyboardBehavior="extend"` + `keyboardBlurBehavior="restore"` + `android_keyboardInputMode="adjustResize"`. Dynamic sizing không có "đỉnh" để extend → keyboard sẽ che input.
+- Reference implementation: `src/components/common/AddVirtualMemberSheet.tsx`.
 
 ### User profile
 - Màn Cài đặt là route `(main)/settings.tsx` — mở bằng `router.push('/settings')` (stack animation `slide_from_right`), KHÔNG còn là BottomSheet.
@@ -95,6 +104,19 @@ src/
 - `logAction()` dùng `getAuthUserId()` (app user ID) — KHÔNG dùng `supabase.auth.getUser().id` (auth UUID).
 - Audit failures được bọc try/catch im lặng — KHÔNG throw ra ngoài.
 - `before_data` và `after_data` có type `Record<string, unknown> | null`.
+
+### Notifications
+- Mọi service mutation tạo/sửa/xóa dữ liệu nhóm PHẢI gọi `notifyXxxEvent()` từ `src/services/notification.service.ts` song song với `logAction()` (Promise.all). Wrap try/catch im lặng — KHÔNG block main flow nếu fail (cùng pattern `logAction`).
+- Bảng `notifications` per-user fan-out (mỗi recipient 1 row) — KHÔNG dùng per-event với join. RLS: SELECT/UPDATE/DELETE chỉ chính chủ; INSERT cho phép `auth.uid() IS NOT NULL` (services tự validate).
+- Title VN render ở write-time qua `formatNotificationTitle()` trong `src/utils/notificationFormat.ts` (pure, có unit test). KHÔNG i18n runtime, dùng `formatVND()` cho tiền.
+- 11 notification types: `expense.created/edited/deleted`, `payment.recorded/received`, `member.join_requested/approved/rejected`, `member.role_change`, `trip.closed`, `trip.reminder_settle` (Phase 3 cron). Mapping `type → setting key` ở `getSettingKeyForType()`.
+- Hằng số trong `src/config/constants.ts`: `NOTIF_PAGE_SIZE = 30`, `NOTIF_DEDUP_WINDOW_MS = 10*60*1000`, `SETTLE_SUGGEST_MIN_AMOUNT = 200_000`, `SETTLE_SUGGEST_AGE_DAYS = 3`, `SETTLE_SUGGEST_COOLDOWN_DAYS = 7`. Sửa cần đồng bộ với docs.
+- Recipient resolver (`getGroupRecipients()`) loại trừ: actor, member ảo (`is_virtual=true` hoặc `user_id IS NULL`), member rời (`left_at IS NOT NULL`), user tắt setting tương ứng (`notify_activity/payment/member/smart`). Mỗi mutation tự nhặt setting key qua `getSettingKeyForType()`.
+- TTL 30/60 ngày — KHÔNG nâng vì giới hạn Supabase free tier 500MB. Cron `cleanup_notifications()` chạy daily 03:00 ICT (đã schedule qua `pg_cron`).
+- Dedup 10 phút trong `createNotifications()`: khớp `(user, group, type, actor)` chưa đọc → UPDATE row đó (push `data.target_ids`, tăng `data.count`, refresh `created_at`) + đổi title sang "{Actor} đã thêm N khoản chi" — KHÔNG insert mới.
+- `UserSettings` shape (`src/services/user.service.ts`): `dark_mode | notify_activity | notify_payment | notify_member | notify_smart | haptics_enabled | animations_enabled`. KHÔNG còn legacy `notify_expense`/`notify_reminder`.
+- Bell + badge ở `headerRight` của route `index` (home) — `useFocusEffect` ở home → `refreshUnreadCount()` mỗi lần focus (polling on focus, KHÔNG setInterval).
+- Tham chiếu chi tiết: `docs/technical-specification.md` §3.10 + §6, `docs/business-requirements.md` §11.5 + §8 (BR-NOTIF-01..07).
 
 ### Preset khoản chi
 - Per-user, scope qua `getAuthUserId()`. Bảng `expense_presets` có RLS: `user_id = auth_user_id()`.

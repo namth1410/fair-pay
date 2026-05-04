@@ -23,5 +23,6 @@
     /* Bắt buộc dùng override keyword khi ghi đè method */
     "noImplicitOverride": true
   },
-  "include": ["**/*.ts", "**/*.tsx", "src/**/*"]
+  "include": ["**/*.ts", "**/*.tsx", "src/**/*"],
+  "exclude": ["node_modules", "supabase/functions"]
 }

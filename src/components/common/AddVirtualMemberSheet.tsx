@@ -1,19 +1,12 @@
-import { Button } from 'heroui-native';
-import { X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheet, Button } from 'heroui-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText, AppTextField } from '../ui';
+import { AppText } from '../ui';
 
 interface AddVirtualMemberSheetProps {
   isOpen: boolean;
@@ -31,19 +24,33 @@ export function AddVirtualMemberSheet({
   const c = useAppTheme();
   const { addVirtualMember } = useGroupStore();
 
-  const [name, setName] = useState('');
+  const nameRef = useRef('');
+  const [resetKey, setResetKey] = useState(0);
+  const [showInput, setShowInput] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
-    if (!isOpen) return;
-    setName('');
+    if (!isOpen) {
+      setShowInput(false);
+      return;
+    }
+    nameRef.current = '';
+    setResetKey((k) => k + 1);
+    setHasContent(false);
     setBusy(false);
     setFormError('');
   }, [isOpen]);
 
+  const handleChangeText = (text: string) => {
+    nameRef.current = text;
+    const next = text.trim().length > 0;
+    setHasContent((prev) => (prev === next ? prev : next));
+  };
+
   const handleSubmit = async () => {
-    const trimmed = name.trim();
+    const trimmed = nameRef.current.trim();
     if (!trimmed || busy) return;
     setFormError('');
     setBusy(true);
@@ -59,101 +66,99 @@ export function AddVirtualMemberSheet({
   };
 
   return (
-    <Modal
-      visible={isOpen}
-      onRequestClose={() => onOpenChange(false)}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.root}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={() => onOpenChange(false)}
-          accessibilityLabel="Đóng"
-        />
-        <View style={[styles.sheet, { backgroundColor: c.surface }]}>
-          <View style={styles.header}>
-            <AppText variant="subtitle" weight="semibold">
-              Thêm thành viên ảo
-            </AppText>
-            <Pressable
-              onPress={() => onOpenChange(false)}
-              style={styles.closeBtn}
-              accessibilityLabel="Đóng"
-            >
-              <X size={20} color={c.muted} />
-            </Pressable>
-          </View>
+    <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
+      <BottomSheet.Portal>
+        <BottomSheet.Overlay />
+        <BottomSheet.Content
+          enableDynamicSizing={false}
+          snapPoints={['45%', '90%']}
+          keyboardBehavior="extend"
+          keyboardBlurBehavior="restore"
+          android_keyboardInputMode="adjustResize"
+          onChange={(index) => setShowInput(index >= 0)}
+        >
+          <BottomSheetView style={styles.container}>
+            <View style={styles.header}>
+              <BottomSheet.Title>Thêm thành viên ảo</BottomSheet.Title>
+            </View>
 
-          <View style={styles.body}>
-            <AppText variant="caption" tone="muted" style={styles.hint}>
-              Tạo thành viên không cần tài khoản — dùng khi bạn quản lý chi tiêu cho người chưa cài app.
-            </AppText>
-            <AppTextField
-              placeholder="Tên hiển thị"
-              value={name}
-              onChangeText={setName}
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
-              accessibilityLabel="Tên thành viên ảo"
-            />
-            {formError ? (
-              <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                <AppText variant="caption" tone="danger">{formError}</AppText>
-              </View>
-            ) : null}
-            <Button
-              variant="primary"
-              size="lg"
-              onPress={handleSubmit}
-              isDisabled={busy || !name.trim()}
-            >
-              <Button.Label>{busy ? 'Đang tạo...' : 'Tạo thành viên'}</Button.Label>
-            </Button>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+            <View style={styles.body}>
+              <AppText variant="caption" tone="muted" style={styles.hint}>
+                Tạo thành viên không cần tài khoản — dùng khi bạn quản lý chi tiêu cho người chưa cài app.
+              </AppText>
+              {showInput ? (
+                <BottomSheetTextInput
+                  key={resetKey}
+                  placeholder="Tên hiển thị"
+                  placeholderTextColor={c.muted}
+                  defaultValue=""
+                  onChangeText={handleChangeText}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Tên thành viên ảo"
+                  autoFocus
+                  style={[
+                    styles.input,
+                    {
+                      color: c.foreground,
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
+              )}
+              {formError ? (
+                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                  <AppText variant="caption" tone="danger">{formError}</AppText>
+                </View>
+              ) : null}
+              <Button
+                variant="primary"
+                size="lg"
+                onPress={handleSubmit}
+                isDisabled={busy || !hasContent}
+              >
+                <Button.Label>{busy ? 'Đang tạo...' : 'Tạo thành viên'}</Button.Label>
+              </Button>
+            </View>
+          </BottomSheetView>
+        </BottomSheet.Content>
+      </BottomSheet.Portal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
+  container: {
+    paddingHorizontal: 20,
     paddingBottom: 24,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  closeBtn: {
-    padding: 6,
-    borderRadius: 20,
+    paddingVertical: 8,
   },
   body: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
+    paddingTop: 8,
     gap: 14,
   },
   hint: {
     marginBottom: 2,
+  },
+  input: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    fontSize: 16,
   },
   errorBox: {
     padding: 12,

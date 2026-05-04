@@ -10,6 +10,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { useAppTheme } from '../../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
 import { AppText } from '../AppText';
 
 export type BalanceRingTone = 'positive' | 'negative' | 'neutral';
@@ -33,6 +34,7 @@ export const SkiaBalanceRing = memo(function SkiaBalanceRing({
   duration = 900,
 }: SkiaBalanceRingProps) {
   const c = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
 
   const ringColorByTone: Record<BalanceRingTone, string> = {
     positive: c.success,
@@ -50,8 +52,12 @@ export const SkiaBalanceRing = memo(function SkiaBalanceRing({
 
   useEffect(() => {
     const clamped = Math.max(0, Math.min(1, progress));
-    animProgress.value = withTiming(clamped, { duration });
-  }, [progress, duration, animProgress]);
+    if (animationsEnabled) {
+      animProgress.value = withTiming(clamped, { duration });
+    } else {
+      animProgress.value = clamped;
+    }
+  }, [progress, duration, animProgress, animationsEnabled]);
 
   const trackPath = useMemo(() => {
     const p = Skia.Path.Make();

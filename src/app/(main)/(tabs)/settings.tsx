@@ -1,7 +1,6 @@
-import { router } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
-import { ChevronRight, Pencil } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { Pencil } from 'lucide-react-native';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
@@ -9,56 +8,39 @@ import {
   AppTextField,
   Avatar,
   SettingRow,
-} from '../../components/ui';
-import { DISPLAY_NAME_MAX_LENGTH } from '../../config/constants';
-import { useAppTheme } from '../../hooks/useAppTheme';
+} from '../../../components/ui';
+import { DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants';
+import { useAppTheme } from '../../../hooks/useAppTheme';
 import {
   DEFAULT_SETTINGS,
-  fetchCurrentUser,
   updateDisplayName,
   updateSettings,
-  type UserProfile,
   type UserSettings,
-} from '../../services/user.service';
-import { useAuthStore } from '../../stores/auth.store';
-import { getErrorMessage } from '../../utils/error';
-import { hapticLight } from '../../utils/haptics';
-import { transitionToTheme } from '../../utils/themeTransition';
+} from '../../../services/user.service';
+import { useAuthStore } from '../../../stores/auth.store';
+import { getErrorMessage } from '../../../utils/error';
+import { hapticLight } from '../../../utils/haptics';
+import { transitionToTheme } from '../../../utils/themeTransition';
+import { persistPreferencesCache } from '../../../utils/userPreferences';
 
 export default function SettingsScreen() {
-  const { user, signOut } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const profile = useAuthStore((s) => s.profile);
+  const setProfile = useAuthStore((s) => s.setProfile);
+  const signOut = useAuthStore((s) => s.signOut);
   const { isDark, ...c } = useAppTheme();
   const { toast } = useToast();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState(profile?.display_name ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    void loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      const p = await fetchCurrentUser();
-      if (p) {
-        setProfile(p);
-        setNewName(p.display_name);
-      } else if (__DEV__) {
-        console.warn('[SettingsScreen] fetchCurrentUser returned null');
-      }
-    } catch (err) {
-      if (__DEV__) console.warn('[SettingsScreen] Profile load failed:', err);
-    }
-  };
-
   const handleSaveName = async () => {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !profile) return;
     setIsSaving(true);
     try {
       await updateDisplayName(newName);
-      setProfile((prev) => (prev ? { ...prev, display_name: newName.trim() } : prev));
+      setProfile({ ...profile, display_name: newName.trim() });
       setIsEditingName(false);
     } catch (e: unknown) {
       toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
@@ -83,10 +65,15 @@ export default function SettingsScreen() {
     const prevSettings = profile.settings;
     const newSettings: UserSettings = { ...prevSettings, [key]: value };
 
+    // Optimistic — store update là single source of truth, mọi consumer (cache singleton
+    // qua subscriber) đồng bộ ngay.
+    setProfile({ ...profile, settings: newSettings });
+
     try {
       await updateSettings(newSettings);
-      setProfile((prev) => (prev ? { ...prev, settings: newSettings } : prev));
+      await persistPreferencesCache(newSettings);
     } catch (e: unknown) {
+      setProfile({ ...profile, settings: prevSettings });
       if (key === 'dark_mode') {
         transitionToTheme(prevSettings.dark_mode);
       }
@@ -95,7 +82,10 @@ export default function SettingsScreen() {
   };
 
   const handleSignOut = async () => {
-    router.back();
+    // Không gọi router.back() trước signOut: pop sẽ làm màn dưới (vd: groups/[id])
+    // regain focus và trigger useFocusEffect → fetchPendingJoinRequests → assertRole
+    // race với signOut đang chạy → throw "Chưa đăng nhập" (unhandled).
+    // AuthGate sẽ tự redirect sang /(auth)/login khi session=null.
     await signOut();
   };
 
@@ -201,45 +191,62 @@ export default function SettingsScreen() {
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
           <SettingRow
-            label="Khoản chi mới"
-            hint="Nhận thông báo khi có khoản chi mới"
-            value={settings.notify_expense}
-            onValueChange={(v) => handleToggleSetting('notify_expense', v)}
-          />
-
-          <View style={[styles.divider, { backgroundColor: c.divider }]} />
-
-          <SettingRow
-            label="Nhắc thanh toán"
-            hint="Nhắc nhở khi bạn còn nợ chưa trả"
-            value={settings.notify_reminder}
-            onValueChange={(v) => handleToggleSetting('notify_reminder', v)}
-          />
-
-          <View style={[styles.divider, { backgroundColor: c.divider }]} />
-
-          <Pressable
-            style={styles.navRow}
-            onPress={() => router.push('/presets')}
-            accessibilityRole="button"
-            accessibilityLabel="Quản lý preset khoản chi"
-          >
-            <View style={styles.navInfo}>
-              <AppText variant="body" weight="medium">Preset khoản chi</AppText>
-              <AppText variant="meta" tone="muted" style={styles.navHint}>
-                Lưu khoản chi hay dùng để nhập nhanh
-              </AppText>
-            </View>
-            <ChevronRight size={20} color={c.muted} />
-          </Pressable>
-
-          <View style={[styles.divider, { backgroundColor: c.divider }]} />
-
-          <SettingRow
             label="Chế độ tối"
             hint="Hiển thị giao diện nền tối"
             value={isDark}
             onValueChange={(on) => handleToggleSetting('dark_mode', on ? 'dark' : 'light')}
+          />
+
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
+
+          <SettingRow
+            label="Hiệu ứng chuyển động"
+            hint="Tắt nếu máy giật/lag hoặc bạn không thích animation"
+            value={settings.animations_enabled}
+            onValueChange={(v) => handleToggleSetting('animations_enabled', v)}
+          />
+
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
+
+          <SettingRow
+            label="Rung phản hồi"
+            hint="Phản hồi rung khi nhấn nút và thao tác"
+            value={settings.haptics_enabled}
+            onValueChange={(v) => handleToggleSetting('haptics_enabled', v)}
+          />
+        </View>
+
+        {/* ── Thông báo ── */}
+        <AppText variant="label" tone="muted" style={styles.sectionTitle}>
+          THÔNG BÁO
+        </AppText>
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+          <SettingRow
+            label="Hoạt động nhóm"
+            hint="Khoản chi mới, sửa/xóa, đóng chuyến đi"
+            value={settings.notify_activity}
+            onValueChange={(v) => handleToggleSetting('notify_activity', v)}
+          />
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
+          <SettingRow
+            label="Thanh toán"
+            hint="Khi có người trả tiền cho bạn hoặc ghi nhận thanh toán"
+            value={settings.notify_payment}
+            onValueChange={(v) => handleToggleSetting('notify_payment', v)}
+          />
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
+          <SettingRow
+            label="Thành viên"
+            hint="Yêu cầu tham gia, được duyệt, đổi vai trò"
+            value={settings.notify_member}
+            onValueChange={(v) => handleToggleSetting('notify_member', v)}
+          />
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
+          <SettingRow
+            label="Gợi ý thông minh"
+            hint="Nhắc thanh toán khi nợ kéo dài"
+            value={settings.notify_smart}
+            onValueChange={(v) => handleToggleSetting('notify_smart', v)}
           />
         </View>
 
@@ -255,7 +262,7 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 120 },
   firstSectionTitle: {
     marginTop: 4,
     marginBottom: 8,
@@ -288,12 +295,4 @@ const styles = StyleSheet.create({
   editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
   divider: { height: 1, marginVertical: 14 },
   logoutSection: { marginTop: 28, paddingHorizontal: 4 },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
-  navInfo: { flex: 1, marginRight: 12 },
-  navHint: { marginTop: 2 },
 });

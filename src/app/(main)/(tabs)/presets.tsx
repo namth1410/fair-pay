@@ -8,17 +8,18 @@ import {
   View,
 } from 'react-native';
 
-import { PresetFormModal } from '../../components/common/PresetFormModal';
+import { PresetFormModal } from '../../../components/common/PresetFormModal';
 import {
   AppCard,
   BouncyDialog,
   EmptyState,
-} from '../../components/ui';
-import { EXPENSE_CATEGORIES } from '../../config/constants';
-import { useAppTheme } from '../../hooks/useAppTheme';
-import type { ExpensePreset } from '../../services/preset.service';
-import { usePresetStore } from '../../stores/preset.store';
-import { getErrorMessage } from '../../utils/error';
+} from '../../../components/ui';
+import { EXPENSE_CATEGORIES } from '../../../config/constants';
+import { useAppTheme } from '../../../hooks/useAppTheme';
+import type { ExpensePreset } from '../../../services/preset.service';
+import { usePresetStore } from '../../../stores/preset.store';
+import { useUIStore } from '../../../stores/ui.store';
+import { getErrorMessage } from '../../../utils/error';
 
 const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   EXPENSE_CATEGORIES.map((c) => [c.key, c.label]),
@@ -28,6 +29,7 @@ export default function PresetsScreen() {
   const c = useAppTheme();
   const { toast } = useToast();
   const { presets, loading, loadPresets, removePreset } = usePresetStore();
+  const presetsAddRequestSeq = useUIStore((s) => s.presetsAddRequestSeq);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ExpensePreset | null>(null);
@@ -40,10 +42,13 @@ export default function PresetsScreen() {
     });
   }, [loadPresets, toast]);
 
-  const handleAdd = () => {
+  // Header "+" button increments seq → mở form ở add-mode (editing=null).
+  // Skip lần đầu mount (seq=0 chưa phải user action).
+  useEffect(() => {
+    if (presetsAddRequestSeq === 0) return;
     setEditing(null);
     setFormOpen(true);
-  };
+  }, [presetsAddRequestSeq]);
 
   const handleEdit = (preset: ExpensePreset) => {
     setEditing(preset);
@@ -110,12 +115,6 @@ export default function PresetsScreen() {
         />
       )}
 
-      <View style={[styles.fabWrap, { backgroundColor: c.background, borderTopColor: c.divider }]}>
-        <Button variant="primary" size="md" onPress={handleAdd}>
-          <Button.Label>+ Thêm preset</Button.Label>
-        </Button>
-      </View>
-
       <PresetFormModal
         isOpen={formOpen}
         onOpenChange={setFormOpen}
@@ -156,16 +155,8 @@ export default function PresetsScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  list: { padding: 16, gap: 8, paddingBottom: 96 },
+  list: { padding: 16, gap: 8, paddingBottom: 120 },
   emptyWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   actions: { flexDirection: 'row', gap: 8 },
   iconBtn: { padding: 4 },
-  fabWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
 });

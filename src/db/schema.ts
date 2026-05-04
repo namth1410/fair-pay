@@ -62,6 +62,7 @@ export const CREATE_TABLES = [
     split_type TEXT NOT NULL CHECK (split_type IN ('equal','ratio','custom')),
     date TEXT NOT NULL DEFAULT (datetime('now')),
     note TEXT,
+    image_url TEXT,
     created_by TEXT NOT NULL,
     version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),

@@ -8,6 +8,8 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
+
 interface SkiaBreathingHaloProps {
   size?: number;
   colors: [string, string, string];
@@ -22,6 +24,7 @@ export const SkiaBreathingHalo = memo(function SkiaBreathingHalo({
   interactive = false,
   children,
 }: SkiaBreathingHaloProps) {
+  const animationsEnabled = useAnimationsEnabled();
   const clock = useClock();
   const pulse = useSharedValue(0);
 
@@ -36,6 +39,7 @@ export const SkiaBreathingHalo = memo(function SkiaBreathingHalo({
   );
 
   const handlePress = () => {
+    if (!animationsEnabled) return;
     pulse.value = withSequence(
       withTiming(14, { duration: 140 }),
       withTiming(0, { duration: 320 }),
@@ -44,19 +48,35 @@ export const SkiaBreathingHalo = memo(function SkiaBreathingHalo({
 
   const content = (
     <View style={[styles.stage, { width: size, height: size }]}>
-      <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Group>
-          <Circle cx={size * 0.3} cy={size * 0.41} r={r0} color={colors[0]} opacity={0.75}>
-            <BlurMask blur={12} style="solid" />
-          </Circle>
-          <Circle cx={size * 0.7} cy={size * 0.36} r={r1} color={colors[1]} opacity={0.6}>
-            <BlurMask blur={12} style="solid" />
-          </Circle>
-          <Circle cx={size * 0.5} cy={size * 0.68} r={r2} color={colors[2]} opacity={0.7}>
-            <BlurMask blur={14} style="solid" />
-          </Circle>
-        </Group>
-      </Canvas>
+      {animationsEnabled ? (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Group>
+            <Circle cx={size * 0.3} cy={size * 0.41} r={r0} color={colors[0]} opacity={0.75}>
+              <BlurMask blur={12} style="solid" />
+            </Circle>
+            <Circle cx={size * 0.7} cy={size * 0.36} r={r1} color={colors[1]} opacity={0.6}>
+              <BlurMask blur={12} style="solid" />
+            </Circle>
+            <Circle cx={size * 0.5} cy={size * 0.68} r={r2} color={colors[2]} opacity={0.7}>
+              <BlurMask blur={14} style="solid" />
+            </Circle>
+          </Group>
+        </Canvas>
+      ) : (
+        <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Group>
+            <Circle cx={size * 0.3} cy={size * 0.41} r={size * 0.29} color={colors[0]} opacity={0.75}>
+              <BlurMask blur={12} style="solid" />
+            </Circle>
+            <Circle cx={size * 0.7} cy={size * 0.36} r={size * 0.24} color={colors[1]} opacity={0.6}>
+              <BlurMask blur={12} style="solid" />
+            </Circle>
+            <Circle cx={size * 0.5} cy={size * 0.68} r={size * 0.31} color={colors[2]} opacity={0.7}>
+              <BlurMask blur={14} style="solid" />
+            </Circle>
+          </Group>
+        </Canvas>
+      )}
       {children ? <View style={styles.foreground}>{children}</View> : null}
     </View>
   );

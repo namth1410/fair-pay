@@ -165,7 +165,15 @@ CREATE TABLE users (
   email TEXT UNIQUE NOT NULL,
   photo_url TEXT,
   fcm_token TEXT,
-  settings JSONB DEFAULT '{"dark_mode": "system", "notify_expense": true, "notify_reminder": true}',
+  settings JSONB DEFAULT '{
+    "dark_mode": "system",
+    "notify_activity": true,
+    "notify_payment": true,
+    "notify_member": true,
+    "notify_smart": true,
+    "haptics_enabled": true,
+    "animations_enabled": true
+  }',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ```
@@ -178,7 +186,7 @@ CREATE TABLE users (
 | `email` | TEXT (UNIQUE) | Email đăng nhập |
 | `photo_url` | TEXT? | Avatar URL |
 | `fcm_token` | TEXT? | FCM device token (cập nhật mỗi lần login) |
-| `settings` | JSONB | `{dark_mode, notify_expense, notify_reminder}` |
+| `settings` | JSONB | `{dark_mode, notify_activity, notify_payment, notify_member, notify_smart, haptics_enabled, animations_enabled}` — xem `src/services/user.service.ts:UserSettings` |
 | `created_at` | TIMESTAMPTZ | Ngày tạo |
 
 ### 3.2 Table: `groups`
@@ -366,7 +374,124 @@ CREATE TABLE settlements (
 );
 ```
 
-### 3.10 Indexes
+### 3.10 Table: `notifications` — Trung tâm Thông báo
+
+Mô hình **per-user fan-out** (mỗi user nhận có 1 row riêng) — tối ưu cho query "unread của tôi" + mark-as-read đơn giản. Tham chiếu BR-NOTIF-01..07 trong business-requirements.md §8.
+
+```sql
+CREATE TABLE notifications (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id    UUID REFERENCES groups(id) ON DELETE CASCADE,
+  trip_id     UUID REFERENCES trips(id) ON DELETE SET NULL,
+  type        TEXT NOT NULL,           -- e.g. 'expense.created'
+  actor_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+  title       TEXT NOT NULL,           -- VN string render sẵn ở write-time
+  body        TEXT,
+  data        JSONB NOT NULL DEFAULT '{}',  -- { count, target_ids, trip_id, amount, ... }
+  read_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_notif_user_unread
+  ON notifications(user_id, created_at DESC)
+  WHERE read_at IS NULL;
+CREATE INDEX idx_notif_user_all
+  ON notifications(user_id, created_at DESC);
+CREATE INDEX idx_notif_group
+  ON notifications(group_id, created_at DESC);
+
+-- TTL cleanup function — aggressive cho 500MB free tier
+CREATE OR REPLACE FUNCTION cleanup_notifications() RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM notifications
+  WHERE (read_at IS NOT NULL AND read_at < now() - interval '30 days')
+     OR (read_at IS NULL     AND created_at < now() - interval '60 days');
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION cleanup_notifications() FROM anon, authenticated;
+
+-- Schedule daily at 20:00 UTC (= 03:00 ICT)
+SELECT cron.schedule(
+  'cleanup-notifications', '0 20 * * *',
+  'SELECT cleanup_notifications()'
+);
+```
+
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `user_id` | UUID FK users.id | Recipient — user được fan-out tới |
+| `group_id` | UUID FK groups.id | Group context (NULL nếu system-wide) |
+| `trip_id` | UUID FK trips.id | Trip context (NULL nếu không liên quan trip) |
+| `type` | TEXT | `expense.created` / `payment.received` / `member.join_*` / `trip.closed` / `trip.reminder_settle` (xem BR §11.5) |
+| `actor_id` | UUID FK users.id | User thực hiện action (NULL nếu hệ thống/cron) |
+| `title` | TEXT | VN string render sẵn — không i18n runtime |
+| `data` | JSONB | `{count, target_ids, amount, from_name, to_name, group_name, trip_id, ...}` — dùng để dedup và deeplink |
+| `read_at` | TIMESTAMPTZ? | Set khi user mark-as-read |
+
+**RLS:**
+
+```sql
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY notif_select_own ON notifications
+  FOR SELECT
+  USING (user_id = (SELECT id FROM users WHERE auth_id = auth.uid()));
+
+CREATE POLICY notif_update_own ON notifications
+  FOR UPDATE
+  USING (user_id = (SELECT id FROM users WHERE auth_id = auth.uid()))
+  WITH CHECK (user_id = (SELECT id FROM users WHERE auth_id = auth.uid()));
+
+CREATE POLICY notif_delete_own ON notifications
+  FOR DELETE
+  USING (user_id = (SELECT id FROM users WHERE auth_id = auth.uid()));
+
+-- INSERT: authenticated users (services validate authorization trước khi insert).
+-- TODO Phase 4: chuyển sang Edge Function service-role và xoá policy này.
+CREATE POLICY notif_insert_auth ON notifications
+  FOR INSERT
+  WITH CHECK (auth.uid() IS NOT NULL);
+```
+
+**Storage estimate:** ~500 byte/row × 5 user/group × 10 events/day × 60 ngày = ~1.5MB/group active. Free tier 500MB → đủ ~300 group active đồng thời.
+
+### 3.10b Table: `group_avatar_uploads` — Quota tracking cho avatar nhóm (BR-AVATAR-02)
+
+Mỗi row = 1 lần upload avatar thành công. Dùng để query COUNT theo `(group_id, 7d)` và `(uploaded_by, 1d)` cho quota check trong Postgres function `commit_group_avatar`. Xem section 5.4 cho pipeline chi tiết.
+
+```sql
+CREATE TABLE group_avatar_uploads (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id    UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  uploaded_by UUID NOT NULL REFERENCES users(id),
+  file_key    TEXT NOT NULL,             -- key trong R2: "groups/{groupId}/{ts}-{hash}.jpg"
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_gau_group_created
+  ON group_avatar_uploads(group_id, created_at DESC);
+CREATE INDEX idx_gau_user_created
+  ON group_avatar_uploads(uploaded_by, created_at DESC);
+
+ALTER TABLE group_avatar_uploads ENABLE ROW LEVEL SECURITY;
+-- KHÔNG grant policy nào → chỉ service_role (Edge Function) ghi/đọc được.
+```
+
+| Field | Type | Mô tả |
+|-------|------|-------|
+| `group_id` | UUID FK | Nhóm được đổi avatar |
+| `uploaded_by` | UUID FK users.id | Admin thực hiện upload |
+| `file_key` | TEXT | Key R2 đã upload — dùng cho cron orphan cleanup (xem section 5.4) |
+
+**Quota:** ghi nhận khi `commit_group_avatar` thành công (KHÔNG ghi cho `remove_group_avatar` — xóa không tính quota để admin có thể "rollback" mà không tốn slot). Xóa-rồi-upload-lại vẫn tính 1 slot upload mới.
+
+**Cleanup quota table:** không cần TTL — bảng nhẹ (~50 byte/row × 3 row/group/tuần ≈ vô nghĩa cho free tier). Xóa cứng theo cascade khi group bị hard delete.
+
+### 3.11 Indexes
 
 ```sql
 -- Query theo group
@@ -472,13 +597,27 @@ User có thể xem cả 2 để kiểm chứng tính minh bạch.
 
 ### 5.1 Supabase Edge Functions
 
-| Function | Trigger | Mô tả |
-|----------|---------|-------|
-| `on-expense-created` | Database Webhook (INSERT on expenses) | Gửi FCM notification đến tất cả thành viên trong chuyến (trừ người tạo) |
-| `on-payment-recorded` | Database Webhook (INSERT on payments) | Gửi FCM đến người nhận tiền: "X xác nhận đã chuyển tiền Z cho bạn" |
-| `on-member-invited` | Database Webhook (INSERT on group_members) | Gửi notification đến người được mời |
-| `calculate-settlement` | HTTP POST (callable) | Tính toán và lưu kết quả thuật toán quyết toán vào table `settlements` |
-| `send-debt-reminder` | Supabase Cron (`pg_cron`) hoặc VPS cron | Mỗi tối 20h: gửi nhắc nhở cho người có số dư âm trong chuyến đang mở |
+| Function | Trigger | Mô tả | Phase |
+|----------|---------|-------|-------|
+| `group-avatar-presign` | HTTP POST (callable, JWT verify) | Verify admin role + soft quota check → trả presigned PUT URL R2 (TTL 60s, Content-Length signed). | V1 ✓ |
+| `group-avatar-commit` | HTTP POST (callable, JWT verify) | HEAD R2 verify file (size/type) → `rpc('commit_group_avatar', ...)` atomic UPDATE+INSERT+audit → DELETE file R2 cũ best-effort. | V1 ✓ |
+| `group-avatar-remove` | HTTP POST (callable, JWT verify) | `rpc('remove_group_avatar', ...)` set `avatar_url = NULL` → DELETE file R2 cũ. | V1 ✓ |
+| `group-avatar-cleanup` | `pg_cron` weekly Sunday 03:00 ICT | LIST R2 prefix `groups/` → diff với `groups.avatar_url` + `group_avatar_uploads` < 24h → DELETE orphan. | V1 ✓ |
+| `cron-settle-suggest` | `pg_cron` daily 09:00 ICT | Tính balance cho mỗi trip mở; nếu cặp (debtor, creditor) nợ > 200k VND > 3 ngày → INSERT `notifications.trip.reminder_settle` cho debtor (cooldown 7 ngày). | Phase 3 |
+| `send-push` | AFTER INSERT trên `notifications` (qua `pg_net`) | Resolve user FCM token + check DND/preferences → gọi FCM HTTP v1. Skip nếu không có `fcm_token`. | Phase 4 |
+| `cron-cleanup-notifications` | `pg_cron` daily 03:00 ICT | Xóa notif đã đọc > 30 ngày, chưa đọc > 60 ngày (đã tích hợp trực tiếp qua function `cleanup_notifications()` — không cần Edge Function). | V1 ✓ |
+| `calculate-settlement` | HTTP POST (callable) | Tính toán và lưu kết quả thuật toán quyết toán vào table `settlements` | — |
+
+> **V1 (in-app only):** không có Edge Function. `notification.service.ts` (`src/services/notification.service.ts`) gọi insert trực tiếp từ client với policy `notif_insert_auth` — services validate authorization (`assertRole`, ownership check) trước khi gọi.
+
+### 5.1.1 In-app notification API (V1)
+
+| Function | File | Trách nhiệm |
+|----------|------|-------------|
+| `createNotifications()` | `src/services/notification.service.ts` | Fan-out + dedup 10 phút (BR-NOTIF-05). Bọc try/catch im lặng — không block main flow |
+| `getGroupRecipients()` | same | Resolve recipients qua `group_members` (lọc actor, virtual, left, opt-out setting) |
+| `notifyExpenseEvent()` / `notifyPaymentRecorded()` / `notifyJoinRequested()` / `notifyJoinResolved()` / `notifyRoleChange()` / `notifyTripClosed()` | same | High-level helpers — gọi từ `trip.store.ts`, `group.service.ts` sau mỗi mutation |
+| `fetchNotifications()` / `markAsRead()` / `markAllAsRead()` / `deleteNotification()` / `getUnreadCount()` | same | Reads cho UI |
 
 ### 5.2 VPS API (dự phòng / mở rộng)
 
@@ -508,49 +647,267 @@ SELECT cron.schedule(
 );
 ```
 
----
+### 5.4 Group avatar pipeline — Cloudflare R2 + Edge Functions (F-29)
 
-## 6. FCM — Push Notification
+Tham chiếu nghiệp vụ: BR-AVATAR-01..04 trong `business-requirements.md` §8 + UC-04 §9.
 
-### 6.1 Các loại notification
+#### 5.4.1 Vì sao chọn R2 thay vì Supabase Storage
 
-| Loại | Trigger | Nội dung thông báo | Có thể tắt? |
-|------|---------|-------------------|-------------|
-| Khoản chi mới | Expense được thêm vào trip | "[Tên người] vừa thêm [Tên khoản chi] — [số tiền]" | Có |
-| Thanh toán mới | Payment được ghi nhận, gửi đến người nhận | "[Tên người] vừa ghi nhận đã trả bạn [số tiền]" | Không |
-| Nhắc nợ | Cron hàng ngày, gửi đến người có số dư âm | "Bạn đang nợ [tổng] trong [N] chuyến. Nhấn để xem chi tiết" | Có |
-| Thành viên mới | User mới join group | "[Tên người] vừa tham gia nhóm [tên nhóm]" | Có |
-| Chuyến bị đóng | Trip chuyển sang closed | "Chuyến [tên] đã được đóng bởi [tên người]" | Có |
+| Tiêu chí | Cloudflare R2 (free) | Supabase Storage (free) |
+|---|---|---|
+| Storage | 10 GB | 1 GB |
+| Egress (bandwidth ra) | **0₫ unlimited** | tính vào quota Supabase |
+| Class A ops/tháng | 1M (PUT/DELETE/LIST) | tính chung Supabase |
+| Class B ops/tháng | 10M (GET/HEAD) | — |
+| Setup phức tạp | Custom domain + Sigv4 | Built-in |
 
-### 6.2 Gửi FCM từ Edge Function
+R2 hấp dẫn vì egress free + 10× storage so Supabase. Trade-off: phải tự setup Sigv4 signing trong Edge Function.
 
-```typescript
-// supabase/functions/on-expense-created/index.ts
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+#### 5.4.2 Architecture flow
 
-serve(async (req) => {
-  const { record } = await req.json(); // expense record from webhook
-
-  // Lấy FCM tokens của các thành viên trong trip (trừ người tạo)
-  const { data: members } = await supabase
-    .from('group_members')
-    .select('user_id, users(fcm_token, settings)')
-    .eq('group_id', record.group_id)
-    .neq('user_id', record.created_by);
-
-  // Gửi FCM qua Firebase Admin SDK hoặc HTTP v1 API
-  const tokens = members
-    .filter(m => m.users?.fcm_token && m.users?.settings?.notify_expense)
-    .map(m => m.users.fcm_token);
-
-  await sendFCMMulticast(tokens, {
-    title: 'Khoản chi mới',
-    body: `${record.created_by_name} vừa thêm ${record.title} — ${formatVND(record.amount)}`,
-  });
-});
+```
+[Client RN]                          [Edge Function]                [R2]                [DB]
+  │                                          │                        │                   │
+  │ 1. ImagePicker crop 1:1 → quality 1      │                        │                   │
+  │ 2. Progressive compress 5 attempts        │                        │                   │
+  │    (q=0.95 dim gốc → q=0.80 dim 512)     │                        │                   │
+  │ 3. POST /group-avatar-presign             │                        │                   │
+  │    { groupId, sizeBytes }                │                        │                   │
+  │─────────────────────────────────────────▶│                        │                   │
+  │                                          │ JWT → app_user_id       │                  │
+  │                                          │ assertRole admin        │                  │
+  │                                          │ check quota soft (3/7d, 20/1d) ────────────▶│
+  │                                          │ Sigv4 PUT URL          │                   │
+  │                                          │   Content-Length pinned ▶│                  │
+  │ ◀─{ uploadUrl, fileKey, publicUrl }──────│                        │                   │
+  │                                          │                        │                   │
+  │ 4. PUT uploadUrl (ArrayBuffer body)──────────────────────────────▶│                   │
+  │                                          │                        │                   │
+  │ 5. POST /group-avatar-commit             │                        │                   │
+  │    { groupId, fileKey }                  │                        │                   │
+  │─────────────────────────────────────────▶│                        │                   │
+  │                                          │ JWT → app_user_id      │                   │
+  │                                          │ HEAD R2 verify────────▶│                   │
+  │                                          │ size/type check; nếu fail: DELETE + 413/415│
+  │                                          │ rpc('commit_group_avatar')──────────────────▶│
+  │                                          │   ATOMIC: lock row, recheck quota,         │
+  │                                          │   UPDATE groups, INSERT tracking, audit    │
+  │                                          │   RETURN old_avatar_url                    │
+  │                                          │ DELETE oldFileKey ────▶│                   │
+  │ ◀─{ avatar_url }─────────────────────────│                        │                   │
 ```
 
-### 6.3 Cấu hình FCM trong Expo
+#### 5.4.3 Postgres functions atomic
+
+`commit_group_avatar(p_group_id, p_user_id, p_new_file_key, p_new_public_url, p_quota_per_group_per_week, p_quota_per_user_per_day)`:
+- `SELECT ... FROM groups WHERE id = $1 FOR UPDATE` — chặn 2 device cùng admin race.
+- Verify `group_members.role = 'admin' AND left_at IS NULL`. RAISE `NOT_ADMIN` nếu fail.
+- COUNT `group_avatar_uploads` trong cửa sổ → nếu vượt → return `retry_after_seconds` (giây tới khi row cũ nhất rơi khỏi window).
+- `UPDATE groups SET avatar_url = ...` + `INSERT INTO group_avatar_uploads(...)` + `INSERT INTO audit_logs (action='group.avatar_updated', ...)`.
+- RETURN `(old_avatar_url, retry_after_seconds=0)`.
+- `SECURITY DEFINER` + `REVOKE FROM PUBLIC` + `GRANT EXECUTE TO service_role` — chỉ Edge Function gọi được.
+
+`remove_group_avatar(p_group_id, p_user_id)`:
+- Cùng pattern lock + check role.
+- Nếu `avatar_url IS NULL` → no-op return.
+- `UPDATE groups SET avatar_url = NULL` + `INSERT audit_logs (action='group.avatar_removed', ...)`.
+- KHÔNG ghi vào `group_avatar_uploads` (xóa không tính quota — xem BR-AVATAR-02).
+
+#### 5.4.4 Sigv4 presign chi tiết
+
+Edge Function dùng `aws4fetch` (Deno-compatible, 8KB) để ký URL với:
+- `service: 's3', region: 'auto'` (R2 endpoint).
+- Sign **header `Content-Length` + `Content-Type`** vào URL → R2 reject nếu client PUT body khác size đã sign.
+- TTL 60s (`X-Amz-Expires=60`) — đủ cho upload 2MB trên 4G chậm, không quá lâu để bị abuse.
+
+#### 5.4.5 Client-side image processing
+
+Trong `src/utils/imageProcessing.ts` — quality-first progressive degradation, dừng ở attempt đầu tiên đạt ≤ 2 MB:
+
+| Attempt | Dimension | JPEG quality | Use case |
+|---|---|---|---|
+| 1 | nguyên gốc | 0.95 | Ảnh < 4MP — gần lossless |
+| 2 | nguyên gốc | 0.85 | Ảnh chi tiết cao |
+| 3 | min(gốc, 2048) | 0.85 | DSLR/panorama lớn |
+| 4 | min(gốc, 1024) | 0.85 | Bậc dự phòng |
+| 5 | 512 | 0.80 | Last resort |
+
+Cap dimension max 2048 vì avatar render max ~150px (header chi tiết nhóm, GroupCarousel home). Lớn hơn lãng phí storage R2.
+
+**Lưu ý RN 0.83 + new architecture**: KHÔNG dùng `fetch(file://uri).blob()` (broken trên RN). Dùng `new File(uri).arrayBuffer()` từ `expo-file-system` rồi PUT body = ArrayBuffer. KHÔNG set header `Content-Length` thủ công — RN fetch tự set, conflict với value đã sign sẽ làm R2 reject.
+
+#### 5.4.6 Bucket access — public domain qua Cloudflare CDN
+
+R2 bucket bật public access qua custom domain (vd `https://avatars.fairpay.app`) — KHÔNG dùng presigned GET cho mỗi load avatar (sẽ tốn Class B ops + invocations Edge Function). App load trực tiếp `groups.avatar_url` qua `<Image source={{ uri }} />` → free egress + Cloudflare CDN cache.
+
+Trade-off: avatar URL public, ai biết URL có thể view. Avatar nhóm không nhạy cảm → chấp nhận.
+
+#### 5.4.7 Cron cleanup orphan
+
+`group-avatar-cleanup` Edge Function chạy weekly (Sunday 03:00 ICT) qua `pg_cron`:
+1. LIST R2 objects prefix `groups/` (paginated, cap 50 pages = 50K keys).
+2. SELECT `avatar_url` từ `groups WHERE avatar_url IS NOT NULL` → set referenced keys.
+3. SELECT `file_key` từ `group_avatar_uploads WHERE created_at > now() - 24h` → protect recent uploads (race window).
+4. DELETE các R2 key không thuộc 2 set trên.
+
+Lý do cần cron: trường hợp client presign nhưng KHÔNG commit (mất mạng giữa 2 step) → file R2 thành orphan. 24h buffer đảm bảo không xóa file đang in-flight.
+
+```sql
+SELECT cron.schedule(
+  'cleanup-group-avatars-weekly',
+  '0 20 * * 0', -- 20:00 UTC Saturday = 03:00 ICT Sunday
+  $$
+  SELECT net.http_post(
+    url := 'https://<project>.supabase.co/functions/v1/group-avatar-cleanup',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true),
+      'Content-Type', 'application/json'
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);
+```
+
+#### 5.4.8 Secrets quản lý
+
+5 secret cần set qua Supabase Dashboard → Edge Functions → Secrets (KHÔNG bundle vào client):
+
+| Secret | Source | Ghi chú |
+|---|---|---|
+| `R2_ACCOUNT_ID` | Cloudflare → R2 → S3 API URL | phần trước `.r2.cloudflarestorage.com` |
+| `R2_ACCESS_KEY_ID` | R2 → Manage R2 API Tokens → Create | quyền Object Read & Write, scope 1 bucket |
+| `R2_SECRET_ACCESS_KEY` | same | hiện 1 lần khi tạo, copy ngay |
+| `R2_BUCKET_NAME` | tên bucket (vd `fairpay-group-avatars`) | |
+| `R2_PUBLIC_BASE_URL` | r2.dev hoặc custom domain | dùng cho `getPublicUrl()` + `extractFileKey()` |
+
+Client chỉ cần `EXPO_PUBLIC_R2_PUBLIC_BASE_URL` (= cùng giá trị `R2_PUBLIC_BASE_URL`) cho `extractFileKey()` ở `src/utils/r2.ts`.
+
+#### 5.4.9 Cost projection (free tier 10GB / 1M Class A / 10M Class B)
+
+| Metric | Tính | Ước tính 1000 DAU |
+|---|---|---|
+| Storage | ~5K avatar × 200KB | ~1 GB → **10%** free |
+| Class A | 20 upload/user/ngày × 1K user × 30 ngày + delete cũ | ~1.2M → **vượt nhẹ** ở 1K DAU |
+| Class B | 1K user × 50 nhóm × 30 ngày load | ~1.5M → **15%** free |
+| Egress | unlimited free trên R2 | — |
+
+Nếu Class A vượt: $4.50/triệu ops thêm. Tùy chọn giảm cost: hạ `GROUP_AVATAR_QUOTA_PER_USER_PER_DAY` từ 20 → 10.
+
+---
+
+## 6. Notifications & Push
+
+Tham chiếu nghiệp vụ: `docs/business-requirements.md` §11.5 + §8 (BR-NOTIF-01..07).
+
+### 6.1 Loại thông báo (11 types)
+
+| Key | Setting gate | Scope | Phase |
+|-----|--------------|-------|-------|
+| `expense.created` | `notify_activity` | Group (trừ actor) | V1 ✓ |
+| `expense.edited` | `notify_activity` | Group (trừ actor) | V1 (khi UI edit thêm) |
+| `expense.deleted` | `notify_activity` | Group (trừ actor) | V1 ✓ |
+| `payment.recorded` | `notify_payment` | Personal (from + to, trừ actor) | V1 ✓ |
+| `payment.received` | `notify_payment` | Personal (to_member) | V1 ✓ |
+| `member.join_requested` | `notify_member` | Personal (admin) | V1 ✓ |
+| `member.join_approved` | `notify_member` | Personal (requester) | V1 ✓ |
+| `member.join_rejected` | `notify_member` | Personal (requester) | V1 ✓ |
+| `member.role_change` | `notify_member` | Personal (target) | V1 (khi Transfer Admin có UI) |
+| `trip.closed` | `notify_activity` | Group (trừ actor) | V1 ✓ |
+| `trip.reminder_settle` | `notify_smart` | Personal (debtor) | Phase 3 (cron) |
+
+Mapping `type → setting key` được encode pure trong `src/utils/notificationFormat.ts:getSettingKeyForType()` — không hardcode trùng lặp ở UI hay service.
+
+### 6.2 In-app fan-out (V1) — service-layer pattern
+
+KHÔNG dùng Postgres trigger. Mỗi service mutation sau khi action OK gọi `createNotifications()` song song với `logAction()`:
+
+```typescript
+// src/stores/trip.store.ts (excerpt)
+const profile = useAuthStore.getState().profile;
+await Promise.all([
+  logAction({ groupId, tripId, action: 'expense.create', targetId: result.id, afterData: {...} }),
+  profile && notifyExpenseEvent('expense.created', {
+    groupId, tripId,
+    actorId: profile.id, actorName: profile.display_name,
+    expenseId: result.id, expenseTitle: title, amount,
+  }),
+]);
+```
+
+`createNotifications()` flow:
+1. Compute dedup key `(user_id, group_id, type, actor_id)` cho từng recipient.
+2. Query notif chưa đọc match dedup key trong 10 phút qua (`NOTIF_DEDUP_WINDOW_MS`).
+3. Recipient đã có row → UPDATE (gộp `count`, push `target_ids`, refresh `created_at`).
+4. Recipient chưa có row → INSERT row mới.
+5. Bọc try/catch im lặng (giống `logAction`) — fail không break main flow.
+
+### 6.3 Realtime subscription (V2 — Phase 3)
+
+```typescript
+// Pseudo-code, src/stores/notification.store.ts (Phase 3)
+const channel = supabase
+  .channel(`notifications:user_id=eq.${myUserId}`)
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${myUserId}` },
+    (payload) => {
+      get().addItem(payload.new);
+      get().refreshUnreadCount();
+    })
+  .subscribe();
+```
+
+- Subscribe khi app foreground, unsubscribe khi background (`AppState.addEventListener`).
+- Free tier 200 concurrent → đủ ~200 user online đồng thời.
+- V1 dùng pull-on-focus (`useFocusEffect` ở home screen) — đơn giản, đủ tốt.
+
+### 6.4 Push FCM (V3 — Phase 4)
+
+Postgres trigger AFTER INSERT trên `notifications` → gọi `pg_net` → Edge Function `send-push`:
+
+```sql
+CREATE OR REPLACE FUNCTION trigger_send_push() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  -- Skip nếu user không có fcm_token (tránh tốn invocation)
+  IF NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.user_id AND fcm_token IS NOT NULL) THEN
+    RETURN NEW;
+  END IF;
+  PERFORM net.http_post(
+    url := 'https://<project>.supabase.co/functions/v1/send-push',
+    body := jsonb_build_object('notification_id', NEW.id),
+    headers := '{"Authorization": "Bearer <service_role_key>"}'::jsonb
+  );
+  RETURN NEW;
+END $$;
+
+CREATE TRIGGER notif_send_push
+AFTER INSERT ON notifications
+FOR EACH ROW EXECUTE FUNCTION trigger_send_push();
+```
+
+Edge Function `send-push`:
+- Fetch `notification` + `user (fcm_token, settings)`.
+- Check DND (Phase 4 settings: `dnd_enabled`, `dnd_start`, `dnd_end`).
+- Build FCM payload: `{ title, body, data: { deeplink, notification_id } }`.
+- Gửi qua FCM HTTP v1.
+
+**Free tier guard:** 500k invocations/tháng → ~16k/day. Group ~5 user × ~10 events/day × 300 group = 15k/day OK. Trigger skip nếu không có fcm_token (giảm ~50% invocation cho user chưa cài app/từ chối push).
+
+### 6.5 Smart features
+
+**6.5.1 Dedup 10 phút (V1 ✓):** logic trong `createNotifications()`. Cùng `(user, group, type, actor)` chưa đọc → UPDATE thay vì INSERT mới. Title chuyển sang "{Actor} đã thêm 5 khoản chi" (đếm từ `data.count`).
+
+**6.5.2 Settle suggest (Phase 3):** Edge Function `cron-settle-suggest` chạy daily 09:00 ICT, threshold `SETTLE_SUGGEST_MIN_AMOUNT=200_000`, age `SETTLE_SUGGEST_AGE_DAYS=3`, cooldown `SETTLE_SUGGEST_COOLDOWN_DAYS=7` (xem `src/config/constants.ts`).
+
+### 6.6 Roadmap phases
+
+| Phase | Scope | Files chính |
+|-------|-------|-------------|
+| **V1 ✓** | DB + service-layer + UI screen + filter + bell badge + 4 toggle settings + pull-on-focus | `src/services/notification.service.ts`, `src/stores/notification.store.ts`, `src/app/(main)/notifications.tsx`, `src/components/notifications/*`, `src/app/(main)/settings.tsx` |
+| **V2 / Phase 3** | Supabase realtime channel, per-group mute (`group_members.notification_enabled`), Edge Function cron settle suggest | `notification.store.ts` (subscribe), migration cho `group_members`, `supabase/functions/cron-settle-suggest` |
+| **V3 / Phase 4** | `expo-notifications` + FCM, Edge Function `send-push`, Postgres trigger, DND time picker | `src/services/push.service.ts`, `supabase/functions/send-push`, migration trigger, `app.json` config |
+
+### 6.7 Cấu hình FCM trong Expo (Phase 4)
 
 ```json
 // app.json
@@ -558,16 +915,15 @@ serve(async (req) => {
   "expo": {
     "plugins": [
       "@react-native-firebase/app",
-      "@react-native-firebase/messaging"
+      "@react-native-firebase/messaging",
+      "expo-notifications"
     ],
-    "android": {
-      "googleServicesFile": "./google-services.json"
-    }
+    "android": { "googleServicesFile": "./google-services.json" }
   }
 }
 ```
 
-> **Lưu ý:** FCM vẫn dùng Firebase (free, không giới hạn) chỉ cho push notification. Toàn bộ backend còn lại dùng Supabase/VPS.
+> **Lưu ý:** FCM vẫn dùng Firebase (free, không giới hạn) chỉ cho push notification. Toàn bộ backend in-app dùng Supabase.
 
 ---
 
@@ -733,6 +1089,26 @@ CREATE POLICY "Members can create payments"
 CREATE POLICY "Admins can update payments"
   ON payments FOR UPDATE USING (is_admin(group_id));
 -- DELETE: disabled, soft delete only via UPDATE
+
+-- ══════════════════════════════════════════════
+-- Notifications policies (per-user fan-out)
+-- ══════════════════════════════════════════════
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY notif_select_own ON notifications
+  FOR SELECT USING (user_id = auth_user_id());
+
+CREATE POLICY notif_update_own ON notifications
+  FOR UPDATE USING (user_id = auth_user_id())
+  WITH CHECK (user_id = auth_user_id());
+
+CREATE POLICY notif_delete_own ON notifications
+  FOR DELETE USING (user_id = auth_user_id());
+
+-- INSERT: authenticated users (services validate authorization).
+-- Phase 4 sẽ chuyển sang Edge Function service-role và xoá policy này.
+CREATE POLICY notif_insert_auth ON notifications
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 ```
 
 ---
@@ -779,7 +1155,51 @@ const exportToImage = async (viewRef: React.RefObject<View>) => {
 };
 ```
 
-### 11.3 Trạng thái Sync — Visual Indicator
+### 11.3 Wireframe — Trang Thông báo (`(main)/notifications.tsx`)
+
+```
+┌──────────────────────────────────────────────┐
+│  ←  Thông báo                  [Đọc tất cả] │  ← header (action chỉ hiện khi unread > 0)
+├──────────────────────────────────────────────┤
+│  [Tất cả] [Chưa đọc] [Theo nhóm]            │  ← ChipPicker filter
+│  • Phượt Đà Nẵng                  Bỏ lọc    │  ← scope row (chỉ khi đã chọn group)
+├──────────────────────────────────────────────┤
+│  HÔM NAY                                     │  ← section header
+│  ┌──────────────────────────────────────┐   │
+│  │ [👤]🧾  Nam đã thêm khoản chi …  ●   │   │  ← unread: bg surface, dot primary
+│  │         Phượt · 3 phút trước          │   │
+│  └──────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────┐   │
+│  │ [👤]💳  An đã trả bạn 200.000đ        │   │  ← read: bg background, no dot
+│  │         Phượt · 1 giờ trước          │   │
+│  └──────────────────────────────────────┘   │
+│                                              │
+│  HÔM QUA                                     │
+│  ┌──────────────────────────────────────┐   │
+│  │ [👤]✏️  Lan đã sửa khoản chi Cà phê   │   │
+│  │         Bữa trưa · hôm qua           │   │
+│  └──────────────────────────────────────┘   │
+│  …                                           │
+└──────────────────────────────────────────────┘
+
+Per-row swipe trái → nút [🗑 Xóa] (đỏ) → DELETE row.
+Tap row → mark-as-read (optimistic) + router.push deeplink theo data.trip_id.
+```
+
+**States:**
+- **Loading lần đầu** (`isRefreshing && items.length === 0`): `ListSkeleton count={8}`.
+- **Empty:** `EmptyState title="Chưa có thông báo nào" subtitle="Hoạt động trong nhóm sẽ xuất hiện ở đây."`.
+- **Pull-to-refresh:** `RefreshControl` reload page 1.
+- **Infinite scroll:** `onEndReached` → `loadMore()` (cursor `created_at`, page size 30).
+
+**Bell icon (`NotificationBell.tsx`):**
+- Icon Bell từ lucide, badge tròn đỏ overlay góc trên-phải, max "9+".
+- Trong `headerRight` của route `index` (home) — bên cạnh Avatar, dùng `flexDirection: 'row'`.
+- `useFocusEffect` ở home → gọi `refreshUnreadCount()` mỗi lần screen focus (polling on focus, không setInterval).
+
+**Settings (`settings.tsx` → section "THÔNG BÁO"):** 4 `SettingRow` toggle cho 4 nhóm setting (`notify_activity`, `notify_payment`, `notify_member`, `notify_smart`). Tắt → server skip insert recipient (recipient resolver filter ở `getGroupRecipients()` + per-helper).
+
+### 11.4 Trạng thái Sync — Visual Indicator
 
 | Trạng thái | Indicator | Mô tả |
 |-----------|-----------|-------|
@@ -789,7 +1209,7 @@ const exportToImage = async (viewRef: React.RefObject<View>) => {
 | Sync conflict | Banner warning trong màn hình | "Có thay đổi mới từ [tên người]. Dữ liệu của bạn đã được cập nhật." |
 | Sync lỗi | Snackbar đỏ | "Không thể đồng bộ. Kiểm tra kết nối mạng." |
 
-### 11.4 Design Tokens & Theme
+### 11.5 Design Tokens & Theme
 
 Hệ thống màu sắc tập trung tại `src/config/theme.ts`. Mọi screen và component truy cập qua hook `useAppTheme()` — **không hardcode hex**.
 

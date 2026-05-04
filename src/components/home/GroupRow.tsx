@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Users } from 'lucide-react-native';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -15,6 +15,7 @@ import { AppText, Avatar, Money } from '../ui';
 interface GroupRowProps {
   id: string;
   name: string;
+  avatarUrl?: string | null;
   memberCount: number;
   balance: number;
   onPress: () => void;
@@ -22,9 +23,13 @@ interface GroupRowProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+const AVATAR_SIZE = 48;
+const RING_WIDTH = 2;
+
 export const GroupRow = memo(function GroupRow({
   id,
   name,
+  avatarUrl,
   memberCount,
   balance,
   onPress,
@@ -77,62 +82,68 @@ export const GroupRow = memo(function GroupRow({
         animatedStyle,
       ]}
     >
-      {/* Left accent strip tinted by balance tone (inside the card) */}
-      <View style={[styles.sideStrip, { backgroundColor: toneSoft }]} />
-
-      {/* Avatar with tone dot */}
-      <View style={styles.avatarWrap}>
-        <Avatar seed={id} label={name} size={48} />
-        <View
-          style={[
-            styles.statusDot,
-            { backgroundColor: toneColor, borderColor: c.surface },
-          ]}
+      {/* Avatar with tone-colored ring (replaces left strip + status dot) */}
+      <View
+        style={[
+          styles.avatarRing,
+          {
+            borderColor: toneColor,
+            backgroundColor: toneSoft,
+          },
+        ]}
+      >
+        <Avatar
+          seed={id}
+          label={name}
+          photoUrl={avatarUrl ?? null}
+          size={AVATAR_SIZE}
         />
       </View>
 
-      {/* Title + metadata chip-line */}
+      {/* Title + member-count meta */}
       <View style={styles.content}>
         <AppText variant="body" weight="semibold" numberOfLines={1}>
           {name}
         </AppText>
         <View style={styles.metaRow}>
-          <View style={[styles.metaDot, { backgroundColor: c.primarySoft }]} />
+          <Users size={12} color={c.muted} strokeWidth={2.2} />
           <AppText
             variant="meta"
             style={{ color: c.muted, fontFamily: fonts.medium }}
           >
             {memberCount} thành viên
           </AppText>
-          <View style={[styles.metaSep, { backgroundColor: c.divider }]} />
-          <AppText
-            variant="meta"
-            style={{
-              color: toneColor,
-              fontFamily: fonts.semibold,
-              letterSpacing: 0.4,
-              fontSize: 11,
-            }}
-          >
-            {directionLabel}
-          </AppText>
         </View>
       </View>
 
-      {/* Trailing: stacked balance */}
+      {/* Trailing: balance pill in tone-soft background */}
       <View style={styles.trailing}>
         {isSettled ? (
-          <View style={styles.settledBadge}>
-            <View style={[styles.settledBar, { backgroundColor: c.muted }]} />
-            <View style={[styles.settledBar, { backgroundColor: c.muted }]} />
+          <View
+            style={[styles.balancePill, { backgroundColor: toneSoft }]}
+          >
+            <AppText
+              variant="meta"
+              style={{
+                color: toneColor,
+                fontFamily: fonts.semibold,
+                letterSpacing: 0.3,
+              }}
+            >
+              cân bằng
+            </AppText>
           </View>
         ) : (
-          <Money
-            value={Math.abs(balance)}
-            variant="default"
-            tone={isPositive ? 'success' : 'danger'}
-            showSign
-          />
+          <View
+            style={[styles.balancePill, { backgroundColor: toneSoft }]}
+          >
+            <Money
+              value={Math.abs(balance)}
+              variant="default"
+              tone={isPositive ? 'success' : 'danger'}
+              showSign
+            />
+          </View>
         )}
         <ChevronRight
           size={14}
@@ -151,7 +162,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 14,
-    paddingLeft: 18,
     borderRadius: 16,
     marginBottom: 10,
     overflow: 'hidden',
@@ -160,27 +170,14 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 1,
   },
-  sideStrip: {
-    position: 'absolute',
-    left: 0,
-    top: 10,
-    bottom: 10,
-    width: 3,
-    borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
-  },
-  avatarWrap: {
+  avatarRing: {
+    width: AVATAR_SIZE + RING_WIDTH * 2 + 4,
+    height: AVATAR_SIZE + RING_WIDTH * 2 + 4,
+    borderRadius: (AVATAR_SIZE + RING_WIDTH * 2 + 4) / 2,
+    borderWidth: RING_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12,
-    position: 'relative',
-  },
-  statusDot: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
   },
   content: {
     flex: 1,
@@ -190,38 +187,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
-    gap: 6,
-  },
-  metaDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  metaSep: {
-    width: 1,
-    height: 10,
-    marginHorizontal: 2,
+    gap: 5,
   },
   trailing: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 10,
-    gap: 4,
+    marginLeft: 8,
+    gap: 2,
+  },
+  balancePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   chev: {
     marginLeft: 2,
-    opacity: 0.6,
-  },
-  settledBadge: {
-    flexDirection: 'row',
-    gap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  settledBar: {
-    width: 10,
-    height: 2,
-    borderRadius: 1,
     opacity: 0.6,
   },
 });

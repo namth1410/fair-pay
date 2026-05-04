@@ -4,6 +4,8 @@ import { type LayoutChangeEvent, StyleSheet, View, type ViewStyle } from 'react-
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useDerivedValue, useSharedValue } from 'react-native-reanimated';
 
+import { useAnimationsEnabled } from '../../../utils/userPreferences';
+
 // Star Nest by Pablo Roman Andrioli — MIT. Ported from Shadertoy to SkSL.
 const buildShader = (iter: number, steps: number) => `
 uniform float2 u_res;
@@ -94,6 +96,7 @@ export const SkiaStarNest = memo(function SkiaStarNest({
   style,
   children,
 }: SkiaStarNestProps) {
+  const animationsEnabled = useAnimationsEnabled();
   const clock = useClock();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const mx = useSharedValue(mouse[0]);
@@ -126,7 +129,7 @@ export const SkiaStarNest = memo(function SkiaStarNest({
 
   const content = (
     <View style={[styles.wrap, style]} onLayout={onLayout}>
-      {effect && size.w > 0 ? (
+      {animationsEnabled && effect && size.w > 0 ? (
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
           <Fill>
             <Shader source={effect} uniforms={uniforms} />
@@ -137,7 +140,11 @@ export const SkiaStarNest = memo(function SkiaStarNest({
     </View>
   );
 
-  return interactive ? <GestureDetector gesture={pan}>{content}</GestureDetector> : content;
+  return interactive && animationsEnabled ? (
+    <GestureDetector gesture={pan}>{content}</GestureDetector>
+  ) : (
+    content
+  );
 });
 
 const styles = StyleSheet.create({

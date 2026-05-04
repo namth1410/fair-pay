@@ -1,22 +1,19 @@
-import { Button, useToast } from 'heroui-native';
-import { X } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheet, Button, useToast } from 'heroui-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { ExpensePreset } from '../../services/preset.service';
 import { usePresetStore } from '../../stores/preset.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText, AppTextField, ChipPicker } from '../ui';
+import {
+  computeMoneySuggestions,
+  formatThousands,
+  parseMoneyInput,
+} from '../../utils/format';
+import { AppText, ChipPicker } from '../ui';
 
 interface PresetFormModalProps {
   isOpen: boolean;
@@ -32,35 +29,58 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
 
   const isEdit = !!preset;
 
-  const [title, setTitle] = useState('');
+  const titleRef = useRef('');
   const [amountStr, setAmountStr] = useState('');
+  const [resetKey, setResetKey] = useState(0);
+  const [showInputs, setShowInputs] = useState(false);
+  const [hasTitle, setHasTitle] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>('food');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) return;
-    if (preset) {
-      setTitle(preset.title);
-      setAmountStr(String(preset.amount));
-      setCategory(preset.category);
-    } else {
-      setTitle('');
-      setAmountStr('');
-      setCategory('food');
+    if (!isOpen) {
+      setShowInputs(false);
+      return;
     }
+    titleRef.current = preset?.title ?? '';
+    setAmountStr(preset ? String(preset.amount) : '');
+    setResetKey((k) => k + 1);
+    setHasTitle(!!preset?.title);
+    setCategory(preset?.category ?? 'food');
     setError('');
     setBusy(false);
   }, [isOpen, preset]);
 
-  const handleSubmit = useCallback(async () => {
+  const handleTitleChange = (text: string) => {
+    titleRef.current = text;
+    const next = text.trim().length > 0;
+    setHasTitle((prev) => (prev === next ? prev : next));
+  };
+
+  const handleAmountChange = (text: string) => {
+    setAmountStr(parseMoneyInput(text));
+  };
+
+  const suggestions = useMemo(
+    () => computeMoneySuggestions(amountStr),
+    [amountStr],
+  );
+
+  const handlePickSuggestion = (amount: number) => {
+    setAmountStr(String(amount));
+  };
+
+  const handleSubmit = async () => {
+    if (busy) return;
     setError('');
-    const trimmed = title.trim();
+
+    const trimmed = titleRef.current.trim();
     if (!trimmed) {
       setError('Vui lòng nhập tên preset');
       return;
     }
-    if (!amountStr.trim()) {
+    if (!amountStr) {
       setError('Vui lòng nhập số tiền');
       return;
     }
@@ -89,59 +109,120 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
     } finally {
       setBusy(false);
     }
-  }, [title, amountStr, category, isEdit, preset, addPreset, editPreset, onOpenChange, toast]);
+  };
 
   return (
-    <Modal
-      visible={isOpen}
-      onRequestClose={() => onOpenChange(false)}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.root}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={() => onOpenChange(false)}
-          accessibilityLabel="Đóng"
-        />
-        <View style={[styles.sheet, { backgroundColor: c.surface }]}>
-          <View style={styles.header}>
-            <AppText variant="subtitle" weight="semibold">
-              {isEdit ? 'Sửa preset' : 'Thêm preset'}
-            </AppText>
-            <Pressable
-              onPress={() => onOpenChange(false)}
-              style={styles.closeBtn}
-              accessibilityLabel="Đóng"
-            >
-              <X size={20} color={c.muted} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
+    <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
+      <BottomSheet.Portal>
+        <BottomSheet.Overlay />
+        <BottomSheet.Content
+          enableDynamicSizing={false}
+          snapPoints={['60%', '90%']}
+          keyboardBehavior="extend"
+          keyboardBlurBehavior="restore"
+          android_keyboardInputMode="adjustResize"
+          onChange={(index) => setShowInputs(index >= 0)}
+        >
+          <BottomSheetScrollView
+            contentContainerStyle={styles.container}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.formArea}>
-              <AppTextField
-                placeholder="Tên preset"
-                value={title}
-                onChangeText={setTitle}
-                accessibilityLabel="Tên preset"
-                autoFocus={!isEdit}
-              />
-              <AppTextField
-                placeholder="Số tiền (VND)"
-                value={amountStr}
-                onChangeText={setAmountStr}
-                keyboardType="number-pad"
-                accessibilityLabel="Số tiền"
-              />
+            <View style={styles.header}>
+              <BottomSheet.Title>{isEdit ? 'Sửa preset' : 'Thêm preset'}</BottomSheet.Title>
+            </View>
+
+            <View style={styles.body}>
+              {showInputs ? (
+                <BottomSheetTextInput
+                  key={`title-${resetKey}`}
+                  placeholder="Tên preset"
+                  placeholderTextColor={c.muted}
+                  defaultValue={titleRef.current}
+                  onChangeText={handleTitleChange}
+                  returnKeyType="next"
+                  accessibilityLabel="Tên preset"
+                  autoFocus={!isEdit}
+                  style={[
+                    styles.input,
+                    {
+                      color: c.foreground,
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.input,
+                    { backgroundColor: c.surfaceAlt, borderColor: c.divider },
+                  ]}
+                />
+              )}
+
+              {showInputs ? (
+                <BottomSheetTextInput
+                  key={`amount-${resetKey}`}
+                  placeholder="Số tiền (VND)"
+                  placeholderTextColor={c.muted}
+                  value={formatThousands(amountStr)}
+                  onChangeText={handleAmountChange}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Số tiền"
+                  style={[
+                    styles.input,
+                    {
+                      color: c.foreground,
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.input,
+                    { backgroundColor: c.surfaceAlt, borderColor: c.divider },
+                  ]}
+                />
+              )}
+
+              {suggestions.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="always"
+                  contentContainerStyle={styles.suggestionRow}
+                  style={styles.suggestionScroll}
+                >
+                  {suggestions.map((amount) => (
+                    <Pressable
+                      key={amount}
+                      onPress={() => handlePickSuggestion(amount)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Chọn ${formatThousands(amount)} đồng`}
+                      style={[
+                        styles.suggestionChip,
+                        {
+                          backgroundColor: c.accentSoft,
+                          borderColor: c.divider,
+                        },
+                      ]}
+                    >
+                      <AppText
+                        variant="caption"
+                        weight="semibold"
+                        style={{ color: c.primaryStrong }}
+                      >
+                        {formatThousands(amount)}đ
+                      </AppText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
 
               <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                 Danh mục
@@ -160,18 +241,19 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
 
               <View style={styles.buttonRow}>
                 <Button
-                  variant="outline"
-                  size="md"
+                  variant="secondary"
+                  size="lg"
                   onPress={() => onOpenChange(false)}
+                  isDisabled={busy}
                   style={styles.cancelBtn}
                 >
                   <Button.Label>Hủy</Button.Label>
                 </Button>
                 <Button
                   variant="primary"
-                  size="md"
+                  size="lg"
                   onPress={handleSubmit}
-                  isDisabled={busy}
+                  isDisabled={busy || !hasTitle || !amountStr}
                   style={styles.submitBtn}
                 >
                   <Button.Label>
@@ -180,39 +262,60 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
                 </Button>
               </View>
             </View>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+          </BottomSheetScrollView>
+        </BottomSheet.Content>
+      </BottomSheet.Portal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  sheet: {
-    maxHeight: '85%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
-    paddingBottom: 20,
+  container: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
-  closeBtn: { padding: 6, borderRadius: 20 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 12 },
-  formArea: { gap: 12 },
-  fieldLabel: { marginTop: 4, marginBottom: -4 },
-  errorBox: { padding: 12, borderRadius: 10 },
-  buttonRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  body: {
+    paddingTop: 8,
+    gap: 14,
+  },
+  input: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    fontSize: 16,
+  },
+  fieldLabel: {
+    marginTop: 4,
+    marginBottom: -4,
+  },
+  errorBox: {
+    padding: 12,
+    borderRadius: 10,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
   cancelBtn: { flex: 1 },
   submitBtn: { flex: 2 },
+  suggestionScroll: {
+    marginTop: -4,
+  },
+  suggestionRow: {
+    gap: 8,
+    paddingVertical: 2,
+    paddingRight: 8,
+    alignItems: 'center',
+  },
+  suggestionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
 });

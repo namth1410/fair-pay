@@ -40,7 +40,7 @@
 | 2 | Tính toán chia đều / chia theo tỷ lệ mất thời gian và dễ nhầm |
 | 3 | App chỉ dùng được offline — không chia sẻ được data với cả nhóm |
 | 4 | Thanh toán thực tế không theo đúng kịch bản thuật toán — cần ghi nhận thanh toán tự do |
-| 5 | Không có cơ chế nhắc nhở người còn nợ |
+| 5 | Không có cơ chế nhắc nhở người còn nợ → Đã giải quyết bởi **Trung tâm Thông báo** (§11.5) + gợi ý settle thông minh (BR-NOTIF-06) |
 | 6 | Một người tham gia nhiều nhóm bạn, mỗi nhóm nhiều chuyến — cần tài khoản để quản lý |
 | 7 | Nhiều người cùng chỉnh sửa dữ liệu chuyến → cần phân quyền và xử lý xung đột |
 
@@ -164,6 +164,17 @@ Hệ thống 2 cấp quyền:
 | BR-09 | Join nhóm cần Admin duyệt | Khi người dùng nhập mã mời, hệ thống tạo "yêu cầu tham gia" (join request) ở trạng thái `pending`. Admin nhận notification và duyệt/từ chối. Chỉ khi được duyệt (`approved`) thì người dùng mới trở thành member. Áp dụng cho **mọi trường hợp** — kể cả user đã từng ở nhóm và rời đi. Mục đích: bảo vệ khi mã mời bị lộ. |
 | BR-10 | Badge tổng nợ trên Home | Màn hình Home hiển thị tổng hợp số dư của user qua tất cả nhóm/chuyến. Hiển thị: "Bạn đang nợ X" (đỏ) hoặc "Bạn được nợ X" (xanh). Tính từ tổng balance âm/dương của user trên mọi chuyến đang mở. |
 | BR-11 | Tìm và mời user qua email | Admin có thể tìm user đã đăng ký bằng email và gửi lời mời trực tiếp vào nhóm. User nhận notification và chấp nhận/từ chối. Không cần biết mã mời. |
+| BR-NOTIF-01 | Notif chỉ gửi cho thành viên active | Mọi thông báo nhóm chỉ fan-out cho member có `left_at IS NULL` tại thời điểm event. Member rời nhóm trước event → không nhận. |
+| BR-NOTIF-02 | Actor không nhận notif về chính mình | Người thực hiện action (thêm chi, ghi payment, đóng trip…) bị loại khỏi danh sách recipients. |
+| BR-NOTIF-03 | Thành viên ảo không nhận notif | `is_virtual=true` hoặc `user_id IS NULL` → bỏ qua khi resolve recipients (không có auth session để xem). |
+| BR-NOTIF-04 | TTL notifications | Notif đã đọc giữ 30 ngày, chưa đọc 60 ngày, sau đó cron `cleanup_notifications()` xóa cứng. Lý do: Supabase free tier 500MB. |
+| BR-NOTIF-05 | Dedup 10 phút | Nếu user đã có notif chưa đọc cùng `(group, type, actor)` trong 10 phút qua → gộp thành 1 notif "X đã thêm N khoản chi" thay vì spam. |
+| BR-NOTIF-06 | Gợi ý settle thông minh | Khi 1 cặp (debtor, creditor) nợ > 200.000đ kéo dài > 3 ngày trong trip mở → gửi notif `trip.reminder_settle` cho debtor. Cooldown 7 ngày để không spam cùng cặp. (Phase 3 — cron Edge Function) |
+| BR-NOTIF-07 | Per-user opt-out | User tắt được 4 nhóm thông báo trong Cài đặt: **Hoạt động** (expense + trip), **Thanh toán**, **Thành viên**, **Gợi ý thông minh**. Setting áp dụng phía server (recipient resolver) — đã tắt → KHÔNG insert notif. |
+| BR-AVATAR-01 | Chỉ admin đổi avatar nhóm | Mỗi nhóm có 1 admin duy nhất; chỉ admin mới thấy entry "Sửa" trên avatar và mới được upload/xóa. Member tap vào avatar không có tương tác. Edge Function tự verify role qua `assertRole` + `commit_group_avatar` lock row → 2 lớp bảo vệ. |
+| BR-AVATAR-02 | Quota để bảo vệ free tier R2 | Free tier R2 (10 GB storage, 1M Class A ops/tháng): mỗi **nhóm** đổi tối đa **3 lần / 7 ngày**, mỗi **user** upload tối đa **20 lần / ngày** trên toàn app. Vượt quota → hiển thị "Thử lại sau X giờ/ngày" với `retryAfter` chính xác. Quota check atomic trong Postgres function (FOR UPDATE) — không bypass được khi 2 thiết bị upload đồng thời. |
+| BR-AVATAR-03 | Ảnh tỉ lệ 1:1, max 2 MB sau xử lý | App buộc crop 1:1 trong picker. Sau crop, app tự nén progressive (q=0.95 → q=0.85 → resize 2048/1024/512) cho đến khi ≤ 2 MB. Dimension cap 2048 vì avatar render max ~150px. Ảnh không thể nén dưới 2 MB (rất hiếm) → báo lỗi "thử ảnh khác". |
+| BR-AVATAR-04 | File cũ xóa ngay khi đổi | Khi update avatar mới thành công, file R2 cũ bị xóa best-effort. Cron `group-avatar-cleanup` chạy weekly quét orphan (file R2 không có trong `groups.avatar_url` và `group_avatar_uploads` < 24h) — bảo vệ trường hợp delete fail giữa chừng hoặc presign-không-commit (mất mạng). |
 
 ---
 
@@ -199,6 +210,19 @@ Hệ thống 2 cấp quyền:
 | **Lưu ý UX** | Hiển thị số dư hiện tại của 2 người TRƯỚC và SAU khi ghi nhận để người dùng kiểm tra |
 | **Ngoại lệ** | Số tiền âm hoặc bằng 0 → không cho lưu |
 
+### UC-04: Đổi avatar nhóm
+
+| Trường | Nội dung |
+|--------|---------|
+| **Actor** | Admin của nhóm (mỗi nhóm có đúng 1 admin) |
+| **Tiền điều kiện** | Nhóm tồn tại, User là admin hiện tại |
+| **Luồng chính** | 1. Vào màn chi tiết nhóm → 2. Tap avatar (có badge "Sửa" — chỉ admin thấy) → 3. BottomSheet hiện 2 actions: "Chụp ảnh" / "Chọn từ thư viện" → 4. Picker mở với crop 1:1 bắt buộc → 5. App tự xử lý ảnh (compress + resize tối ưu) → 6. Preview hiện ảnh kèm metadata `{dim}×{dim} • {KB}` → 7. User bấm "Lưu" → app upload trực tiếp lên R2 qua presigned URL → 8. Edge Function commit DB + xóa file cũ → 9. Avatar hiển thị mới ở header và GroupCarousel home |
+| **Luồng phụ — Xóa avatar** | Tại BottomSheet step 3, nếu nhóm đã có avatar tùy chỉnh → hiện thêm action "Xóa avatar" → confirm → fallback về initials gradient mặc định |
+| **Quyền** | Member tap avatar → Pressable disabled, không có phản ứng. Curl trực tiếp Edge Function với JWT của member → 403. |
+| **Ngoại lệ — Quota** | Vượt 3 lần/nhóm/7 ngày HOẶC 20 lần/user/ngày → 429 "Vượt giới hạn đổi avatar. Thử lại sau X giờ/ngày" (BR-AVATAR-02) |
+| **Ngoại lệ — Ảnh quá lớn** | Sau 5 attempts compress mà file vẫn > 2 MB → "Ảnh không thể nén dưới 2 MB, thử ảnh khác" (rất hiếm — chỉ ảnh raw rất phức tạp) |
+| **Ngoại lệ — Mất mạng giữa chừng** | Nếu app crash sau presign nhưng trước commit → file R2 thành orphan, cron weekly tự dọn (BR-AVATAR-04) |
+
 ---
 
 ## 10. Danh sách chức năng
@@ -229,6 +253,10 @@ Hệ thống 2 cấp quyền:
 | F-23 | Join nhóm cần duyệt (Join Request) | Must have | v1.0 |
 | F-24 | Tìm và mời user qua email | Should have | v1.0 |
 | F-25 | Sinh mã mời collision-proof (alphanumeric 6 ký tự) | Must have | v1.0 |
+| F-26 | Trang Thông báo (Notifications) — list events theo nhóm/ngày, filter, mark-as-read, swipe delete, deeplink | Must have | v1.0 |
+| F-27 | Smart dedup notifications (10 phút) | Should have | v1.0 |
+| F-28 | Gợi ý settle thông minh (cron daily, ngưỡng 200.000đ × 3 ngày) | Should have | v1.1 |
+| F-29 | Avatar nhóm tùy chỉnh (Cloudflare R2 + Supabase Edge Functions) | Should have | v1.0 |
 
 ---
 
@@ -261,6 +289,54 @@ Hệ thống 2 cấp quyền:
 - Preview: số dư trước và sau khi ghi nhận
 - Ngày giờ (auto, có thể chỉnh)
 - Ghi chú tùy chọn
+
+### Màn hình 5: Trung tâm Thông báo
+
+**Entry point:** icon chuông trong header Home (cạnh Avatar). Badge đỏ hiển thị số notif chưa đọc, max "9+". Tap → route `/notifications`.
+
+**Layout:**
+- Header: tiêu đề "Thông báo" + action "Đọc tất cả" (chỉ hiện khi có unread).
+- Filter top bar (`ChipPicker`): `Tất cả | Chưa đọc | Theo nhóm`. Chip "Theo nhóm" mở dropdown chọn group → filter `group_id`.
+- List `SectionList` chia section theo ngày: **Hôm nay / Hôm qua / Tuần này / Cũ hơn** (group client-side).
+- Pull-to-refresh + infinite scroll (`onEndReached`, page size 30).
+- Empty state: "Chưa có thông báo nào".
+
+**Notification row:**
+- Avatar actor (hoặc icon by type nếu hệ thống) + dấu chấm icon nhỏ ở góc dưới phải.
+- Title bold (nếu unread) + thời gian relative ("3 phút trước") + tên nhóm (nếu có).
+- Dấu chấm xanh bên phải nếu chưa đọc.
+- **Tap** → mark-as-read (optimistic) + deeplink theo `data.trip_id`/`data.group_id`.
+- **Swipe phải** → nút Xóa (đỏ) → DELETE row khỏi DB.
+
+**Loại thông báo (11 types):**
+
+| Key | Label VN | Scope | Trigger |
+|---|---|---|---|
+| `expense.created` | "{Actor} đã thêm khoản chi {title} ({amount})" | Group (trừ actor) | Sau `createExpense` |
+| `expense.edited` | "{Actor} sửa khoản chi {title}" | Group (trừ actor) | Sau `updateExpense` |
+| `expense.deleted` | "{Actor} đã xóa khoản chi {title}" | Group (trừ actor) | Sau `deleteExpense` |
+| `payment.recorded` | "{Recorder} ghi nhận {From} → {To} trả {amount}" | Personal (from + to, trừ actor) | Sau `createPayment` |
+| `payment.received` | "{Payer} đã trả bạn {amount}" | Personal (to_member) | Sau `createPayment` (variant POV người nhận) |
+| `member.join_requested` | "{Tên} muốn tham gia nhóm {group}" | Personal (admin) | Sau `joinGroupByCode` |
+| `member.join_approved` | "Bạn đã được duyệt vào nhóm {group}" | Personal (requester) | Sau `approveJoinRequest` |
+| `member.join_rejected` | "Yêu cầu vào nhóm {group} bị từ chối" | Personal (requester) | Sau `rejectJoinRequest` |
+| `member.role_change` | "Bạn được chuyển sang {role}" | Personal (target) | Sau transfer admin (Phase 3+) |
+| `trip.closed` | "Chuyến đi {name} đã được đóng" | Group | Sau `closeTrip` |
+| `trip.reminder_settle` | "Bạn còn nợ {Tên} {amount} trong {trip}" | Personal (debtor) | Cron daily (Phase 3) |
+
+**Use case 1 — Minh xem hoạt động hôm qua:**
+- Sáng mở app → bell badge "3" → tap → vào trang Thông báo.
+- Thấy 3 notif "Lan đã thêm 2 khoản chi" và "An đã trả bạn 200.000đ" trong section "Hôm qua".
+- Tap row "An đã trả bạn" → navigate `/trips/abc` xem detail. Notif tự mark-as-read.
+- Quay lại trang Thông báo → notif đã chuyển grey, badge giảm về 1.
+
+**Use case 2 — Debtor nhận gợi ý settle:**
+- Sáng 09:05, cron daily phát hiện Minh nợ Lan 350.000đ trong trip "Đà Nẵng" đã 4 ngày.
+- Notif `trip.reminder_settle` xuất hiện: "Bạn còn nợ Lan 350.000đ trong Đà Nẵng".
+- Minh tap → app deeplink mở payment modal pre-fill `from=Minh, to=Lan, amount=350000` → submit là xong.
+- 7 ngày sau Minh chưa trả → cron mới gửi tiếp 1 notif (cooldown 7 ngày).
+
+**Cài đặt liên quan (`(main)/settings.tsx` → section "THÔNG BÁO"):** 4 toggle — Hoạt động nhóm / Thanh toán / Thành viên / Gợi ý thông minh. Mặc định ON. Tắt → server skip insert (BR-NOTIF-07).
 
 ---
 

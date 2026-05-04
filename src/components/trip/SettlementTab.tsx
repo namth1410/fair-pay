@@ -9,7 +9,7 @@ import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
-import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, SwipeableCard } from '../ui';
+import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, MoneyTextField, SwipeableCard } from '../ui';
 
 interface SettlementEntry {
   from: string;
@@ -125,7 +125,7 @@ export const SettlementTab = React.memo(function SettlementTab({
           <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
           <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
 
-          <AppTextField placeholder="Số tiền (VND)" value={payAmountStr} onChangeText={setPayAmountStr} keyboardType="number-pad" accessibilityLabel="Số tiền thanh toán" />
+          <MoneyTextField placeholder="Số tiền (VND)" value={payAmountStr} onChangeText={setPayAmountStr} accessibilityLabel="Số tiền thanh toán" />
           <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" />
 
           {payFrom && payTo && payFrom !== payTo && (

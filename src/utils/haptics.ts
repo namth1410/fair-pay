@@ -1,20 +1,26 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 
-const enabled = Platform.OS !== 'web';
+import { getHapticsEnabled } from './userPreferences';
+
+const shouldFire = () => Platform.OS !== 'web' && getHapticsEnabled();
 
 export function hapticLight() {
-  if (enabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  if (shouldFire()) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
 export function hapticMedium() {
-  if (enabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  if (shouldFire()) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+}
+
+export function hapticHeavy() {
+  if (shouldFire()) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
 }
 
 export function hapticSuccess() {
-  if (enabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  if (shouldFire()) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 }
 
 export function hapticError() {
-  if (enabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+  if (shouldFire()) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
 }
