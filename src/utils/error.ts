@@ -27,6 +27,10 @@ const ERROR_MAP: Record<string, string> = {
   'violates foreign key constraint': 'Dữ liệu liên quan không tồn tại',
   'JWT expired': 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại',
 
+  // Feedback rate limit (DB trigger — xem migration feedback_daily_limit_trigger)
+  feedback_daily_limit_exceeded:
+    'Bạn đã gửi tối đa 3 góp ý hôm nay, vui lòng quay lại vào ngày mai',
+
   // Network
   'Failed to fetch': 'Không có kết nối mạng',
   'Network request failed': 'Không có kết nối mạng',

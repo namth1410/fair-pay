@@ -16,7 +16,7 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText, AppTextField, ChipPicker, Money, MoneyTextField } from '../../../../../components/ui';
+import { AppText, AppTextField, ChipPicker, Money, MoneyChipsDock, MoneyTextField } from '../../../../../components/ui';
 import { EXPENSE_CATEGORIES as CATEGORIES, type ExpenseCategory } from '../../../../../config/constants';
 import { fonts } from '../../../../../config/fonts';
 import { useAppTheme } from '../../../../../hooks/useAppTheme';
@@ -90,6 +90,7 @@ export default function NewExpenseScreen() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [savePreset, setSavePreset] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   const presetTitles = useMemo(() => new Set(presets.map((p) => p.title)), [presets]);
@@ -341,6 +342,9 @@ export default function NewExpenseScreen() {
                 placeholder="Số tiền (VND)"
                 value={amountStr}
                 onChangeText={setAmountStr}
+                showSuggestions={false}
+                onFocus={() => setAmountFocused(true)}
+                onBlur={() => setAmountFocused(false)}
                 accessibilityLabel="Số tiền"
               />
 
@@ -514,6 +518,11 @@ export default function NewExpenseScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      <MoneyChipsDock
+        visible={step === 'basic' && amountFocused}
+        amountStr={amountStr}
+        onPick={(amount) => setAmountStr(String(amount))}
+      />
     </SafeAreaView>
   );
 }

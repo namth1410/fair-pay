@@ -1,19 +1,15 @@
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button, useToast } from 'heroui-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { ExpensePreset } from '../../services/preset.service';
 import { usePresetStore } from '../../stores/preset.store';
 import { getErrorMessage } from '../../utils/error';
-import {
-  computeMoneySuggestions,
-  formatThousands,
-  parseMoneyInput,
-} from '../../utils/format';
-import { AppText, ChipPicker } from '../ui';
+import { formatThousands, parseMoneyInput } from '../../utils/format';
+import { AppText, ChipPicker, MoneyChipsDock } from '../ui';
 
 interface PresetFormModalProps {
   isOpen: boolean;
@@ -37,10 +33,12 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
   const [category, setCategory] = useState<ExpenseCategory>('food');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
       setShowInputs(false);
+      setAmountFocused(false);
       return;
     }
     titleRef.current = preset?.title ?? '';
@@ -61,11 +59,6 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
   const handleAmountChange = (text: string) => {
     setAmountStr(parseMoneyInput(text));
   };
-
-  const suggestions = useMemo(
-    () => computeMoneySuggestions(amountStr),
-    [amountStr],
-  );
 
   const handlePickSuggestion = (amount: number) => {
     setAmountStr(String(amount));
@@ -124,6 +117,7 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
           onChange={(index) => setShowInputs(index >= 0)}
         >
           <BottomSheetScrollView
+            style={styles.scrollView}
             contentContainerStyle={styles.container}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -168,6 +162,8 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
                   placeholderTextColor={c.muted}
                   value={formatThousands(amountStr)}
                   onChangeText={handleAmountChange}
+                  onFocus={() => setAmountFocused(true)}
+                  onBlur={() => setAmountFocused(false)}
                   keyboardType="number-pad"
                   returnKeyType="done"
                   onSubmitEditing={handleSubmit}
@@ -189,40 +185,6 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
                   ]}
                 />
               )}
-
-              {suggestions.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  keyboardShouldPersistTaps="always"
-                  contentContainerStyle={styles.suggestionRow}
-                  style={styles.suggestionScroll}
-                >
-                  {suggestions.map((amount) => (
-                    <Pressable
-                      key={amount}
-                      onPress={() => handlePickSuggestion(amount)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Chọn ${formatThousands(amount)} đồng`}
-                      style={[
-                        styles.suggestionChip,
-                        {
-                          backgroundColor: c.accentSoft,
-                          borderColor: c.divider,
-                        },
-                      ]}
-                    >
-                      <AppText
-                        variant="caption"
-                        weight="semibold"
-                        style={{ color: c.primaryStrong }}
-                      >
-                        {formatThousands(amount)}đ
-                      </AppText>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : null}
 
               <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                 Danh mục
@@ -264,6 +226,11 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
             </View>
           </BottomSheetScrollView>
         </BottomSheet.Content>
+        <MoneyChipsDock
+          visible={isOpen && amountFocused}
+          amountStr={amountStr}
+          onPick={handlePickSuggestion}
+        />
       </BottomSheet.Portal>
     </BottomSheet>
   );
@@ -303,19 +270,5 @@ const styles = StyleSheet.create({
   },
   cancelBtn: { flex: 1 },
   submitBtn: { flex: 2 },
-  suggestionScroll: {
-    marginTop: -4,
-  },
-  suggestionRow: {
-    gap: 8,
-    paddingVertical: 2,
-    paddingRight: 8,
-    alignItems: 'center',
-  },
-  suggestionChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
+  scrollView: { flex: 1 },
 });

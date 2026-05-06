@@ -131,6 +131,15 @@ export interface ExpenseImageUploadRow {
   created_at: string;
 }
 
+export interface FeedbackRow {
+  id: string;
+  user_id: string;
+  message: string;
+  app_version: string | null;
+  platform: string | null;
+  created_at: string;
+}
+
 export interface NotificationRow {
   id: string;
   user_id: string;

@@ -24,6 +24,8 @@ interface MoneyTextFieldProps {
   autoFocus?: boolean;
   returnKeyType?: 'done' | 'next' | 'search' | 'go' | 'send';
   onSubmitEditing?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   accessibilityLabel?: string;
 }
 
@@ -38,6 +40,8 @@ export function MoneyTextField({
   autoFocus,
   returnKeyType,
   onSubmitEditing,
+  onFocus,
+  onBlur,
   accessibilityLabel,
 }: MoneyTextFieldProps) {
   const c = useAppTheme();
@@ -69,6 +73,8 @@ export function MoneyTextField({
         autoFocus={autoFocus}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmitEditing}
+        onFocus={onFocus}
+        onBlur={onBlur}
         accessibilityLabel={accessibilityLabel}
       />
       {showSuggestions && suggestions.length > 0 ? (

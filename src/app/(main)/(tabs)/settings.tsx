@@ -1,8 +1,9 @@
 import { Button, useToast } from 'heroui-native';
-import { Pencil } from 'lucide-react-native';
+import { ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
 import {
   AppText,
   AppTextField,
@@ -34,6 +35,7 @@ export default function SettingsScreen() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState(profile?.display_name ?? '');
   const [isSaving, setIsSaving] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const handleSaveName = async () => {
     if (!newName.trim() || !profile) return;
@@ -250,6 +252,37 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* ── Phản hồi ── */}
+        <AppText variant="label" tone="muted" style={styles.sectionTitle}>
+          PHẢN HỒI
+        </AppText>
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+          <Pressable
+            onPress={() => {
+              hapticLight();
+              setFeedbackOpen(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Gửi góp ý"
+            accessibilityHint="Mở form gửi góp ý cho đội phát triển"
+            style={({ pressed }) => [
+              styles.feedbackRow,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <View style={[styles.feedbackIcon, { backgroundColor: c.surfaceAlt }]}>
+              <MessageCircle size={18} color={c.foreground} />
+            </View>
+            <View style={styles.feedbackText}>
+              <AppText variant="body" weight="medium">Gửi góp ý</AppText>
+              <AppText variant="caption" tone="muted">
+                Chia sẻ trải nghiệm hoặc đề xuất tính năng mới
+              </AppText>
+            </View>
+            <ChevronRight size={18} color={c.muted} />
+          </Pressable>
+        </View>
+
         {/* ── Đăng xuất ── */}
         <View style={styles.logoutSection}>
           <Button variant="danger" size="md" onPress={handleSignOut}>
@@ -257,6 +290,8 @@ export default function SettingsScreen() {
           </Button>
         </View>
       </ScrollView>
+
+      <FeedbackSheet isOpen={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </>
   );
 }
@@ -295,4 +330,17 @@ const styles = StyleSheet.create({
   editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
   divider: { height: 1, marginVertical: 14 },
   logoutSection: { marginTop: 28, paddingHorizontal: 4 },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  feedbackIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackText: { flex: 1, minWidth: 0 },
 });

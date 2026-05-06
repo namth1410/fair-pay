@@ -9,7 +9,7 @@ import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
-import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, MoneyTextField, SwipeableCard } from '../ui';
+import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, MoneyChipsDock, MoneyTextField, SwipeableCard } from '../ui';
 
 interface SettlementEntry {
   from: string;
@@ -57,6 +57,7 @@ export const SettlementTab = React.memo(function SettlementTab({
   const [payNote, setPayNote] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null);
   const [busy, setBusy] = useState(false);
+  const [amountFocused, setAmountFocused] = useState(false);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
@@ -92,6 +93,7 @@ export const SettlementTab = React.memo(function SettlementTab({
   }, [busy, payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment, toast]);
 
   return (
+    <View style={styles.flex}>
     <ScrollShadow LinearGradientComponent={LinearGradient}>
     <ScrollView contentContainerStyle={styles.list}>
       {settlements.length > 0 && (
@@ -125,7 +127,15 @@ export const SettlementTab = React.memo(function SettlementTab({
           <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
           <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
 
-          <MoneyTextField placeholder="Số tiền (VND)" value={payAmountStr} onChangeText={setPayAmountStr} accessibilityLabel="Số tiền thanh toán" />
+          <MoneyTextField
+            placeholder="Số tiền (VND)"
+            value={payAmountStr}
+            onChangeText={setPayAmountStr}
+            showSuggestions={false}
+            onFocus={() => setAmountFocused(true)}
+            onBlur={() => setAmountFocused(false)}
+            accessibilityLabel="Số tiền thanh toán"
+          />
           <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" />
 
           {payFrom && payTo && payFrom !== payTo && (
@@ -193,10 +203,17 @@ export const SettlementTab = React.memo(function SettlementTab({
       />
     </ScrollView>
     </ScrollShadow>
+    <MoneyChipsDock
+      visible={showForm && amountFocused}
+      amountStr={payAmountStr}
+      onPick={(amount) => setPayAmountStr(String(amount))}
+    />
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   section: { marginBottom: 24 },
   sectionTitle: { marginBottom: 8 },
   suggestionHint: { marginBottom: 8 },

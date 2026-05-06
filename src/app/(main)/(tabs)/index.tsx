@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CreateJoinSheet } from '../../../components/common/CreateJoinSheet';
+import { WelcomeDialog } from '../../../components/common/WelcomeDialog';
 import { GroupCarousel } from '../../../components/home/GroupCarousel';
 import { GroupRow } from '../../../components/home/GroupRow';
 import { HeroDebt } from '../../../components/home/HeroDebt';
@@ -24,11 +25,13 @@ import {
 } from '../../../components/ui';
 import { SuckTarget, useBlackHole } from '../../../contexts/BlackHoleTransition';
 import { useAppTheme } from '../../../hooks/useAppTheme';
+import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
 import { useUIStore } from '../../../stores/ui.store';
 import { hapticLight } from '../../../utils/haptics';
 import { setHomeViewMode, useHomeViewMode } from '../../../utils/userPreferences';
+import { hasWelcomed, markWelcomed } from '../../../utils/welcomeFlag';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -43,9 +46,31 @@ export default function HomeScreen() {
   const createJoinOpen = useUIStore((s) => s.createJoinOpen);
   const setCreateJoinOpen = useUIStore((s) => s.setCreateJoinOpen);
 
+  const authId = useAuthStore((s) => s.user?.id);
+  const [showWelcome, setShowWelcome] = useState(false);
+
   useEffect(() => {
     loadGroups();
   }, []);
+
+  useEffect(() => {
+    if (!authId) return;
+    let cancelled = false;
+    (async () => {
+      const seen = await hasWelcomed(authId);
+      if (!cancelled && !seen) setShowWelcome(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authId]);
+
+  const handleDismissWelcome = useCallback(() => {
+    setShowWelcome(false);
+    if (authId) {
+      void markWelcomed(authId);
+    }
+  }, [authId]);
 
   // Refresh unread badge mỗi lần home screen focus (polling on focus —
   // không setInterval để tránh drain pin).
@@ -211,6 +236,8 @@ export default function HomeScreen() {
         onOpenChange={setCreateJoinOpen}
         onJoinPending={setJoinPendingGroup}
       />
+
+      <WelcomeDialog isOpen={showWelcome} onClose={handleDismissWelcome} />
     </View>
   );
 }

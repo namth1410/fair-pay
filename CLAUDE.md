@@ -94,6 +94,14 @@ src/
 - Fix: chỉ render input sau khi sheet animate xong qua `onChange={(index) => setShowInput(index >= 0)}` trên `BottomSheet.Content`. `showInput=false` thì render placeholder `View` cùng kích thước input (tránh layout shift). `autoFocus` chỉ chạy khi sheet đã ở snap point ổn định → keyboardBehavior="extend" hoạt động đúng.
 - Snap points + keyboard: `enableDynamicSizing={false}` + `snapPoints={['X%', 'Y%']}` + `keyboardBehavior="extend"` + `keyboardBlurBehavior="restore"` + `android_keyboardInputMode="adjustResize"`. Dynamic sizing không có "đỉnh" để extend → keyboard sẽ che input.
 - Reference implementation: `src/components/common/AddVirtualMemberSheet.tsx`.
+- **ĐỪNG thử workaround sau** (đã verify KHÔNG WORK): thay `BottomSheetTextInput` bằng plain `TextInput` (kết hợp `react-native-keyboard-controller` ở root) → vẫn loạn dấu (bug nằm ở `BottomSheet.useAnimatedKeyboard` re-renders, không chỉ riêng `BottomSheetTextInput`) **và** sheet không extend (gorhom không detect plain TextInput). Giữ pattern uncontrolled-ref.
+
+### Chip gợi ý tiền dock keyboard
+- Pattern: chip render là sibling của `BottomSheet.Content` trong `<BottomSheet.Portal>`, dùng `<KeyboardStickyView offset={{ closed: 0, opened: 0 }}>` từ `react-native-keyboard-controller`. Component này tự dock chip ở mép trên keyboard, animation worklet đồng bộ frame-by-frame, đã handle cross-OEM (Xiaomi MIUI, Oppo, Samsung) — không cần tự tính `kbHeight + insets.bottom`.
+- Track focus của input tiền qua `onFocus`/`onBlur` → render chip có điều kiện `isOpen && amountFocused` để không hiện khi user focus input khác.
+- `KeyboardProvider` đã wrap ở root layout (`src/app/_layout.tsx`) — bắt buộc trước khi dùng bất kỳ API nào của keyboard-controller.
+- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — gõ rỗng → defaults `[50k, 100k, 200k, 500k]`; gõ "12" → `[120k, 1.2tr, 12tr, 120tr]`. Cap ở 999 tỷ.
+- Reference implementation: `src/components/common/PresetFormModal.tsx`.
 
 ### User profile
 - Màn Cài đặt là route `(main)/settings.tsx` — mở bằng `router.push('/settings')` (stack animation `slide_from_right`), KHÔNG còn là BottomSheet.

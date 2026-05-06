@@ -14,6 +14,8 @@ interface AppTextFieldProps {
   autoFocus?: boolean;
   returnKeyType?: 'done' | 'next' | 'search' | 'go' | 'send';
   onSubmitEditing?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   accessibilityLabel?: string;
   maxLength?: number;
 }
@@ -31,6 +33,8 @@ export function AppTextField({
   autoFocus,
   returnKeyType,
   onSubmitEditing,
+  onFocus,
+  onBlur,
   accessibilityLabel,
   maxLength,
 }: AppTextFieldProps) {
@@ -48,6 +52,8 @@ export function AppTextField({
         autoFocus={autoFocus}
         returnKeyType={returnKeyType}
         onSubmitEditing={onSubmitEditing}
+        onFocus={onFocus}
+        onBlur={onBlur}
         maxLength={maxLength}
       />
       {error ? <FieldError>{error}</FieldError> : null}

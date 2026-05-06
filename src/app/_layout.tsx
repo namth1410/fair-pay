@@ -12,6 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { ReducedMotionConfig,ReduceMotion } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Uniwind } from 'uniwind';
@@ -149,6 +150,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: c.background }}>
+      <KeyboardProvider>
       <ReducedMotionConfig mode={ReduceMotion.System} />
       <ErrorBoundary>
         <SafeAreaProvider>
@@ -177,6 +179,7 @@ export default function RootLayout() {
           </HeroUINativeProvider>
         </SafeAreaProvider>
       </ErrorBoundary>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
