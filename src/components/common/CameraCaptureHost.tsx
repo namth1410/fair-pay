@@ -159,13 +159,13 @@ function CameraCaptureScreen() {
             Fair Pay cần camera để chụp ảnh hoá đơn hoặc avatar nhóm.
           </AppText>
           {permission.canAskAgain ? (
-            <Pressable onPress={requestPermission} style={styles.primaryBtn}>
+            <Pressable onPress={requestPermission} style={[styles.primaryBtn, styles.permissionBtn]}>
               <AppText variant="body" weight="semibold" style={styles.primaryBtnText}>
                 Cấp quyền
               </AppText>
             </Pressable>
           ) : (
-            <Pressable onPress={() => Linking.openSettings()} style={styles.primaryBtn}>
+            <Pressable onPress={() => Linking.openSettings()} style={[styles.primaryBtn, styles.permissionBtn]}>
               <AppText variant="body" weight="semibold" style={styles.primaryBtnText}>
                 Mở Cài đặt
               </AppText>
@@ -286,6 +286,7 @@ const styles = StyleSheet.create({
   viewfinder: {
     overflow: 'hidden',
     backgroundColor: '#111111',
+    borderRadius: 24,
   },
   cameraLoading: {
     ...StyleSheet.absoluteFillObject,
@@ -356,6 +357,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
     gap: 16,
+  },
+  permissionBtn: {
+    flex: 0,
+    alignSelf: 'stretch',
+    marginTop: 8,
   },
   whiteText: {
     color: '#FFFFFF',
