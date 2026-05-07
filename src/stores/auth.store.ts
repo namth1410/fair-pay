@@ -33,6 +33,10 @@ interface AuthState {
   setProfile: (profile: UserProfile | null) => void;
 }
 
+// Module-scope subscription handle — guards against double-listener khi
+// `initialize()` bị gọi lại do Fast Refresh / HMR / state reset.
+let authSubscription: { unsubscribe: () => void } | null = null;
+
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
@@ -49,11 +53,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       } = await supabase.auth.getSession();
       set({ session, user: session?.user ?? null, isInitialized: true });
 
-      // Listen for auth state changes (token refresh, sign out, etc.)
-      supabase.auth.onAuthStateChange((_event, session) => {
-        set({ session, user: session?.user ?? null });
-      });
-    } catch {
+      // Listen for auth state changes (token refresh, sign out, etc.).
+      // Idempotent: nếu đã subscribe thì bỏ qua để tránh duplicate listener
+      // (mỗi event sẽ chạy `set` 2-N lần khi Fast Refresh remount RootLayout).
+      if (!authSubscription) {
+        const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+          set({ session, user: session?.user ?? null });
+        });
+        authSubscription = data.subscription;
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('[auth] initialize failed:', e);
       set({ isInitialized: true });
     }
   },
@@ -170,5 +180,21 @@ export const useAuthStore = create<AuthState>((set) => ({
     await supabase.auth.signOut();
     clearAuthCache();
     set({ session: null, user: null, profile: null });
+
+    // Reset cross-store state để tránh data leak khi user khác đăng nhập trên
+    // cùng app instance. Lazy require để tránh circular import (các store khác
+    // có thể import từ services dùng auth.store).
+    try {
+      const { useGroupStore } = require('./group.store');
+      const { useTripStore } = require('./trip.store');
+      const { useNotificationStore } = require('./notification.store');
+      const { usePresetStore } = require('./preset.store');
+      useGroupStore.getState().reset();
+      useTripStore.getState().reset();
+      useNotificationStore.getState().reset();
+      usePresetStore.getState().reset();
+    } catch (e) {
+      if (__DEV__) console.warn('[auth] cross-store reset failed:', e);
+    }
   },
 }));

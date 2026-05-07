@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Share, StyleSheet, View } from 'react-native';
 import type { EntryAnimationsValues } from 'react-native-reanimated';
 import Animated, { withTiming } from 'react-native-reanimated';
+import { useShallow } from 'zustand/react/shallow';
 
 import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
 import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
@@ -43,14 +44,37 @@ export default function GroupDetailScreen() {
   const c = useAppTheme();
   const { toast } = useToast();
 
+  // Selectors gộp qua useShallow — chỉ re-render khi shape của object subscribe đổi,
+  // tránh re-render theo các field không liên quan (vd `balanceSummary`).
   const {
     groups, currentGroupMembers, pendingJoinRequests,
     loadMembers, loadPendingRequests, approveRequest, rejectRequest,
     kickMember, removeGroup,
-  } = useGroupStore();
-  const { trips, isLoading: tripsLoading, loadTrips, addTrip, toggleTripStatus } =
-    useTripStore();
-  const { user } = useAuthStore();
+  } = useGroupStore(
+    useShallow((s) => ({
+      groups: s.groups,
+      currentGroupMembers: s.currentGroupMembers,
+      pendingJoinRequests: s.pendingJoinRequests,
+      loadMembers: s.loadMembers,
+      loadPendingRequests: s.loadPendingRequests,
+      approveRequest: s.approveRequest,
+      rejectRequest: s.rejectRequest,
+      kickMember: s.kickMember,
+      removeGroup: s.removeGroup,
+    }))
+  );
+  const {
+    trips, tripsLoading, loadTrips, addTrip, toggleTripStatus,
+  } = useTripStore(
+    useShallow((s) => ({
+      trips: s.trips,
+      tripsLoading: s.isLoading,
+      loadTrips: s.loadTrips,
+      addTrip: s.addTrip,
+      toggleTripStatus: s.toggleTripStatus,
+    }))
+  );
+  const user = useAuthStore((s) => s.user);
 
   const [tab, setTab] = useState<Tab>('trips');
   const prevTabRef = useRef<Tab>(tab);

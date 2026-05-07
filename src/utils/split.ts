@@ -271,6 +271,11 @@ export function validateSplits(
   total: number,
   splits: SplitResult[]
 ): string | null {
+  // BR-01: amount luôn là số nguyên (đơn vị VND). Chặn float trước sum check
+  // để không che bug round (vd 33.5 + 33.5 = 67 đúng nhưng từng phần không hợp lệ).
+  if (splits.some((s) => !Number.isFinite(s.amount) || !Number.isInteger(s.amount))) {
+    return 'Số tiền chia phải là số nguyên';
+  }
   const sum = splits.reduce((acc, s) => acc + s.amount, 0);
   if (sum !== total) {
     return `Tổng chia (${sum.toLocaleString('vi-VN')}đ) khác tổng khoản chi (${total.toLocaleString('vi-VN')}đ)`;

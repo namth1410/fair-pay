@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const CREATE_TABLES = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -8,7 +8,7 @@ export const CREATE_TABLES = [
     email TEXT UNIQUE NOT NULL,
     photo_url TEXT,
     fcm_token TEXT,
-    settings TEXT DEFAULT '{"dark_mode":"system","notify_expense":true,"notify_reminder":true}',
+    settings TEXT DEFAULT '{"dark_mode":"system","notify_activity":true,"notify_payment":true,"notify_member":true,"notify_smart":true,"haptics_enabled":true,"animations_enabled":true}',
     created_at TEXT DEFAULT (datetime('now'))
   )`,
 
@@ -133,9 +133,19 @@ export const CREATE_TABLES = [
     amount INTEGER NOT NULL CHECK (amount > 0),
     category TEXT NOT NULL CHECK (category IN ('food','transport','accommodation','fun','shopping','other')),
     created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(user_id, title),
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`,
+
+  // Trigger: refresh updated_at mỗi lần UPDATE — service `preset.service.ts`
+  // sort theo updated_at DESC nên cần đồng bộ với behavior Postgres.
+  `CREATE TRIGGER IF NOT EXISTS trg_expense_presets_updated_at
+   AFTER UPDATE ON expense_presets
+   FOR EACH ROW
+   BEGIN
+     UPDATE expense_presets SET updated_at = datetime('now') WHERE id = OLD.id;
+   END`,
 
   // Local-only: sync queue
   `CREATE TABLE IF NOT EXISTS sync_queue (

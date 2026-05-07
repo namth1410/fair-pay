@@ -43,6 +43,7 @@ interface GroupState {
   setGroupAvatar: (groupId: string, avatarUrl: string | null) => void;
   setGroupName: (groupId: string, name: string) => void;
   editGroupName: (groupId: string, name: string) => Promise<void>;
+  reset: () => void;
 }
 
 const EMPTY_SUMMARY: BalanceSummary = { total: 0, groupBalances: {} };
@@ -145,4 +146,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     await updateGroup(groupId, { name });
     get().setGroupName(groupId, name);
   },
+
+  reset: () =>
+    set({
+      groups: [],
+      currentGroupMembers: [],
+      pendingJoinRequests: [],
+      balanceSummary: EMPTY_SUMMARY,
+      isLoading: false,
+    }),
 }));

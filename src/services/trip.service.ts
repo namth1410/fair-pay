@@ -1,7 +1,9 @@
 import { supabase } from '../config/supabase';
 import { validateName } from '../utils/validate';
+import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
 import { assertRole } from './group.service';
+import { notifyTripClosed } from './notification.service';
 
 export interface Trip {
   id: string;
@@ -49,6 +51,16 @@ export async function createTrip(
     .single();
 
   if (error) throw error;
+
+  // Audit (best-effort) — trip.create không phát notify (nhóm chưa có activity)
+  await logAction({
+    groupId,
+    tripId: data.id,
+    action: 'trip.create',
+    targetId: data.id,
+    afterData: { name, type },
+  });
+
   return data;
 }
 
@@ -56,7 +68,7 @@ export async function createTrip(
 export async function closeTrip(tripId: string): Promise<void> {
   const { data: trip, error: fetchErr } = await supabase
     .from('trips')
-    .select('group_id')
+    .select('group_id, name')
     .eq('id', tripId)
     .single();
   if (fetchErr || !trip) throw new Error('Chuyến đi không tồn tại');
@@ -68,13 +80,40 @@ export async function closeTrip(tripId: string): Promise<void> {
     .eq('id', tripId);
 
   if (error) throw error;
+
+  // Audit + notify (best-effort)
+  const userId = await getAuthUserId();
+  if (!userId) return;
+  const { data: actor } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle();
+  const actorName = actor?.display_name || 'Thành viên';
+  await Promise.all([
+    logAction({
+      groupId: trip.group_id,
+      tripId,
+      action: 'trip.close',
+      targetId: tripId,
+      beforeData: { name: trip.name, status: 'open' },
+      afterData: { status: 'closed' },
+    }),
+    notifyTripClosed({
+      groupId: trip.group_id,
+      tripId,
+      tripName: trip.name,
+      actorId: userId,
+      actorName,
+    }),
+  ]);
 }
 
 /** Reopen a trip */
 export async function reopenTrip(tripId: string): Promise<void> {
   const { data: trip, error: fetchErr } = await supabase
     .from('trips')
-    .select('group_id')
+    .select('group_id, name')
     .eq('id', tripId)
     .single();
   if (fetchErr || !trip) throw new Error('Chuyến đi không tồn tại');
@@ -86,4 +125,14 @@ export async function reopenTrip(tripId: string): Promise<void> {
     .eq('id', tripId);
 
   if (error) throw error;
+
+  // Audit (best-effort) — reopen không phát notify
+  await logAction({
+    groupId: trip.group_id,
+    tripId,
+    action: 'trip.reopen',
+    targetId: tripId,
+    beforeData: { name: trip.name, status: 'closed' },
+    afterData: { status: 'open' },
+  });
 }

@@ -93,11 +93,11 @@ export default function TripDetailScreen() {
     });
   }, [tripId]);
 
-  if (!tripId) return null;
-
   useEffect(() => {
     if (trip?.group_id) loadMembers(trip.group_id);
   }, [trip?.group_id]);
+
+  if (!tripId) return null;
 
   const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history'];
   const tabIdx = TAB_KEYS.indexOf(tab);

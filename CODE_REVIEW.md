@@ -1,281 +1,481 @@
-# Code Review — Fair Pay (branch `main`)
+# Code Review — Fair Pay
 
-**Phạm vi:** Review toàn bộ thay đổi chưa commit trên branch `main` (≈1.214 dòng thêm / 682 dòng xoá, trải đều ở 44 file đã sửa + 32 file mới).
-
-**Trạng thái build:**
-- `npx jest` — **PASS** (10 suites, 167 tests).
-- `npx tsc --noEmit` — **PASS** (exit 0).
-
-**Severity:** `[blocking]` phải fix trước khi merge · `[important]` nên fix · `[nit]` cosmetic · `[suggestion]` đề xuất · `[praise]` làm tốt.
+> Báo cáo review toàn bộ repository ngày 2026-05-07.
+> Phạm vi: `src/` (~23.000 LOC, 149 file TS/TSX) + config + db schema + supabase migrations.
+> Phương pháp: 5 agent chuyên trách review song song theo layer (services / stores / utils & tests / components & screens / config & db).
+>
+> **Cập nhật 2026-05-07:** Đã fix 9/10 finding `[blocking]` (3.1–3.9) + 4 finding `[important]` (4.1, 4.9, 4.10, 4.12). Còn lại 1 `[blocking]` (`splitByRatio` clamp) và 16 `[important]` + 22 `[nit]`.
 
 ---
 
 ## 1. Tổng quan
 
-Branch giới thiệu một loạt feature lớn:
-- **Hệ thống notification** đầy đủ (service + store + UI + 11 type + dedup window 10 phút).
-- **GlassCapsuleHeader** mới với physics simulation (Skia + Reanimated + sensor).
-- **FancyToast** wrapper thay thế `useToast` HeroUI raw, kèm 12 Skia effect.
-- **GroupCarousel** trên home với toggle list/carousel.
-- **BlackHoleTransition / LightningTransition / SplashScene** — animation context.
-- **Preset khoản chi** đã có route quản lý riêng.
-- **MoneyTextField** + `userPreferences` (haptics/animations/homeViewMode) + nhiều util thuần (`capsuleMath`, `explainBalance`, `notificationFormat`, `lightning`).
+Codebase Fair Pay được tổ chức **rất tốt**, tuân thủ phần lớn quy ước trong `CLAUDE.md`:
 
-Chất lượng kiến trúc tổng thể tốt: phân lớp rõ (math thuần → physics hook → render), test coverage cho utils mới đầy đủ, tôn trọng `animations_enabled` lan đến mọi Skia primitive, fancyToast wrapper được callsite tuân thủ đúng (không phát hiện vi phạm). Tuy nhiên có **một số lỗ hổng quan trọng cần xử lý trước khi ship**, đặc biệt là gap về audit log (`trip.close`/`reopen`), schema SQLite chưa migrate, dev-panel còn trên home production và một số race/cleanup trong physics + animation context.
+- Pattern uncontrolled-ref + delayed mount cho `BottomSheetTextInput` áp dụng nhất quán (không lặp bug IME tiếng Việt).
+- Auth helper `getAuthUserId()` 30s-cache + `clearAuthCache()` được dùng đúng trong service layer.
+- Validate input (`validateAmount`, `validateName`) ở boundary, có `assertRole` ở các mutation `group.service.ts`.
+- TypeScript strict, `no-explicit-any` ở ESLint, không tìm thấy `: any` trong service.
+- Edge Function có error wrapper, R2 helper defensive.
+- Notification dedup logic tách riêng utils, có unit test pure.
+- Test coverage tốt cho utils (split, settlement, balance, validate, format, notification).
 
-### Bảng điểm theo module
-
-| Module | Điểm | Ghi chú |
-|---|---|---|
-| `services/notification.service.ts` (mới, 611 dòng) | 8/10 | Architecture đẹp, dedup hợp lý, `formatNotificationTitle` pure. Cần thêm filter `trip_id` cho dedup, recipient guard khi RLS chặn. |
-| `services/group.service.ts` (sửa) | 8/10 | Đúng pattern `assertRole` + audit. Có vài N+1 query có thể gom. |
-| `services/user.service.ts` (sửa) | 6/10 | Thiếu migration legacy `notify_expense/notify_reminder` → user cũ revert default. |
-| `stores/trip.store.ts` (sửa) | 6/10 | `toggleTripStatus` thiếu `logAction` cho close/reopen (vi phạm rule). |
-| `stores/notification.store.ts` (mới) | 7/10 | `markAsRead` race khi tính `unreadCount`. Cursor `created_at` có thể duplicate. |
-| `stores/auth.store.ts` (sửa) | 7/10 | `signOut` không reset `notification.store` → flash data user cũ ở user mới. |
-| `utils/capsuleMath.ts` (mới) | 9/10 | Pure, có `'worklet'`, test đầy đủ. Thiếu guard `innerR <= 0`. |
-| `utils/userPreferences.ts` (mới) | 7/10 | Top-level `useAuthStore.subscribe` chạy ở module load — khó test, không cleanup. |
-| `utils/notificationFormat.ts` (mới) | 8/10 | Pure, test đầy đủ. Edge case `amount=undefined` với payment chưa cover. |
-| `utils/format.ts` (sửa) | 8/10 | `formatThousands` mất dấu âm, `parseInt` precision. |
-| `app/(main)/index.tsx` (sửa) | 5/10 | `ToastTestPanel` chưa wrap `__DEV__`; `ScrollView` thay `FlatList` mất virtualization; `SuckTarget` snapshot toàn bộ list. |
-| `app/(main)/notifications.tsx` (mới) | 7/10 | List perf tốt, nhưng empty state không phân biệt filter, deeplink chưa map theo type, swipe-delete không undo/confirm. |
-| `app/(main)/settings.tsx` (sửa) | 7/10 | `newName` không sync khi profile đến sau mount; route animation đổi sang `fade` đi ngược CLAUDE.md. |
-| `components/header/*` (mới) | 6/10 | Architecture sạch, nhưng `frameCallback` cleanup có điều kiện sai, `slots.titleBall` reset state mỗi render, `frameCallback.isActive` không tồn tại. |
-| `components/ui/fancyToast/*` (mới) | 8/10 | Wrapper đúng spec, ring buffer per-variant gọn. Vài Skia background re-mount do palette không memo. |
-| `components/notifications/*` (mới) | 8/10 | Avatar+icon overlay UX tốt, virtualization tuned. Swipe-delete thiếu safety net. |
-| `contexts/BlackHoleTransition.tsx` (mới) | 6/10 | `setTimeout(onCovered, 1300)` không cleanup khi unmount → callback firing trên route đã unmount. |
+Sau đợt fix 2026-05-07, mọi mutation expense/payment/trip đã có `assertRole` + audit log + notify ở service layer, schema SQLite đồng bộ với types, signOut reset cross-store, conditional hook violation đã được sửa.
 
 ---
 
-## 2. Vấn đề cần xử lý trước merge — `[blocking]`
+## 2. Bảng đánh giá theo module
 
-### 2.1. ✋ `ToastTestPanel` còn render trên home production
-[src/app/(main)/index.tsx:18,136](src/app/(main)/index.tsx#L18)
+| Module | Điểm | Mức độ rủi ro | Ghi chú |
+|---|---|---|---|
+| `src/services/` | 9/10 | Thấp | Đã thêm `assertRole` + audit/notify cho expense/payment/trip + filter `group_id` join_requests. Còn race dedup notification (4.2) |
+| `src/stores/` | 8/10 | Thấp | Đã reset cross-store khi logout + idempotent listener. Còn race trong loadXxx |
+| `src/utils/` | 8/10 | Trung bình | `splitByRatio` clamp gây sum < total **(còn `[blocking]`)**. Đã fix `validateSplits` integer guard + `validateName` filter ký tự ẩn |
+| `src/__tests__/` | 8/10 | Thấp | Coverage tốt cho happy path. Đã thêm test cho control-char/zero-width name. Thiếu edge case orphan / NaN |
+| `src/components/` & `src/app/` | 8/10 | Thấp | Đã fix conditional hook + selector pattern ở `groups/[id].tsx`. Còn setTimeout không cleanup trong context transitions |
+| `src/config/` & `src/db/` | 8/10 | Thấp | Đã bump SCHEMA_VERSION 2, thêm `updated_at` + trigger, fix settings JSON default. Còn schema mismatch nhiều bảng + RLS không track |
+| Tooling (`tsconfig`, `eslint`, `package.json`) | 8/10 | Thấp | Thiếu `eslint-plugin-react-hooks`, dep version pinning chưa nhất quán |
+| **Tổng** | **8.3/10** | **Thấp–Trung bình** | Sau fix đợt 1+2, code đã sẵn sàng cho production. Còn 1 `[blocking]` về tính đúng của split + 16 `[important]` cần xử lý |
 
-```tsx
-import { ToastTestPanel } from '../../components/home/ToastTestPanel';
-...
-<ToastTestPanel />
+---
+
+## 3. Findings ưu tiên cao — phải fix trước
+
+> Các finding `[blocking]` dưới đây ảnh hưởng **bảo mật, tính đúng đắn dữ liệu, hoặc rules-of-hooks**. Cần xử lý trước khi release tiếp theo.
+>
+> 9 finding `[blocking]` đã fix trong commit 2026-05-07 (createExpense/createPayment assertRole, audit+notify wiring cho expense/payment/trip, user.service dùng getAuthUserId, signOut reset cross-store, onAuthStateChange unsubscribe, conditional hook ở trips/[id], expense_presets.updated_at + trigger, settings JSON default keys mới + migration v2).
+
+### `[blocking]` 3.1 — `splitByRatio` clamp khiến tổng < `total` (vi phạm BR-02)
+
+**File:** [src/utils/split.ts:200-209](src/utils/split.ts)
+
+Khi nhiều người round-up làm `remaining < 0`, người cuối nhận `Math.max(0, remaining)` → tổng splits **thiếu so với `total`**. Test chính thừa nhận điều này (`split.test.ts:455` — `expect(sum).toBeLessThanOrEqual(10000)`). Nếu UI gọi `validateSplits` ngay sau, sẽ báo "Tổng chia khác tổng khoản chi" → block user. Balance cũng lệch.
+
+**Fix:** Khi `remaining < 0`, "rút" 1.000đ từ các người round-up nhiều nhất (largest remainder method) cho đến khi cân; hoặc scale lại tỷ lệ rounding cho `n-1` người đầu.
+
+---
+
+## 4. Findings quan trọng — nên fix sớm
+
+### ~~`[important]` 4.1 — `rejectJoinRequest` thiếu filter `groupId` (cross-tenant)~~ ✅ Đã fix 2026-05-07
+
+Đã thêm `.eq('group_id', groupId)` vào fetch + update của cả `approveJoinRequest` và `rejectJoinRequest` ([src/services/group.service.ts](src/services/group.service.ts)). Chặn cross-tenant spoof khi admin nhóm A truyền `requestId` của nhóm B.
+
+### `[important]` 4.2 — `createNotifications` race condition trong dedup
+
+**File:** [src/services/notification.service.ts:122-211](src/services/notification.service.ts)
+
+Dedup logic: SELECT → tách update/insert → execute. Hai event cùng `(group, type, actor, user)` chạy concurrent đều SELECT empty → cả hai INSERT → có 2 row chưa đọc cùng dedup key → bypass dedup window 10 phút. User thấy 2 notif "đã thêm 1 khoản chi" thay vì 1 notif "đã thêm 2".
+
+**Fix:** Tạo UNIQUE INDEX partial trên `(user_id, group_id, type, actor_id) WHERE read_at IS NULL` + dùng `ON CONFLICT DO UPDATE` để gộp atomic. Hoặc move dedup vào server-side RPC.
+
+### `[important]` 4.3 — Mutation không check `groups.deleted_at IS NULL`
+
+**File:** [src/services/group.service.ts:356](src/services/group.service.ts) và các mutation khác (`createTrip`, `updateGroup`, `addVirtualMember`)
+
+`assertRole` chỉ check membership active, không check group active. Admin có thể (do bug UI hoặc malicious) thao tác trên nhóm đã xóa.
+
+**Fix:** Thêm helper `assertGroupActive(groupId)` hoặc join `groups` trong `assertRole` để check `deleted_at IS NULL`.
+
+### `[important]` 4.4 — Race condition trong `loadExpenses`/`loadTrips` dùng chung `isLoading`
+
+**File:** [src/stores/trip.store.ts:97-105](src/stores/trip.store.ts)
+
+Cùng flag `isLoading` chia sẻ giữa `loadTrips`/`loadExpenses`. Action xong trước reset flag → spinner UI biến mất sớm. Đồng thời "stale-response overwrite": nếu user navigate trip khác trong khi load đang chạy, response cũ về sau ghi đè state hiện tại.
+
+**Fix:** Track request ID hoặc tách `isLoadingTrips`/`isLoadingExpenses` riêng:
+```ts
+let currentReq = 0;
+loadExpenses: async (tripId) => {
+  const reqId = ++currentReq;
+  const expenses = await fetchExpenses(tripId);
+  if (reqId !== currentReq) return; // bị superseded
+  set({ currentExpenses: expenses });
+}
 ```
 
-Đây là dev panel test 12 effect Skia. Ship lên user → mọi user thấy panel debug ngay đầu home. **Fix:** `{__DEV__ && <ToastTestPanel />}` hoặc xoá hẳn.
+### `[important]` 4.5 — `loadBalances` luôn fetch lại expenses+payments → N+1 round-trip
 
-### 2.2. ✋ Schema SQLite vẫn dùng key cũ `notify_expense/notify_reminder`
-[src/db/schema.ts:11](src/db/schema.ts#L11)
+**File:** [src/stores/trip.store.ts:176](src/stores/trip.store.ts)
 
-```sql
-settings TEXT DEFAULT '{"dark_mode":"system","notify_expense":true,"notify_reminder":true}'
+Sau mỗi `addExpense`/`removeExpense`/`addPayment`/`removePayment`:
+```ts
+await get().loadExpenses(tripId);
+await get().loadBalances(tripId);  // calculateBalances cũng fetch expenses+payments
+```
+→ 3-5 round-trip Supabase tuần tự. Nên `Promise.all` hoặc compute balance từ state hiện có.
+
+### `[important]` 4.6 — Optimistic update notification không rollback khi API fail
+
+**File:** [src/stores/notification.store.ts:99](src/stores/notification.store.ts)
+
+`markAsRead`, `markAllAsRead`, `remove` set optimistic rồi swallow error trong `catch {}`. UI hiển thị đã đọc/đã xóa nhưng server vẫn unread → lần `refresh` kế tiếp item nhảy lại → flicker. `remove()` còn nguy hiểm hơn — user nghĩ đã xóa nhưng vẫn còn.
+
+**Fix:** Snapshot trước khi set rồi rollback trong catch, hoặc trigger `get().refresh()` trong catch.
+
+### `[important]` 4.7 — `setTimeout` trong context transitions không cleanup
+
+**Files:**
+- [src/contexts/BlackHoleTransition.tsx:595-637](src/contexts/BlackHoleTransition.tsx) — 4 timeouts (80ms, 1300ms, 1450ms, 600ms)
+- [src/contexts/MorphTransition.tsx:264](src/contexts/MorphTransition.tsx)
+
+Khi provider unmount giữa transition (vd logout while animating), callback chạy gọi `setIsSucking`, `setPieces`, `o.onCovered()` → React warning "Can't perform state update on unmounted". `o.onCovered()` thường gọi `router.push` → navigate trên router đã unmount.
+
+**Fix:** Lưu IDs vào `useRef<number[]>([])`, push tất cả timeouts, clear trong cleanup. Dùng `cancelAnimation()` cho Reanimated shared values.
+
+### `[important]` 4.8 — `balance.ts` bỏ qua orphan member im lặng → tổng ≠ 0
+
+**File:** [src/utils/balance.ts:53-62](src/utils/balance.ts)
+
+`if (split.memberId in balanceMap)` → nếu split trỏ tới member đã rời nhóm/bị xóa khỏi `members` mảng truyền vào, code bỏ qua. Hệ quả: payer được +amount đầy đủ, splits bị mất → total ≠ 0 (vi phạm TC-05). Tương tự với `paidBy` không có trong members.
+
+**Fix:** Hoặc throw lỗi rõ ràng, hoặc luôn include "ghost" member để cân bằng. Tối thiểu log warning.
+
+### ~~`[important]` 4.9 — `validateSplits` không check `Number.isInteger`~~ ✅ Đã fix 2026-05-07
+
+Đã thêm guard `Number.isFinite + Number.isInteger` ở đầu `validateSplits` ([src/utils/split.ts](src/utils/split.ts)) trước khi check sum, để chặn float/NaN/Infinity.
+
+### ~~`[important]` 4.10 — `validateName` không filter control char / zero-width~~ ✅ Đã fix 2026-05-07
+
+Đã thêm 2 regex `CONTROL_CHAR_RE` (C0 + DEL/C1) và `ZERO_WIDTH_RE` (ZWSP/ZWNJ/ZWJ + BOM) trong [src/utils/validate.ts](src/utils/validate.ts), kèm 2 test case mới trong [src/__tests__/validate.test.ts](src/__tests__/validate.test.ts).
+
+### `[important]` 4.11 — SQLite migrations không atomic
+
+**File:** [src/db/migrations.ts:11-25](src/db/migrations.ts)
+
+`runMigrations` chạy `migration.up()` và INSERT version trong 2 statement riêng — không bọc transaction. Nếu app crash giữa 2 bước, version không ghi nhưng `up()` đã chạy → lần boot sau chạy lại migration gây lỗi.
+
+**Fix:** `db.withTransactionAsync(async () => { await up(db); await runAsync(...) })`.
+
+### ~~`[important]` 4.12 — `useGroupStore()` không selector → re-render mọi field~~ ✅ Đã fix 2026-05-07
+
+Đã refactor [src/app/(main)/groups/[id].tsx](src/app/(main)/groups/[id].tsx) sang `useShallow` (zustand v5 built-in `zustand/react/shallow`) cho cả `useGroupStore` + `useTripStore`, và selector trực tiếp cho `useAuthStore.user`. Component chỉ re-render khi shape của object subscribe đổi, không còn react theo `balanceSummary`/`isLoading` không liên quan.
+
+### `[important]` 4.13 — ErrorBoundary không có `componentDidCatch`
+
+**File:** [src/components/common/ErrorBoundary.tsx:87-106](src/components/common/ErrorBoundary.tsx)
+
+Chỉ có `getDerivedStateFromError`, không log/report. Crash production không được capture → dev không biết user gặp gì.
+
+**Fix:**
+```ts
+componentDidCatch(error, info) {
+  console.error('[ErrorBoundary]', error, info.componentStack);
+  // Hoặc tích hợp Sentry/Crashlytics nếu có
+}
 ```
 
-CLAUDE.md đã ghi rõ "KHÔNG còn legacy `notify_expense`/`notify_reminder`". UI mới dùng `notify_activity / notify_payment / notify_member / notify_smart / haptics_enabled / animations_enabled`. User tạo profile lần đầu (offline path) sẽ có settings sai shape. **Fix:** đồng bộ default JSON + thêm migration trong [src/db/migrations.ts](src/db/migrations.ts) để rename key cho user cũ.
+### `[important]` 4.14 — Schema mismatch nhiều bảng SQLite vs Postgres types
 
-### 2.3. ✋ Migration runtime cho settings cũ trên Postgres
-[src/services/user.service.ts:70](src/services/user.service.ts#L70) (vùng `fetchCurrentUser`)
+**File:** [src/db/schema.ts](src/db/schema.ts) vs [src/types/database.types.ts:118-167](src/types/database.types.ts)
 
-User đã từng tắt `notify_expense=false` trên DB sẽ bị merge thành `{ notify_expense:false, notify_activity:true (default) }`. → **Default `true` xâm phạm consent**: user đã từng opt-out có thể bị bật lại notification. **Fix:** trong `fetchCurrentUser`:
+`NotificationRow`, `FeedbackRow`, `GroupAvatarUploadRow`, `ExpenseImageUploadRow` được khai báo TypeScript nhưng KHÔNG có CREATE TABLE trong SQLite. Nếu code có local query đến các bảng này (cache offline) sẽ fail. `_schema_version` định nghĩa `version PRIMARY KEY` → INSERT lần 2 cùng version sẽ unique constraint fail.
+
+**Fix:** Xác định rõ bảng nào local-only, bảng nào server-only. Bảng server-only thì tách type sang `database.server.types.ts`. Đổi `_schema_version` thành `INSERT OR IGNORE`.
+
+### `[important]` 4.15 — `is_virtual` type lệch giữa Postgres (bool) và SQLite (0/1)
+
+**File:** [src/types/database.types.ts:31](src/types/database.types.ts)
+
+Type chỉ khai báo `is_virtual: number`. Data Supabase trả `boolean`, SQLite raw trả `0|1`. CLAUDE.md cảnh báo nhưng type vẫn chưa phản ánh union.
+
+**Fix:** Đổi thành `is_virtual: boolean | number` hoặc tách `GroupMemberRowSqlite` vs `GroupMemberRowPg`.
+
+### `[important]` 4.16 — Race trong `reset-password.tsx` giữa parser & timeout
+
+**File:** [src/app/(auth)/reset-password.tsx:128-133](src/app/(auth)/reset-password.tsx)
+
+Timeout 3s set state `invalid` nếu chưa `handledRef.current=true`. Nếu link chậm về (>3s), user thấy `invalid` thoáng qua rồi `handle` resolve `ok` cũng không update do `handledRef.current=true` set sau khi state đã invalid.
+
+**Phụ:** dòng 107 `if (session) await supabase.auth.signOut();` — log out user dù URL không hợp lệ, gây bất tiện.
+
+**Fix:** Trong `handle()` khi `result.ok`, kiểm tra `if (!cancelled)` rồi set ref + state. Đặt `signOut` SAU khi token được verify hợp lệ.
+
+### `[important]` 4.17 — `approveJoinRequest` race khi 2 admin cùng duyệt
+
+**File:** [src/services/group.service.ts:224-299](src/services/group.service.ts)
+
+Logic: fetch `status='pending'` → check oldMember → update OR insert → update `status='approved'`. Hai admin cùng chạy có thể double-fire `logAction` + `notifyJoinResolved` (spam notification kép).
+
+**Fix:** Update cuối thêm `.eq('status', 'pending')`, kiểm tra `count > 0` trước khi log/notify. Lý tưởng nhất chuyển vào RPC/transaction.
+
+### `[important]` 4.18 — `themeTransition.ts` import Uniwind ở module level
+
+**File:** [src/utils/themeTransition.ts:2](src/utils/themeTransition.ts)
+
+Không có guard cho web/test. Component test transitive import file này sẽ fail vì uniwind không setup ở jest.
+
+**Fix:** Lazy import hoặc mock Uniwind ở `jest.setup`.
+
+### `[important]` 4.19 — RLS policies không có trong code
+
+**File:** [supabase/migrations/](supabase/migrations/)
+
+Chỉ có 1 migration SQL (`20260501_add_expense_image.sql`) — chỉ ENABLE RLS không CREATE POLICY. Các bảng quan trọng khác (`groups`, `expenses`, `payments`, `notifications`, `users`, `expense_presets`) — RLS được set thủ công trên Dashboard, không track trong code → nguy cơ lệch giữa môi trường, không có audit/diff được.
+
+**Fix:** `supabase db dump --schema public > supabase/migrations/0001_initial.sql` để có baseline.
+
+### `[important]` 4.20 — `SecureStore` adapter không xử lý platform web
+
+**File:** [src/config/supabase.ts:6-16](src/config/supabase.ts)
+
+`expo-secure-store` không support web → build web (script `expo start --web` có trong package.json) sẽ crash khi `getItemAsync`.
+
+**Fix:** Detect `Platform.OS === 'web'` → fallback `localStorage` adapter, hoặc bỏ web script.
+
+---
+
+## 5. Findings nhỏ — fix sau
+
+### `[nit]` 5.1 — Memo & re-render
+
+- [src/components/trip/ExpensesTab.tsx:84-93](src/components/trip/ExpensesTab.tsx) — `renderItem` inline, `getMemberName` không memo. Pre-index `members` thành Map qua `useMemo`, tách `renderExpense = useCallback(...)`.
+- [src/components/trip/SettlementTab.tsx:62-63](src/components/trip/SettlementTab.tsx) — `members.map(...)` không memo → ChipPicker re-render thừa.
+- [src/components/trip/BalancesTab.tsx:30](src/components/trip/BalancesTab.tsx) — `handleExport` không memo (trivial).
+- [src/app/(main)/(tabs)/index.tsx:140-146](src/app/(main)/(tabs)/index.tsx) — inline closure `onPress={() => blackHole.suck(...)}` trong `.map()` → bypass memo nếu list lớn.
+
+### `[nit]` 5.2 — `splitEqualWithExplanation`: text "trừ bớt" / "cộng thêm" sai dấu
+
+**File:** [src/utils/split.ts:120-126](src/utils/split.ts)
+
+So sánh `total - rounded*n` thay vì `lastAmount - roundedPerPerson` → text hiển thị ngược nghĩa với hành vi thực khi `lastAmount > roundedPerPerson`.
+
+### `[nit]` 5.3 — Settlement adjust last có thể tạo amount không bội 1.000đ
+
+**File:** [src/utils/settlement.ts:66-78](src/utils/settlement.ts)
+
+Edge case: input balance không bội 1000 (`333333, -166666, -166667`). Nên `Math.round((totalDebt - totalSettlement) / 1000) * 1000` để đảm bảo `diff % 1000 === 0`.
+
+Đồng thời: `adjusted` có thể về `0` → bỏ qua không cập nhật → giao dịch cuối còn 1000đ trong khi tổng debt = 0 → over-pay.
+
+### `[nit]` 5.4 — `explainBalance.ts` dùng `find` thay vì cộng dồn duplicate splits
+
+**File:** [src/utils/explainBalance.ts:72](src/utils/explainBalance.ts)
+
+`splits.find(...)` chỉ lấy entry đầu tiên. Nếu data có 2 entry cùng member (data corruption), `myShare` sai. `computeBalances` thì cộng cả 2 → lệch giữa hai hàm.
+
+**Fix:** `splits.filter(...).reduce(...)`.
+
+### `[nit]` 5.5 — `formatVND(-150_000)` ra `"-150.000đ"` không cảnh báo
+
+**File:** [src/utils/format.ts:6-8](src/utils/format.ts)
+
+Spec amount luôn dương, nên có thể `Math.abs()` hoặc throw để bắt bug sớm.
+
+### `[nit]` 5.6 — `r2.ts` không strip query string / fragment
+
+**File:** [src/utils/r2.ts:12-13](src/utils/r2.ts)
+
+Nếu publicUrl có `?v=abc` (cache buster), key extract chứa cả query string → backend delete fail.
+
+### `[nit]` 5.7 — `forgot-password.tsx` cooldown effect deps khó đọc
+
+**File:** [src/app/(auth)/forgot-password.tsx:53](src/app/(auth)/forgot-password.tsx)
+
+`useEffect(..., [cooldown > 0])` boolean expression làm dep — confuse, khó audit. Đổi sang `[cooldown]` với `useRef` cho interval ID.
+
+### `[nit]` 5.8 — `register.tsx` không dùng `validateName` từ utils
+
+**File:** [src/app/(auth)/register.tsx:33-54](src/app/(auth)/register.tsx)
+
+Tự check inline 2-50 chars thay vì gọi shared `validateName`. Reuse để nhất quán, đồng thời nhận lợi ích từ filter control-char (sau khi fix 4.10).
+
+### `[nit]` 5.9 — `audit.service.ts` thiếu nhiều `ACTION_LABELS`
+
+**File:** [src/services/audit.service.ts:17-27](src/services/audit.service.ts)
+
+Thiếu key `'group.delete'`, `'group.update'`, `'trip.create'`, `'trip.close'`, `'member.remove'`. Sau khi fix 3.3, cần đồng bộ.
+
+### `[nit]` 5.10 — `MembersTab.tsx` nối hex alpha thủ công
+
+**File:** [src/components/group/MembersTab.tsx:20,30](src/components/group/MembersTab.tsx)
+
+`backgroundColor: color + '22'` — vỡ nếu `color` là `rgb(...)` hoặc `oklch(...)`. Dùng theme token `c.surfaceAlt`/`c.primarySoft`.
+
+### `[nit]` 5.11 — Supabase URL/anon key chỉ throw trong `__DEV__`
+
+**File:** [src/config/constants.ts:6-13](src/config/constants.ts)
+
+Production build không throw nếu `EXPO_PUBLIC_*` thiếu. Nên throw cả prod để debug nhanh.
+
+### `[nit]` 5.12 — Edge Function CORS `*` quá lỏng
+
+**File:** [supabase/functions/_shared/auth.ts:53](supabase/functions/_shared/auth.ts)
+
+Whitelist origin theo `EXPO_PUBLIC_APP_URL` hoặc `http://localhost` cho dev (defense-in-depth khi đã có Bearer JWT).
+
+### `[nit]` 5.13 — `app.json` thiếu `runtimeVersion`
+
+**File:** [app.json](app.json)
+
+OTA updates có thể crash khi native module thay đổi. Thêm `"runtimeVersion": { "policy": "sdkVersion" }`.
+
+### `[nit]` 5.14 — `package.json` deps version pinning không nhất quán
+
+**File:** [package.json:14-64](package.json)
+
+Mix `^`, `~`, pin chính xác. `lucide-react-native: ^1.8.0` (mới release 1.x) và `heroui-native: ^...` có thể minor breaking giữa máy dev. Pin chính xác hoặc dựa vào `package-lock.json` + CI dùng `npm ci`.
+
+### `[nit]` 5.15 — Thiếu `eslint-plugin-react-hooks`
+
+**File:** [eslint.config.mjs](eslint.config.mjs)
+
+Thiếu `react-hooks/exhaustive-deps`, `react-hooks/rules-of-hooks` → bug như 3.7 không bị catch.
+
+### `[nit]` 5.16 — `notification.service.ts:197-201` spread `params.data` SAU `count`/`target_ids`
+
+**File:** [src/services/notification.service.ts:197-201](src/services/notification.service.ts)
 
 ```ts
-const raw = data?.settings ?? {};
-const migrated: Partial<UserSettings> = { ...raw };
-if ('notify_expense' in raw) migrated.notify_activity = (raw as Record<string, unknown>).notify_expense as boolean;
-if ('notify_reminder' in raw) migrated.notify_smart = (raw as Record<string, unknown>).notify_reminder as boolean;
-delete (migrated as Record<string, unknown>).notify_expense;
-delete (migrated as Record<string, unknown>).notify_reminder;
-return { ...DEFAULT_SETTINGS, ...migrated };
+data: { count: 1, target_ids: [...], ...(params.data ?? {}) }
 ```
+Caller truyền `count`/`target_ids` trong `data` sẽ ghi đè. Spread `...params.data` TRƯỚC mới đúng intent.
 
-Đồng thời chạy 1 lần migration trên DB Supabase (script update `users.settings`) để không phải migrate runtime mãi.
+### `[nit]` 5.17 — `groups/[id].tsx` `findMyRole` async không cancellation guard
 
-### 2.4. ✋ `toggleTripStatus` thiếu `logAction` cho `trip.close` / `trip.reopen`
-[src/stores/trip.store.ts:110-127](src/stores/trip.store.ts#L110-L127)
+**File:** [src/app/(main)/groups/[id].tsx:67-83](src/app/(main)/groups/[id].tsx)
 
-Có gọi `notifyTripClosed` cho close, không có cho reopen, **và không có audit cho cả hai**. Vi phạm CLAUDE.md "Mọi service mutation tạo/sửa/xóa dữ liệu nhóm PHẢI gọi `notifyXxxEvent()` … song song với `logAction()`". Hệ quả: audit trail không có hành động đóng/mở chuyến — không trace được khi cần. **Fix:** thêm `logAction({ action: 'trip.close' / 'trip.reopen', ... })` trong cả 2 nhánh, dùng `Promise.allSettled` để không block main flow.
+Effect async không có `cancelled` flag — `currentGroupMembers` đổi nhanh có thể flicker role.
 
-### 2.5. ✋ `useAuthStore.subscribe` top-level trong `userPreferences.ts`
-[src/utils/userPreferences.ts:96-104](src/utils/userPreferences.ts#L96-L104)
+### `[nit]` 5.18 — `useDominantColor` có 2 cơ chế cancel chồng chéo
 
-Subscribe chạy ngay khi module được import → side effect ở module load:
-- Khó test (mock thứ tự sai → subscribe vào instance mock cũ).
-- Không bao giờ unsubscribe → không clean (acceptable cho singleton, nhưng pattern tệ).
-- Nếu module được tree-shake hoặc lazy-load khác nhau giữa env, behavior thay đổi.
+**File:** [src/hooks/useDominantColor.ts:25-44](src/hooks/useDominantColor.ts)
 
-**Fix:** gói trong hàm `bindAuthStoreSync()` và gọi 1 lần ở [src/app/_layout.tsx](src/app/_layout.tsx) cùng `bootstrapPreferences()`.
+Đã có `cancelled` flag ở effect 2 nhưng vẫn giữ `isMounted` ref ở effect 1 → dư thừa, gây hoang mang.
 
-### 2.6. ✋ Hooks order vi phạm trong `GlassCapsuleHeader`
-[src/components/header/GlassCapsuleHeader.tsx:65-69](src/components/header/GlassCapsuleHeader.tsx#L65-L69)
+### `[nit]` 5.19 — `joinGroupByCode` không cooldown spam request
 
-```tsx
-if (!usePhysics) return <NativeFallbackHeader ... />;
-```
+**File:** [src/services/group.service.ts:142-204](src/services/group.service.ts)
 
-Đặt SAU `useState`/`useEffect`, TRƯỚC nhánh hooks của `PhysicsHeader`. Khi `usePhysics` toggle giữa true/false (Reduce Motion bật runtime, hoặc user đổi `animations_enabled`), `PhysicsHeader` mount/unmount → shared values bị tạo lại từ đầu → header flash. Đồng thời React DevTools sẽ warn về Hook order khi toggle. **Fix:** render cả 2 nhánh trong cùng tree (dùng prop `enabled` truyền vào `useCapsulePhysics`), hoặc tách làm 2 component riêng cấp cha.
+User reject rồi re-request liên tục → admin bị spam pending. Thêm cooldown 24h hoặc check `last reviewed_at < N giờ thì throw`.
 
-### 2.7. ✋ `useCapsulePhysics` cleanup chỉ chạy nếu đã rest
-[src/components/header/useCapsulePhysics.ts:340-346](src/components/header/useCapsulePhysics.ts#L340-L346)
+### `[nit]` 5.20 — `notifications.tsx:295` Pressable hitSlop=6 quá nhỏ
 
-`useEffect` cleanup chỉ tắt `frameCallback` khi `restingCounter.value >= RESTING_FRAMES`. Khi component unmount giữa lúc đang chuyển động → frame loop chạy mãi → memory + battery leak. **Fix:** vô điều kiện `frameCallback.setActive(false)` trong cleanup. Cũng đúng cho subscriber sensor.
+**File:** [src/app/(main)/(tabs)/notifications.tsx:295-304](src/app/(main)/(tabs)/notifications.tsx)
 
-### 2.8. ✋ `BlackHoleTransition`: `setTimeout(onCovered, 1300)` không cleanup
-[src/contexts/BlackHoleTransition.tsx:614-616](src/contexts/BlackHoleTransition.tsx#L614-L616)
+Tăng lên `{top:8,bottom:8,left:8,right:8}` để đạt 44pt iOS HIG.
 
-Nếu user back hoặc app close lúc 700ms, callback vẫn fire → push route đã unmount → có thể crash hoặc state inconsistent. **Fix:** lưu timeoutId trong ref và clear trong cleanup `useEffect` hoặc khi `clear()` được gọi sớm.
+### `[nit]` 5.21 — `EXPENSE_CATEGORIES` lặp trong CHECK constraint SQL
 
-### 2.9. ✋ `frameCallback.isActive` không phải public API của Reanimated 3
-[src/components/header/useCapsulePhysics.ts:323-325](src/components/header/useCapsulePhysics.ts#L323-L325)
+**File:** [src/db/schema.ts:60](src/db/schema.ts)
 
-`useFrameCallback` chỉ expose method `setActive(boolean)`, không có property `isActive`. Đọc `frameCallback.isActive` trả `undefined` → `!undefined = true` → mỗi tick sensor gọi `setActive(true)` (no-op nhưng tốn JS bridge). **Fix:** lưu state "active" qua `useRef<boolean>`.
+Hardcode danh sách category ở 2 chỗ SQL. Khi thêm category mới phải sửa 4 chỗ. Generate SQL từ TS const hoặc accept duplication có comment.
+
+### `[nit]` 5.22 — `(tabs)/_layout.tsx` dùng `as any`
+
+**File:** [src/app/(main)/(tabs)/_layout.tsx:23](src/app/(main)/(tabs)/_layout.tsx)
+
+Vi phạm rule "không dùng `: any`" trong CLAUDE.md (dù là TS rule cho service layer). Cân nhắc tạo type union/adapter.
 
 ---
 
-## 3. Vấn đề quan trọng — `[important]`
+## 6. Test còn thiếu — đề xuất
 
-### Notification system
-
-- **`notification.service.ts:131-148`** — Dedup query `(user, group, type, actor)` thiếu filter `trip_id`. 2 trip cùng group/actor cùng type sẽ gộp chung trong 10 phút → user thấy "1 đã thêm 2 khoản chi" mà thực ra ở 2 trip khác → click không biết trip nào, `target_ids` trộn lẫn. **Fix:** thêm `eq('trip_id', tripId)` (hoặc `is('trip_id', null)`) khi caller có `tripId`.
-- **`notification.service.ts:66-95`** — `getGroupRecipients` join `users:user_id(id, settings)`. Nếu RLS chặn join, `userRel = null` → `enabled = settings?.[settingKey] ?? true` mặc định true → leak notification cho user đã tắt setting. **Fix:** `if (userRel === null) skip` thay vì default true.
-- **`notification.service.ts:316-317`** + `trip.store.ts` — Type `expense.edited` được khai báo nhưng chưa fire ở store nào. Hoặc thiếu hành động `editExpense`, hoặc đã gọi nơi khác mà không notify. Cần audit luồng edit.
-- **`notification.service.ts:206-210`** — Race giữa `existing` query và `insert`: 2 mutation song song có thể cùng đọc `existing=[]` → 2 row cùng `(user, group, type, actor)`. **Fix:** UPSERT với unique partial index `(user_id, group_id, type, actor_id) WHERE read_at IS NULL`.
-- **`stores/notification.store.ts:90-98`** — `markAsRead` set state đọc `get().items` 2 lần → counted lệch khi items đổi giữa 2 lần. **Fix:** snapshot `before = get().items` rồi tính.
-- **`stores/notification.store.ts:62-71`** — `loadMore` cursor `created_at` có thể duplicate khi 2 row cùng millisecond (hay xảy ra do dedup `created_at = now()`). **Fix:** tie-break compound `(created_at, id)` hoặc dùng `range(offset, limit)`.
-- **`stores/auth.store.ts:170-172`** — `signOut` không reset `notification.store`. User mới login (cùng device) flash notification của user cũ. **Fix:** `useNotificationStore.getState().reset()` trong signOut.
-- **`stores/trip.store.ts:113-114, 141, 170, 204`** — `profile` từ store có thể null (race với fetch profile). Notify bị skip im lặng → dev khó debug. **Fix:** `if (__DEV__ && !profile) console.warn('[trip] notify skipped')`, hoặc fallback `getAuthUserId()` + fetch display_name.
-- **`stores/trip.store.ts:230-244`** — `removePayment` có audit nhưng không có notify (`payment.deleted` chưa được khai báo trong `NotificationType`). Quyết định: thêm type hoặc skip với comment.
-- **`stores/trip.store.ts:142-161, 205-225`** — `Promise.all([logAction, notifyXxx])`: nếu `logAction` throw (lỗi network), notify reject theo → user thấy error UI dù expense tạo thành công. **Fix:** dùng `Promise.allSettled`.
-
-### Notification UI
-
-- **`app/(main)/notifications.tsx:311-324`** — Empty state không phân biệt filter. Khi user filter `unread` hoặc theo nhóm cụ thể, rỗng nghĩa "không match filter" chứ không phải "chưa có notif". **Fix:** if `filter.scope === 'unread'` hoặc có group filter → đổi text + nút "Xoá bộ lọc".
-- **`app/(main)/notifications.tsx:174-188`** — `handlePressById` deeplink chỉ tới `tripId`/`groupId`, miss:
-  - `payment.recorded/received` → cần đến settlement tab.
-  - `member.join_requested` → admin cần đến tab duyệt yêu cầu.
-  - `expense.created/edited` → có `data.target_id` nhưng không scroll/highlight.
-  **Fix:** map theo `notification.type` với `params: { tab: 'settlement'/'requests', highlight: target_id }`.
-- **`app/(main)/notifications.tsx:312`** — Skeleton chỉ hiện khi `isRefreshing`, miss case lần đầu vào màn nếu store chưa có cờ `initialLoaded`. **Fix:** đổi sang `(isRefreshing || isLoading) && items.length === 0`.
-- **`app/(main)/notifications.tsx:101-105`** — `fetchMyGroups().then(setGroups)` không cleanup khi unmount → React warning trên Android cold start. **Fix:** pattern `let cancelled = false;`.
-- **`app/(main)/notifications.tsx:339`** — `loadMore` race với `isRefreshing`: scroll cuối ngay sau pull-to-refresh có thể inject duplicate ids. **Fix:** trong store `loadMore` thêm `if (isRefreshing) return`.
-- **`app/(main)/notifications.tsx:114-118`** — `markAllAsRead` không confirm + toast success trước khi server xác nhận. **Fix:** `BouncyDialog` confirm khi >5 unread, check kết quả thật.
-- **`components/notifications/NotificationRow.tsx:109-113`** — Swipe → tap "Xoá" → DELETE ngay, không undo, không confirm. **Fix:** undo toast 5s với restore state, hoặc `BouncyDialog` confirm.
-- **`components/notifications/NotificationRow.tsx:115-117`** — Tap nhanh 2 lần → `markAsRead([id])` 2 round-trip Supabase. **Fix:** debounce hoặc local ref flag.
-
-### Capsule header
-
-- **`useCapsulePhysics.ts:130-141`** — `useEffect` reset `balls[i].value` mỗi lần `ballSpecs` đổi reference; `ballSpecs` deps gồm `slots.rightBalls` mà mảng được tạo MỚI mỗi render `useHeaderSlots`. → balls liên tục reset mất velocity → giật. **Fix:** memoize stable theo id, hoặc compare bằng id thay vì reference.
-- **`useCapsulePhysics.ts:168-295`** — Frame callback chạy 60Hz cả khi `restingCounter >= RESTING_FRAMES` — counter chỉ tăng, không có nhánh tự `setActive(false)`. **Fix:** `if (restingCounter.value >= RESTING_FRAMES) { runOnJS(stopLoop)(); return; }`.
-- **`headerSlots.tsx:172-184`** — `useMemo` deps gồm `lightning`, `navigation`, `setCreateJoinOpen` — reference mới mỗi render. → `RouteSlots` rebuild → trigger reset physics state. **Fix:** lift handlers ra `useCallback` ngoài memo.
-- **`headerSlots.tsx:44-47`** — `estimateTitleWidth = 9px/char` sai cho semibold + dấu tiếng Việt → pill chật → text bị ellipsis dù còn chỗ. **Fix:** `onLayout` đo thật rồi update qua sharedValue.
-- **`GlassCapsuleHeader.tsx:151-160`** — Cùng vấn đề `pillSpec` deps: object mới mỗi render → effect reset `pill.value` → pill nhảy.
-
-### FancyToast
-
-- **`fancyToast/effects.tsx`** — `MeshEmeraldToast/MeshRoseToast/MeshAmberToast/MeshSoftToast` build palette array literal mỗi render, truyền vào `MeshBackground` → `SkiaMeshGradient` shallow compare fail → re-render vô ích mỗi lần parent render. **Fix:** `useMemo(() => palette, [...primitive deps])`.
-- **`fancyToast/effects.tsx`** — `MeshBackground/HaloBackground/ShimmerOverlay` dùng `onLayout` → render 2 frame: frame 1 size=0 (return null), frame 2 mới mount Skia → toast entrance đã chạy → Skia "pop in" → flash. **Fix:** render placeholder cùng baseColor để đỡ.
-- **`fancyToast/effects.tsx`** — `wrapEntering(enter)` cast `as never` → bỏ qua type check. **Fix:** wrapper type rõ ràng hoặc dùng `@ts-expect-error` để TS phát hiện khi shape HeroUI đổi.
-
-### Screen-level
-
-- **`app/(main)/_layout.tsx`** — `settings` đổi animation sang `fade` đi ngược CLAUDE.md (`slide_from_right`). Nếu intentional, cập nhật doc; nếu không, đổi lại.
-- **`app/(main)/_layout.tsx`** — `groups/[id]` đổi sang `animation: 'fade'` overlap với Skia overlay của BlackHole transition → flash trên Android low-end. **Fix:** `animation: 'none'` cho route được transition tự lo.
-- **`app/(main)/index.tsx`** — Destructure `useGroupStore()` kéo cả 4 field → re-render khi 1 trong 4 đổi. **Fix:** tách selectors riêng (`useGroupStore(s => s.groups)`).
-- **`app/(main)/index.tsx`** — `ScrollView` thay `FlatList` cho danh sách nhóm. User nhiều nhóm (>30) mất virtualization. Cần FlatList + `removeClippedSubviews`.
-- **`app/(main)/index.tsx`** — `SuckTarget` wrap mọi `GroupRow` đăng ký N target. Khi `BlackHoleTransition.suck()` chạy, `Promise.all` measure + `makeImageFromView` cho TẤT CẢ rows → 20 rows = 20 snapshot song song → có thể ANR Android low-end. **Fix:** chỉ wrap row đang được tap, hoặc lazy register theo viewport.
-- **`app/(main)/settings.tsx`** — `setNewName(profile?.display_name ?? '')` chỉ chạy 1 lần lúc mount. Nếu profile load chậm, `newName = ''` không cập nhật. **Fix:** `useEffect(() => { if (profile) setNewName(profile.display_name) }, [profile?.display_name])`.
-- **`components/common/SplashScene.tsx`** — `Dimensions.get('window')` lúc module import, không update khi rotate/split-screen. **Fix:** `useWindowDimensions()`.
-- **`components/home/GroupCarousel.tsx`** — `pan.failOffsetY([-20, 20])` có thể tranh chấp với pull-to-refresh ở `ScrollView` parent. Test kỹ trên iOS.
-- **`components/home/GroupCarousel.tsx`** — `topIndex.value` unbounded grows (modular wrap). Sau hàng nghìn swipe có thể precision loss. **Fix:** reset `topIndex.value = topIndex % total` định kỳ.
-
-### Utils
-
-- **`utils/capsuleMath.ts:33-78`** — `clampCircleToCapsule` không guard `innerR < 0` (khi `ballR > height/2`). `yLimit < 0` → mọi y bị clamp lệch; endcap không bao giờ trigger → ball bị đẩy ra ngoài. **Fix:** early-return khi `innerR <= 0` hoặc clamp `Math.max(0, R - ballR)`.
-- **`utils/format.ts:25-37`** — `formatThousands(value: number)` dùng `Math.abs` → mất dấu âm silent. Caller có thể truyền số âm (preview balance) → render sai. **Fix:** preserve dấu hoặc tài liệu hoá rõ.
-- **`utils/format.ts:64`** — `parseInt(rawDigits, 10)` mất chính xác với input >15 chữ số. **Fix:** guard `if (rawDigits.length > 9) return defaults`.
-- **`utils/notificationFormat.ts:78`** — `payment.recorded` luôn render `${money}` kể cả khi `amount === undefined` → output "Admin ghi nhận A → B trả " (trailing space). Test chưa cover. **Fix:** fallback "Đã ghi nhận thanh toán" khi money rỗng.
-- **`utils/notificationFormat.ts:62`** — `typeof amount === 'number'` cho phép NaN. **Fix:** `Number.isFinite(amount)`.
-- **`utils/themeTransition.ts:25-29`** — Khi `animations_enabled = false` gọi `Uniwind.setTheme(to)` trực tiếp, bypass `state.trigger`. Nếu `state.trigger` thêm side-effect tương lai (telemetry, persist) sẽ leak. **Fix:** vẫn gọi `state.trigger`, để nó tự skip animation bên trong.
-- **Test thiếu** — `setHomeViewMode/useHomeViewMode/getHomeViewMode` (3 hàm public của `userPreferences`); `lightning.ts`; edge `clampCircleToCapsule` với `innerR <= 0`; `formatThousands(-150_000)`; `payment.recorded` với `amount=undefined`.
+1. **`balance.test.ts`**: orphan member trong splits, virtual member là payer.
+2. **`split.test.ts`**: `validateSplits` với amount float, `splitByRatio` với `total < n*1000`, ratio âm/NaN, `splitEqualWithExplanation` case `lastAmount > roundedPerPerson`.
+3. **`settlement.test.ts`**: input không bội 1000 (e.g. `2500, -2500`), creditor/debtor sát TOLERANCE, 100+ members chống infinite loop, `adjusted = 0` và `< 0`.
+4. **`validate.test.ts`**: control char / zero-width / emoji-only name, email > 254, amount = `Infinity` / `NaN` / `MAX_SAFE_INTEGER + 1`.
+5. **`notification.test.ts`**: missing `fromName`/`toName`/`amount` cho payment.received → không trailing space, fake type → fallback string.
+6. **`format.test.ts`** (mới): `formatVND(0)`, `formatVND(-1)`, `formatBalance(0)`.
+7. **`explainBalance.test.ts`**: duplicate split entries cùng member, date timezone khác.
+8. **`r2.test.ts`**: URL có query string / fragment, encoded chars (`%20`).
 
 ---
 
-## 4. Đề xuất nhỏ — `[nit]` / `[suggestion]`
+## 7. Điểm tốt — `[praise]`
 
-- `notifications.tsx:36-45` — `bucketOf` tính `startToday` mỗi lần gọi trong loop. Tính 1 lần ngoài rồi pass.
-- `notifications.tsx:282-287` — `SkiaFireBorder` cho chip filter quá nặng so với giá trị thẩm mỹ. Border solid đủ.
-- `NotificationBell.tsx:19` — `'9+'` ở 10 unread quá sớm. Đổi `99+`.
-- `NotificationRow.tsx:51-73` — `iconForType` dùng `startsWith` không cần thiết với type exact.
-- `NotificationRow.tsx:69` — `trip.closed` dùng `UserMinus` semantic sai. Nên `Lock` / `Archive`.
-- `userPreferences.ts:87-94` — `setHomeViewMode` set cache trước, persist sau (best-effort) — pattern OK nhưng nên unify với `persistPreferencesCache`.
-- `effectPicker.ts` — `POOL_BY_VARIANT.accent === INFO_POOL` nhưng `lastPicked.accent` riêng → có thể pick trùng id liên tiếp giữa accent/default. Share key.
-- `BouncyDialog.tsx` / `VoroConfirmDialog.tsx` — Effect open fire `hapticMedium()` không guard `animationsEnabled`. Đúng rule (haptic riêng), nhưng UX giật khi user tắt anim.
-- `header/index.ts` — Chưa có barrel export. Callsite phải import deep paths.
-- `CapsuleShell.tsx` — Skia Canvas thiếu `accessibilityElementsHidden` / `importantForAccessibility="no-hide-descendants"` → screen reader đọc layer trống.
-- `notification.service.ts:170` — Title fallback `'Ai đó'` khi dedup gộp mà actorName không truyền. Nên `__DEV__ console.warn` để dev biết caller thiếu.
-- `_layout.tsx (main)` — Header centralize sang `GlassCapsuleHeader` rất sạch; nên cập nhật CLAUDE.md mô tả convention header mới.
-- Thêm `Promise.allSettled` cho mọi `Promise.all([logAction, notifyXxx])` ở `trip.store.ts` để tránh notify reject vì audit lỗi.
-
----
-
-## 5. Điểm nổi bật — `[praise]`
-
-- **Architecture rất sạch** ở `capsule header`: math thuần testable → physics hook → render layer; mỗi util có `'worklet'` directive đầy đủ.
-- **`notification.service.ts`**: TypeScript chặt (không thấy `: any` trong 611 dòng), pattern fan-out + dedup tách rõ ràng, helper bọc try/catch im lặng đúng pattern `logAction`. `formatNotificationTitle` pure tách riêng dễ test. Resolver `getGroupRecipients` đúng spec rule book (loại virtual / left / actor / setting off). `notifyPaymentRecorded` đã include `target_id: input.paymentId` đúng cho deep-link payment.
-- **FancyToast wrapper**: callsite tuân thủ tuyệt đối — grep toàn repo chỉ `useFancyToast.tsx` import `useToast` HeroUI. `fireHapticFor` exhaustive theo variant. Ring buffer per-variant gọn, edge case 1-effect xử lý đúng.
-- **`animations_enabled` + `haptics_enabled` lan đầy đủ** xuống mọi Skia primitive (`SkiaConfettiBurst`, `SkiaBreathingHalo`, `SkiaMeshGradient`, `SkiaShimmerCard`, `SkiaStarNest`) và transition contexts (`MorphTransition`, `BlackHoleTransition`). Đây là rule khó enforce, làm rất tốt.
-- **`NotificationRow` avatar + type icon overlay** — pattern UX kiểu Slack/Discord, hiển thị actor + loại notif rõ ràng.
-- **`notifications.tsx` virtualization tuning** đầy đủ: `initialNumToRender=12`, `maxToRenderPerBatch=6`, `windowSize=7`, `removeClippedSubviews`, `keyExtractor` stable, callback nhận id thay vì closure để `React.memo` skip đúng.
-- **`group.service.ts`**: đúng pattern `assertRole(['admin'])` trước mọi mutation, dùng `getAuthUserId()` shared helper, audit `logAction` đầy đủ.
-- **Optimistic update + rollback** trong `settings.handleToggleSetting` chuẩn.
-- **Test coverage** mới: 167 tests pass, thêm 6 file test cho utils (`capsuleMath`, `explainBalance`, `notification`, `userPreferences`, `haptics`, `moneyInput`).
-- **Comment domain** rất chi tiết: SKSL shader của `SkiaFireBorder`, Reanimated quirk của `animations.ts`, Skia 2.4 + Reanimated 4 conflict trong `BlackHoleTransition` đã document rõ. Maintain dễ.
-- **`MoneyTextField`** + bỏ raw `keyboardType` ở mọi callsite — DRY, gom logic format VND một chỗ.
-- **`constants.ts`** thêm `NOTIF_PAGE_SIZE`, `NOTIF_DEDUP_WINDOW_MS`, `SETTLE_SUGGEST_*` đồng bộ với CLAUDE.md.
-
----
-
-## 6. Danh sách hành động ưu tiên
-
-### Trước khi merge (blocking)
-
-1. ✋ Wrap `<ToastTestPanel />` trong `__DEV__` hoặc xoá ([src/app/(main)/index.tsx:136](src/app/(main)/index.tsx#L136)).
-2. ✋ Sửa default JSON trong [src/db/schema.ts:11](src/db/schema.ts#L11) + viết migration đổi key `notify_expense → notify_activity`, `notify_reminder → notify_smart`.
-3. ✋ Migration runtime trong `fetchCurrentUser` ([src/services/user.service.ts](src/services/user.service.ts)) cho user có legacy keys ở Postgres.
-4. ✋ Thêm `logAction({ action: 'trip.close' / 'trip.reopen' })` trong [src/stores/trip.store.ts:110-127](src/stores/trip.store.ts#L110-L127).
-5. ✋ Refactor [src/utils/userPreferences.ts:96-104](src/utils/userPreferences.ts#L96-L104) — bỏ top-level `subscribe`, expose `bindAuthStoreSync()` gọi từ `_layout.tsx`.
-6. ✋ Sửa hooks order trong [src/components/header/GlassCapsuleHeader.tsx:65-69](src/components/header/GlassCapsuleHeader.tsx#L65-L69) — render cả 2 nhánh hoặc tách component cha.
-7. ✋ Cleanup vô điều kiện `frameCallback.setActive(false)` trong [src/components/header/useCapsulePhysics.ts:340-346](src/components/header/useCapsulePhysics.ts#L340-L346).
-8. ✋ Lưu timeoutId ref + clear trong [src/contexts/BlackHoleTransition.tsx:614-616](src/contexts/BlackHoleTransition.tsx#L614-L616).
-9. ✋ Sửa `frameCallback.isActive` → `useRef<boolean>` trong [src/components/header/useCapsulePhysics.ts:323-325](src/components/header/useCapsulePhysics.ts#L323-L325).
-
-### Nên fix trong sprint này (important)
-
-10. Dedup query notification thêm filter `trip_id` ([src/services/notification.service.ts:131](src/services/notification.service.ts#L131)).
-11. `getGroupRecipients` skip khi `userRel === null` thay vì default true ([src/services/notification.service.ts:66](src/services/notification.service.ts#L66)).
-12. Audit luồng edit expense — fire `notifyExpenseEvent('expense.edited', ...)` (hoặc xoá type khỏi enum nếu chưa dùng).
-13. `markAsRead` snapshot items trước khi tính ([src/stores/notification.store.ts:90](src/stores/notification.store.ts#L90)).
-14. Cursor `loadMore` tie-break compound `(created_at, id)` ([src/stores/notification.store.ts:62](src/stores/notification.store.ts#L62)).
-15. `signOut` reset `notification.store` ([src/stores/auth.store.ts:170](src/stores/auth.store.ts#L170)).
-16. Empty state notifications phân biệt theo filter ([src/app/(main)/notifications.tsx:311](src/app/(main)/notifications.tsx#L311)).
-17. Deeplink notification map theo type (settlement / requests / highlight target).
-18. Confirm/undo cho swipe-delete notification.
-19. Tracking unmount guard cho `fetchMyGroups` ([src/app/(main)/notifications.tsx:101](src/app/(main)/notifications.tsx#L101)).
-20. Memoize palette trong `MeshEmeraldToast/MeshRoseToast/MeshAmberToast/MeshSoftToast`.
-21. `useEffect` sync `setNewName` khi `profile.display_name` đổi ([src/app/(main)/settings.tsx](src/app/(main)/settings.tsx)).
-22. Lift handler ra ngoài memo trong [src/components/header/headerSlots.tsx:172](src/components/header/headerSlots.tsx#L172).
-23. Self `setActive(false)` từ worklet khi `restingCounter >= RESTING_FRAMES` ([src/components/header/useCapsulePhysics.ts:168](src/components/header/useCapsulePhysics.ts#L168)).
-24. `ScrollView` → `FlatList` cho danh sách nhóm ở home.
-25. `SuckTarget` chỉ wrap row được tap (lazy/runtime register).
-26. Guard `innerR <= 0` trong `clampCircleToCapsule`.
-27. Migration legacy chạy 1 lần trên DB Supabase + xoá field cũ.
-28. Đồng bộ animation route (`settings`, `groups/[id]`) với CLAUDE.md hoặc cập nhật doc.
-
-### Sau merge (suggestion / nit)
-
-- Test cho `setHomeViewMode`, `lightning.ts`, edge `innerR<=0`, `formatThousands(-)`, payment notification `amount=undefined`.
-- A11y `accessibilityElementsHidden` cho Skia Canvas.
-- A11y `announceForAccessibility` cho fancyToast.
-- Barrel export `components/header/index.ts`.
-- `relativeTime` invalidate mỗi 60s qua `useEffect` + `key`.
-- `99+` cho NotificationBell badge.
-- Cập nhật CLAUDE.md với convention header mới sau khi centralize.
+- **`auth.helper.ts` cache 30s + `clearAuthCache()`**: thiết kế gọn, comment rõ mục đích, ngăn N round-trips trong burst sequence (createExpense + logAction + notifyXxx). Được gọi đúng trong `signOut` ([src/stores/auth.store.ts:171](src/stores/auth.store.ts)).
+- **Expense rollback** ([src/services/expense.service.ts:116-120](src/services/expense.service.ts)): tự xóa expense khi splits insert fail — đúng pattern transaction giả lập trên client.
+- **`getGroupRecipients` filter ảo + setting + actor + left_at trong 1 hàm** — DRY, đúng spec virtual member không bị notify.
+- **`fetchUserBalanceSummary` Promise.all + Map pre-index** ([src/services/group.service.ts:596-654](src/services/group.service.ts)): tránh N+1 đẹp, comment "Pre-index by trip_id / group_id for O(1) lookup" rất rõ.
+- **Edge Function error parsing**: wrap `retryAfter`, parse `context.json()`, fallback message — UX tốt cho rate-limit case.
+- **`feedback.service.ts` sanitize input**: regex strip control chars + cap newlines — chống null-byte injection và DoS spam.
+- **TypeScript discipline trong service**: không có `: any` trong service layer (đúng rule). Cast `as Type` được dùng đúng pattern.
+- **Comment giải thích "vì sao"** (chứ không chỉ "what"): vd "Lấy TẤT CẢ members (kể cả đã rời) vì expense/payment của họ vẫn ảnh hưởng đến balance" — tránh người sau xóa nhầm filter.
+- **`updateMemberRole` được mark `@deprecated` với context dài** giải thích invariant 1-admin và lý do giữ signature — tốt cho maintainer tương lai.
+- **Pattern try/finally cho `isLoading`**: khi fetch fail, `isLoading` luôn được reset → không lock-out UI. Áp dụng nhất quán ở mọi store.
+- **Empty constant `EMPTY_SUMMARY`** ([src/stores/group.store.ts:48](src/stores/group.store.ts)): giữ referential equality, tốt cho selector.
+- **`split.ts` pattern "người cuối nhận remainder"**: đúng spec, có clamp `Math.max(0, ...)` ngừa âm. Có 2 nhánh (`total >= n*1000` round 1000đ, fallback nhỏ chia 1đ) — fair.
+- **`balance.ts`**: pure function, dùng số nguyên 100%, không float drift.
+- **`format.ts` tách `formatThousands`** cho UI thread (Reanimated worklet không gọi `toLocaleString`) — kiến trúc tốt.
+- **`seedGradient.ts`**: dùng `>>>` (unsigned shift) tránh negative modulo — comment giải thích rõ. Deterministic.
+- **`r2.ts` defensive**: reject URL không match base, tránh delete arbitrary keys.
+- **Test coverage**: 11 file test, integration test full-cycle (expense → balance → settlement → payment), nhiều edge case.
+- **Pattern uncontrolled-ref + delayed mount** áp dụng nhất quán ở mọi BottomSheet có TextInput tiếng Việt — không lặp lại bug IME.
+- **Snap points + keyboard config** đúng pattern ở mọi sheet (`enableDynamicSizing={false}` + `snapPoints` + `keyboardBehavior="extend"`).
+- **`useFocusEffect` polling on focus** cho unread badge — không setInterval, đúng quy ước CLAUDE.md.
+- **`(tabs)/_layout.tsx`** giữ screens mounted (Home/Notifications/Presets/Settings) — chuyển tab instant.
+- **Optimistic updates** ở settings (`handleToggleSetting`) với rollback khi service fail.
+- **Supabase client RN-correct**: `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`, dùng `SecureStore` adapter — pattern chuẩn cho Expo.
+- **Strict TypeScript**: bật đủ `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noUnusedLocals/Parameters`, `noFallthroughCasesInSwitch`, `forceConsistentCasingInFileNames`. Path alias `@/*` được config nhất quán cả tsconfig + jest.
+- **Không có hardcoded secrets**: SUPABASE_URL/ANON_KEY/R2_PUBLIC_BASE_URL đều từ `process.env.EXPO_PUBLIC_*`. Edge Functions dùng `Deno.env.get()` cho R2 keys + service role.
+- **SQLite pragmas đúng**: WAL mode + foreign keys ON ngay khi `openDatabaseAsync`.
+- **ESLint rules nghiêm**: `@typescript-eslint/no-explicit-any: error`, `eqeqeq: error`, `no-console: warn (allow warn/error)`, `no-throw-literal: error`, `simple-import-sort` — match yêu cầu CLAUDE.md.
+- **`newArchEnabled: true`** đã enable New Architecture cho Expo SDK 55.
+- **Expo build properties**: ABI filter `arm64-v8a, armeabi-v7a` + minify + shrink resources cho release Android — giảm APK size.
 
 ---
 
-**Tổng kết:** Branch có chất lượng kiến trúc tốt và test coverage ổn (167/167 pass, TS clean), nhưng **không nên merge** trước khi xử lý 9 vấn đề `[blocking]` ở §2. Phần lớn gap là về cleanup/audit/migration chứ không phải lỗi logic core — fix nhanh nếu nhặt đúng.
+## 8. Danh sách hành động ưu tiên
+
+> Theo thứ tự khuyến nghị fix.
+
+### ✅ Đã fix (2026-05-07)
+
+**Đợt 1 — `[blocking]`:**
+
+- Conditional hook ở `trips/[id]/index.tsx`.
+- `assertRole` + verify cross-trip/group membership cho `createExpense` + `createPayment`.
+- `logAction` + `notifyXxxEvent` cho mọi mutation expense/payment/trip (đặt ở service layer, xóa duplicate ở `trip.store`).
+- `user.service.ts` dùng `getAuthUserId()` shared.
+- `signOut` reset cross-store (group/trip/notification/preset).
+- `onAuthStateChange` lưu subscription module-scope, idempotent re-init.
+- Migration v2 SQLite: thêm `expense_presets.updated_at` + trigger, update default settings JSON, migrate row có key legacy (`notify_expense` → `notify_activity`).
+
+**Đợt 2 — `[important]`:**
+
+- 4.1: `approveJoinRequest` + `rejectJoinRequest` thêm filter `group_id` (chặn cross-tenant spoof).
+- 4.9: `validateSplits` thêm guard `Number.isFinite + Number.isInteger`.
+- 4.10: `validateName` thêm regex filter control-char + zero-width, kèm test cases mới.
+- 4.12: `groups/[id].tsx` chuyển sang `useShallow` selector (group + trip store) + selector trực tiếp cho `auth.user`.
+
+### Còn lại — `[blocking]` (correctness)
+
+1. **Fix `splitByRatio`** để tổng = total (3.1).
+
+### Tuần tiếp theo — `[important]` (data integrity & UX)
+
+2. Add UNIQUE INDEX partial cho dedup notification + `ON CONFLICT DO UPDATE` (4.2).
+3. Add `assertGroupActive` cho mutations (4.3).
+4. Tách `isLoading` riêng cho từng action + request-ID guard (4.4) + `Promise.all` cho `loadBalances` (4.5).
+5. Rollback optimistic update notification khi fail (4.6).
+6. Cleanup `setTimeout` trong `BlackHoleTransition` + `MorphTransition` (4.7).
+7. Handle orphan member trong `balance.ts` (4.8).
+8. Wrap migrations trong `withTransactionAsync` (4.11).
+9. Add `componentDidCatch` cho ErrorBoundary (4.13).
+10. Đồng bộ schema SQLite/Postgres types + `is_virtual` union type (4.14, 4.15).
+11. Race fix `reset-password.tsx` (4.16).
+12. Approve race + double-fire (4.17) — *Note: filter `group_id` đã thêm ở 4.1, nhưng UNIQUE INDEX cho status='pending' để chặn double-update vẫn cần.*
+13. Lazy import / mock Uniwind cho `themeTransition` (4.18).
+14. Dump RLS vào migration file (4.19).
+15. SecureStore web fallback (4.20).
+
+### Sau đó — `[nit]` & test
+
+- Bổ sung test theo §6.
+- Thêm `eslint-plugin-react-hooks`.
+- Memo các renderItem callback (5.1).
+- Pin dependencies, thêm `runtimeVersion`, whitelist CORS, throw env vars trong production.
+
+---
+
+## 9. Phương pháp & phạm vi
+
+- **Tool:** 5 agent chuyên trách, mỗi agent đọc đầy đủ source theo domain rồi tổng hợp finding.
+- **Phạm vi:** Toàn bộ `src/` (149 file, ~23K LOC), `supabase/` migrations + edge functions, root config (`package.json`, `tsconfig.json`, `app.json`, `eslint.config.mjs`, `babel.config.js`).
+- **Không nằm trong phạm vi:** `node_modules/`, generated build artifacts, `.expo/`, lock files. Không kiểm tra runtime behavior (không chạy `npx jest` hoặc `npx tsc`).
+- **Lưu ý chính xác:** Một số finding có đường dẫn file:dòng được agent quan sát ở thời điểm review — nếu file đã thay đổi sau, line number có thể lệch. Luôn dùng grep để xác minh trước khi fix.
+
+---
+
+*Báo cáo tự động sinh bởi `/code-review-excellence` — 2026-05-07.*

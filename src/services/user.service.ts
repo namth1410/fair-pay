@@ -1,5 +1,6 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
+import { getAuthUserId } from './auth.helper';
 
 export interface UserProfile {
   id: string;
@@ -73,8 +74,8 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
 
 /** Update display name */
 export async function updateDisplayName(name: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Chưa đăng nhập');
+  const userId = await getAuthUserId();
+  if (!userId) throw new Error('Chưa đăng nhập');
 
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Tên không được để trống');
@@ -85,7 +86,7 @@ export async function updateDisplayName(name: string): Promise<void> {
   const { error } = await supabase
     .from('users')
     .update({ display_name: trimmed })
-    .eq('auth_id', user.id);
+    .eq('id', userId);
 
   if (error) throw error;
 
@@ -101,26 +102,26 @@ export async function updateDisplayName(name: string): Promise<void> {
 
 /** Update user settings (notification preferences, dark mode, etc.) */
 export async function updateSettings(settings: UserSettings): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Chưa đăng nhập');
+  const userId = await getAuthUserId();
+  if (!userId) throw new Error('Chưa đăng nhập');
 
   const { error } = await supabase
     .from('users')
     .update({ settings })
-    .eq('auth_id', user.id);
+    .eq('id', userId);
 
   if (error) throw error;
 }
 
 /** Update FCM token for push notifications */
 export async function updateFcmToken(token: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = await getAuthUserId();
+  if (!userId) return;
 
   const { error } = await supabase
     .from('users')
     .update({ fcm_token: token })
-    .eq('auth_id', user.id);
+    .eq('id', userId);
 
   if (error) console.warn('[User] Failed to update FCM token:', error.message);
 }

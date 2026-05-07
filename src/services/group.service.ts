@@ -230,11 +230,13 @@ export async function approveJoinRequest(
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
 
-  // Fetch request
+  // Fetch request — bắt buộc filter group_id để chặn cross-tenant spoof
+  // (admin nhóm A truyền requestId của nhóm B sẽ insert user nhóm B vào nhóm A).
   const { data: req, error: fetchErr } = await supabase
     .from('join_requests')
     .select('user_id, display_name')
     .eq('id', requestId)
+    .eq('group_id', groupId)
     .eq('status', 'pending')
     .single();
   if (fetchErr || !req) throw new Error('Yêu cầu không tồn tại hoặc đã được xử lý');
@@ -267,7 +269,7 @@ export async function approveJoinRequest(
     if (memErr && memErr.code !== '23505') throw memErr;
   }
 
-  // Đánh dấu approved
+  // Đánh dấu approved — eq('status', 'pending') chặn double-fire khi 2 admin race
   await supabase
     .from('join_requests')
     .update({
@@ -275,7 +277,9 @@ export async function approveJoinRequest(
       reviewed_by: reviewerId,
       reviewed_at: new Date().toISOString(),
     })
-    .eq('id', requestId);
+    .eq('id', requestId)
+    .eq('group_id', groupId)
+    .eq('status', 'pending');
 
   await logAction({
     groupId,
@@ -308,11 +312,13 @@ export async function rejectJoinRequest(
   const reviewerId = await getAuthUserId();
   if (!reviewerId) throw new Error('Chưa đăng nhập');
 
-  // Cần fetch user_id của requester TRƯỚC khi update status (để notify)
+  // Cần fetch user_id của requester TRƯỚC khi update status (để notify).
+  // Bắt buộc filter group_id để chặn cross-tenant reject (admin A reject request của nhóm B).
   const { data: req } = await supabase
     .from('join_requests')
     .select('user_id')
     .eq('id', requestId)
+    .eq('group_id', groupId)
     .eq('status', 'pending')
     .maybeSingle();
 
@@ -324,6 +330,7 @@ export async function rejectJoinRequest(
       reviewed_at: new Date().toISOString(),
     })
     .eq('id', requestId)
+    .eq('group_id', groupId)
     .eq('status', 'pending');
 
   if (error) throw error;

@@ -2,9 +2,11 @@ import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
 import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
+import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
 import { removeExpenseImage } from './expenseImage.service';
 import { assertRole } from './group.service';
+import { notifyExpenseEvent } from './notification.service';
 
 export interface Expense {
   id: string;
@@ -75,6 +77,34 @@ export async function createExpense(params: {
   const amountErr = validatePositiveAmount(params.amount);
   if (amountErr) throw new Error(amountErr);
 
+  await assertRole(params.groupId, ['admin', 'member']);
+
+  // Verify trip thuộc đúng group + chưa đóng
+  const { data: trip, error: tripErr } = await supabase
+    .from('trips')
+    .select('group_id, status')
+    .eq('id', params.tripId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (tripErr) throw tripErr;
+  if (!trip || trip.group_id !== params.groupId) {
+    throw new Error('Chuyến không thuộc nhóm này');
+  }
+  if (trip.status === 'closed') {
+    throw new Error('Chuyến đã đóng, không thể thêm khoản chi');
+  }
+
+  // Verify paidByMemberId là member active của group (chống cross-group injection)
+  const { data: payerMember } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('id', params.paidByMemberId)
+    .eq('group_id', params.groupId)
+    .maybeSingle();
+  if (!payerMember) {
+    throw new Error('Người trả không thuộc nhóm này');
+  }
+
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
@@ -119,6 +149,36 @@ export async function createExpense(params: {
     throw splitErr;
   }
 
+  // Audit + notify (best-effort, không block flow chính)
+  const { data: actor } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle();
+  const actorName = actor?.display_name || 'Thành viên';
+  await Promise.all([
+    logAction({
+      groupId: params.groupId,
+      tripId: params.tripId,
+      action: 'expense.create',
+      targetId: expense.id,
+      afterData: {
+        title: params.title,
+        amount: params.amount,
+        category: params.category,
+      },
+    }),
+    notifyExpenseEvent('expense.created', {
+      groupId: params.groupId,
+      tripId: params.tripId,
+      actorId: userId,
+      actorName,
+      expenseId: expense.id,
+      expenseTitle: params.title,
+      amount: params.amount,
+    }),
+  ]);
+
   return expense;
 }
 
@@ -126,7 +186,7 @@ export async function createExpense(params: {
 export async function deleteExpense(expenseId: string): Promise<void> {
   const { data: expense, error: fetchErr } = await supabase
     .from('expenses')
-    .select('group_id, image_url')
+    .select('group_id, trip_id, title, amount, image_url')
     .eq('id', expenseId)
     .single();
   if (fetchErr || !expense) throw new Error('Khoản chi không tồn tại');
@@ -147,6 +207,34 @@ export async function deleteExpense(expenseId: string): Promise<void> {
       }
     });
   }
+
+  // Audit + notify (best-effort)
+  const userId = await getAuthUserId();
+  if (!userId) return;
+  const { data: actor } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle();
+  const actorName = actor?.display_name || 'Thành viên';
+  await Promise.all([
+    logAction({
+      groupId: expense.group_id,
+      tripId: expense.trip_id,
+      action: 'expense.delete',
+      targetId: expenseId,
+      beforeData: { title: expense.title, amount: expense.amount },
+    }),
+    notifyExpenseEvent('expense.deleted', {
+      groupId: expense.group_id,
+      tripId: expense.trip_id,
+      actorId: userId,
+      actorName,
+      expenseId,
+      expenseTitle: expense.title,
+      amount: expense.amount,
+    }),
+  ]);
 }
 
 /**
