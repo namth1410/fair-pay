@@ -23,7 +23,6 @@ import {
   EmptyState,
   ListSkeleton,
 } from '../../../components/ui';
-import { SuckTarget, useBlackHole } from '../../../contexts/BlackHoleTransition';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
@@ -37,7 +36,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const c = useAppTheme();
   const insets = useSafeAreaInsets();
-  const blackHole = useBlackHole();
   const viewMode = useHomeViewMode();
 
   const { groups, balanceSummary, isLoading, loadGroups } = useGroupStore();
@@ -130,21 +128,14 @@ export default function HomeScreen() {
         {groups.map((item, index) => (
           <AnimatedEntrance key={item.id} delay={Math.min(index * 45, 450)}>
             <View style={styles.rowGutter}>
-              <SuckTarget radius={16}>
-                <GroupRow
-                  id={item.id}
-                  name={item.name}
-                  avatarUrl={item.avatar_url}
-                  memberCount={item.member_count}
-                  balance={balanceSummary.groupBalances[item.id] ?? 0}
-                  onPress={() =>
-                    blackHole.suck({
-                      onCovered: () =>
-                        router.push(`/(main)/groups/${item.id}`),
-                    })
-                  }
-                />
-              </SuckTarget>
+              <GroupRow
+                id={item.id}
+                name={item.name}
+                avatarUrl={item.avatar_url}
+                memberCount={item.member_count}
+                balance={balanceSummary.groupBalances[item.id] ?? 0}
+                onPress={() => router.push(`/(main)/groups/${item.id}`)}
+              />
             </View>
           </AnimatedEntrance>
         ))}
@@ -174,57 +165,51 @@ export default function HomeScreen() {
         >
           {showHero && (
             <View style={styles.heroGutter}>
-              <SuckTarget radius={24}>
-                <HeroDebt total={balanceSummary.total} />
-              </SuckTarget>
+              <HeroDebt total={balanceSummary.total} />
             </View>
           )}
           {joinPendingGroup && (
-            <SuckTarget radius={14}>
-              <PendingRibbon
-                groupName={joinPendingGroup}
-                onDismiss={() => setJoinPendingGroup(null)}
-              />
-            </SuckTarget>
+            <PendingRibbon
+              groupName={joinPendingGroup}
+              onDismiss={() => setJoinPendingGroup(null)}
+            />
           )}
           {showHero && (
-            <SuckTarget>
-              <SectionHeader
-                title="NHÓM CỦA BẠN"
-                count={groups.length}
-                tagline={groupsTagline}
-                right={
-                  <View style={styles.headerRight}>
-                    {showToggle && (
-                      <HomeViewToggle
-                        value={viewMode}
-                        onChange={handleViewModeChange}
-                      />
-                    )}
-                    <Pressable
-                      onPress={handleOpenCreateJoin}
-                      accessibilityRole="button"
-                      accessibilityLabel="Thêm nhóm mới"
-                      accessibilityHint="Mở bảng tạo nhóm hoặc nhập mã mời"
-                      hitSlop={8}
-                      style={({ pressed }) => [
-                        styles.addBtn,
-                        {
-                          backgroundColor: c.primary,
-                          opacity: pressed ? 0.85 : 1,
-                        },
-                      ]}
-                    >
-                      <Plus
-                        size={16}
-                        color={c.inverseForeground}
-                        strokeWidth={2.4}
-                      />
-                    </Pressable>
-                  </View>
-                }
-              />
-            </SuckTarget>
+            <SectionHeader
+              title="NHÓM CỦA BẠN"
+              count={groups.length}
+              tagline={groupsTagline}
+              right={
+                <View style={styles.headerRight}>
+                  {showToggle && (
+                    <HomeViewToggle
+                      value={viewMode}
+                      onChange={handleViewModeChange}
+                    />
+                  )}
+                  <Pressable
+                    onPress={handleOpenCreateJoin}
+                    accessibilityRole="button"
+                    accessibilityLabel="Thêm nhóm mới"
+                    accessibilityHint="Mở bảng tạo nhóm hoặc nhập mã mời"
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.addBtn,
+                      {
+                        backgroundColor: c.primary,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Plus
+                      size={16}
+                      color={c.inverseForeground}
+                      strokeWidth={2.4}
+                    />
+                  </Pressable>
+                </View>
+              }
+            />
           )}
 
           {listBody}
@@ -249,8 +234,6 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, justifyContent: 'center' },
   rowGutter: { marginHorizontal: 16 },
 
-  // Margin nằm NGOÀI SuckTarget — xem comment trong BlackHoleTransition.tsx
-  // (SuckTarget bounds phải khớp với visual rect, không bao gồm margin).
   heroGutter: { marginHorizontal: 16, marginTop: 12, marginBottom: 10 },
 
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },

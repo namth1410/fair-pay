@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { EXPENSE_CATEGORIES, type ExpenseCategory } from '../../config/constants';
+import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { ExpensePreset } from '../../services/preset.service';
 import { usePresetStore } from '../../stores/preset.store';
@@ -174,6 +175,7 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
                       color: c.foreground,
                       backgroundColor: c.surfaceAlt,
                       borderColor: c.divider,
+                      fontFamily: fonts.bold,
                     },
                   ]}
                 />

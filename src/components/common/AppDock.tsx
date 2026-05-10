@@ -188,8 +188,8 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
     if (pathname === path) return;
     hapticLight();
     // navigate: tab-aware navigation. Tabs giữ screens mounted, switching
-    // chỉ swap visible view → instant. Stack không thay đổi → hardware back
-    // trên main tab exit app. push/replace chỉ dùng khi đi sâu vào detail.
+    // chỉ swap visible view. Reanimated tab navigator handle smooth slide
+    // (jumpMode="smooth") → jump xa không lướt qua tab giữa.
     router.navigate(path as never);
   };
 

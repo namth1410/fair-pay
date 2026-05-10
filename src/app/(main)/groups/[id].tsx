@@ -1,10 +1,16 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
 import { Pencil } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
-import type { EntryAnimationsValues } from 'react-native-reanimated';
-import Animated, { withTiming } from 'react-native-reanimated';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useShallow } from 'zustand/react/shallow';
 
 import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
@@ -25,6 +31,9 @@ import { getErrorMessage } from '../../../utils/error';
 type Tab = 'trips' | 'members' | 'settings';
 type Role = 'admin' | 'member';
 
+const TAB_ANIM = { duration: 280, easing: Easing.out(Easing.cubic) } as const;
+const SWIPE_VELOCITY_THRESHOLD = 500;
+
 interface ConfirmState {
   isOpen: boolean;
   title: string;
@@ -43,6 +52,7 @@ export default function GroupDetailScreen() {
   const router = useRouter();
   const c = useAppTheme();
   const { toast } = useToast();
+  const { width: W } = useWindowDimensions();
 
   // Selectors gộp qua useShallow — chỉ re-render khi shape của object subscribe đổi,
   // tránh re-render theo các field không liên quan (vd `balanceSummary`).
@@ -77,7 +87,6 @@ export default function GroupDetailScreen() {
   const user = useAuthStore((s) => s.user);
 
   const [tab, setTab] = useState<Tab>('trips');
-  const prevTabRef = useRef<Tab>(tab);
   const [myRole, setMyRole] = useState<Role>('member');
   const [confirm, setConfirm] = useState<ConfirmState>(CONFIRM_CLOSED);
   const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
@@ -107,6 +116,60 @@ export default function GroupDetailScreen() {
   }, [user, currentGroupMembers]);
 
   const isAdmin = myRole === 'admin';
+
+  // Tabs visible theo role: member chỉ thấy trips/members, admin thêm settings.
+  const VISIBLE_KEYS = useMemo<Tab[]>(
+    () => (isAdmin ? ['trips', 'members', 'settings'] : ['trips', 'members']),
+    [isAdmin],
+  );
+
+  const targetIdx = Math.max(0, VISIBLE_KEYS.indexOf(tab));
+  const progress = useSharedValue(targetIdx);
+  const startProgress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(targetIdx, TAB_ANIM);
+  }, [targetIdx, progress]);
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -progress.value * W }],
+  }));
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-12, 12])
+        .failOffsetY([-20, 20])
+        .onBegin(() => {
+          'worklet';
+          startProgress.value = progress.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          const next = startProgress.value - e.translationX / W;
+          progress.value = Math.max(0, Math.min(VISIBLE_KEYS.length - 1, next));
+        })
+        .onEnd((e) => {
+          'worklet';
+          const v = e.velocityX;
+          const settled =
+            v < -SWIPE_VELOCITY_THRESHOLD
+              ? Math.ceil(progress.value)
+              : v > SWIPE_VELOCITY_THRESHOLD
+                ? Math.floor(progress.value)
+                : Math.round(progress.value);
+          const clamped = Math.max(
+            0,
+            Math.min(VISIBLE_KEYS.length - 1, settled),
+          );
+          progress.value = withTiming(clamped, TAB_ANIM);
+          const nextKey = VISIBLE_KEYS[clamped] ?? VISIBLE_KEYS[0]!;
+          if (clamped !== targetIdx) {
+            runOnJS(setTab)(nextKey);
+          }
+        }),
+    [W, progress, startProgress, targetIdx, VISIBLE_KEYS],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -221,24 +284,6 @@ export default function GroupDetailScreen() {
     }
   };
 
-  const GROUP_TAB_KEYS: Tab[] = ['trips', 'members', 'settings'];
-  const tabIdx = GROUP_TAB_KEYS.indexOf(tab);
-  const prevIdx = GROUP_TAB_KEYS.indexOf(prevTabRef.current);
-  const direction = tabIdx >= prevIdx ? 'right' : 'left';
-  prevTabRef.current = tab;
-
-  const tabEntering = (_values: EntryAnimationsValues) => {
-    'worklet';
-    const offset = direction === 'right' ? 40 : -40;
-    return {
-      initialValues: { opacity: 0, transform: [{ translateX: offset }] },
-      animations: {
-        opacity: withTiming(1, { duration: 200 }),
-        transform: [{ translateX: withTiming(0, { duration: 200 }) }],
-      },
-    };
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
@@ -300,46 +345,50 @@ export default function GroupDetailScreen() {
         onSelect={(key) => setTab(key as Tab)}
       />
 
-      {tab === 'trips' && (
-        <Animated.View key="trips" entering={tabEntering} style={styles.tabContent}>
-          <TripsTab
-            trips={trips}
-            isLoading={tripsLoading}
-            isAdmin={isAdmin}
-            onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
-            onToggleStatus={handleToggleTripRequest}
-            onCreateTrip={handleCreateTrip}
-          />
-        </Animated.View>
-      )}
-
-      {tab === 'members' && (
-        <Animated.View key="members" entering={tabEntering} style={styles.tabContent}>
-          <MembersTab
-            members={currentGroupMembers}
-            pendingRequests={pendingJoinRequests}
-            inviteCode={group?.invite_code}
-            isAdmin={isAdmin}
-            onShare={handleShare}
-            onKick={handleKick}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            onAddVirtual={() => setAddVirtualOpen(true)}
-          />
-        </Animated.View>
-      )}
-
-      {tab === 'settings' && isAdmin && (
-        <Animated.View key="settings" entering={tabEntering} style={styles.settingsContent}>
-          <GroupSettingsTab
-            memberCount={currentGroupMembers.length}
-            virtualMemberCount={currentGroupMembers.filter((m) => m.is_virtual).length}
-            tripCount={trips.length}
-            onEditGroup={() => setEditSheetOpen(true)}
-            onDeleteGroup={handleDeleteGroup}
-          />
-        </Animated.View>
-      )}
+      <View style={styles.tabViewport}>
+        <GestureDetector gesture={pan}>
+          <Animated.View
+            style={[styles.tabRow, { width: W * VISIBLE_KEYS.length }, rowStyle]}
+          >
+            <View style={{ width: W }}>
+              <TripsTab
+                trips={trips}
+                isLoading={tripsLoading}
+                isAdmin={isAdmin}
+                onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
+                onToggleStatus={handleToggleTripRequest}
+                onCreateTrip={handleCreateTrip}
+              />
+            </View>
+            <View style={{ width: W }}>
+              <MembersTab
+                members={currentGroupMembers}
+                pendingRequests={pendingJoinRequests}
+                inviteCode={group?.invite_code}
+                isAdmin={isAdmin}
+                onShare={handleShare}
+                onKick={handleKick}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onAddVirtual={() => setAddVirtualOpen(true)}
+              />
+            </View>
+            {isAdmin ? (
+              <View style={{ width: W }}>
+                <View style={styles.settingsContent}>
+                  <GroupSettingsTab
+                    memberCount={currentGroupMembers.length}
+                    virtualMemberCount={currentGroupMembers.filter((m) => m.is_virtual).length}
+                    tripCount={trips.length}
+                    onEditGroup={() => setEditSheetOpen(true)}
+                    onDeleteGroup={handleDeleteGroup}
+                  />
+                </View>
+              </View>
+            ) : null}
+          </Animated.View>
+        </GestureDetector>
+      </View>
 
       <ConfirmDialog
         isOpen={confirm.isOpen}
@@ -413,7 +462,8 @@ export default function GroupDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabContent: { flex: 1 },
+  tabViewport: { flex: 1, overflow: 'hidden' },
+  tabRow: { flex: 1, flexDirection: 'row' },
   settingsContent: { padding: 16, gap: 16 },
   heroBlock: {
     alignItems: 'center',

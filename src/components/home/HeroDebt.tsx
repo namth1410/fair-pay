@@ -327,10 +327,6 @@ export const HeroDebt = memo(function HeroDebt({ total }: HeroDebtProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    // Margin moved to caller (gutter View around SuckTarget) — nếu để margin
-    // ở wrap, SuckTarget bounds = wrap+margin → Skia Mask round 4 góc của
-    // margin box (rỗng) trong khi visual rect bên trong vẫn vuông khi
-    // makeImageFromView capture SVG bg trên Android.
     borderRadius: 24,
     overflow: 'hidden',
     minHeight: 188,

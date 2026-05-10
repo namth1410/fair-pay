@@ -1,9 +1,15 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Info } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import type { EntryAnimationsValues } from 'react-native-reanimated';
-import Animated, { withTiming } from 'react-native-reanimated';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { BalancesTab } from '../../../../components/trip/BalancesTab';
 import { ExpensesTab } from '../../../../components/trip/ExpensesTab';
@@ -21,6 +27,8 @@ import { hapticLight } from '../../../../utils/haptics';
 
 type Tab = 'expenses' | 'balances' | 'settle' | 'history';
 
+const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history'];
+
 const TAB_ITEMS = [
   { key: 'expenses', label: 'Chi phí' },
   { key: 'balances', label: 'Số dư' },
@@ -28,9 +36,13 @@ const TAB_ITEMS = [
   { key: 'history', label: 'Lịch sử' },
 ];
 
+const TAB_ANIM = { duration: 280, easing: Easing.out(Easing.cubic) } as const;
+const SWIPE_VELOCITY_THRESHOLD = 500;
+
 export default function TripDetailScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
   const c = useAppTheme();
+  const { width: W } = useWindowDimensions();
 
   const {
     trips, currentExpenses, currentPayments, balances, settlements,
@@ -43,9 +55,55 @@ export default function TripDetailScreen() {
   const profile = useAuthStore((s) => s.profile);
 
   const [tab, setTab] = useState<Tab>('expenses');
-  const prevTabRef = useRef<Tab>(tab);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [explainOpen, setExplainOpen] = useState(false);
+
+  const targetIdx = TAB_KEYS.indexOf(tab);
+  const progress = useSharedValue(targetIdx);
+  const startProgress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(targetIdx, TAB_ANIM);
+  }, [targetIdx, progress]);
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -progress.value * W }],
+  }));
+
+  // Pan gesture: vuốt ngang để chuyển tab. activeOffsetX/failOffsetY chia
+  // ranh với FlatList vertical scroll + SwipeableCard (RNGH leaf gesture).
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-12, 12])
+        .failOffsetY([-20, 20])
+        .onBegin(() => {
+          'worklet';
+          startProgress.value = progress.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          const next = startProgress.value - e.translationX / W;
+          progress.value = Math.max(0, Math.min(TAB_KEYS.length - 1, next));
+        })
+        .onEnd((e) => {
+          'worklet';
+          const v = e.velocityX;
+          const settled =
+            v < -SWIPE_VELOCITY_THRESHOLD
+              ? Math.ceil(progress.value)
+              : v > SWIPE_VELOCITY_THRESHOLD
+                ? Math.floor(progress.value)
+                : Math.round(progress.value);
+          const clamped = Math.max(0, Math.min(TAB_KEYS.length - 1, settled));
+          progress.value = withTiming(clamped, TAB_ANIM);
+          const nextKey = TAB_KEYS[clamped] ?? TAB_KEYS[0]!;
+          if (clamped !== targetIdx) {
+            runOnJS(setTab)(nextKey);
+          }
+        }),
+    [W, progress, startProgress, targetIdx],
+  );
 
   const trip = trips.find((t) => t.id === tripId);
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -99,24 +157,6 @@ export default function TripDetailScreen() {
 
   if (!tripId) return null;
 
-  const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history'];
-  const tabIdx = TAB_KEYS.indexOf(tab);
-  const prevIdx = TAB_KEYS.indexOf(prevTabRef.current);
-  const direction = tabIdx >= prevIdx ? 'right' : 'left';
-  prevTabRef.current = tab;
-
-  const tabEntering = (_values: EntryAnimationsValues) => {
-    'worklet';
-    const offset = direction === 'right' ? 40 : -40;
-    return {
-      initialValues: { opacity: 0, transform: [{ translateX: offset }] },
-      animations: {
-        opacity: withTiming(1, { duration: 200 }),
-        transform: [{ translateX: withTiming(0, { duration: 200 }) }],
-      },
-    };
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
@@ -163,43 +203,44 @@ export default function TripDetailScreen() {
 
       <SectionTabs items={TAB_ITEMS} selected={tab} onSelect={(key) => setTab(key as Tab)} />
 
-      <Animated.View key={tab} entering={tabEntering} style={styles.tabContent}>
-        {tab === 'expenses' && (
-          <ExpensesTab
-            tripId={tripId}
-            tripStatus={trip?.status || 'open'}
-            expenses={currentExpenses}
-            members={currentGroupMembers}
-            isLoading={isLoading}
-            onDeleteExpense={removeExpense}
-          />
-        )}
-
-        {tab === 'balances' && (
-          <BalancesTab
-            tripName={trip?.name || ''}
-            balances={balances}
-            totalExpenses={totalExpenses}
-          />
-        )}
-
-        {tab === 'settle' && (
-          <SettlementTab
-            tripId={tripId}
-            groupId={trip?.group_id || ''}
-            settlements={settlements}
-            payments={currentPayments}
-            balances={balances}
-            members={currentGroupMembers}
-            onAddPayment={addPayment}
-            onDeletePayment={removePayment}
-          />
-        )}
-
-        {tab === 'history' && (
-          <HistoryTab auditLogs={auditLogs} members={currentGroupMembers} />
-        )}
-      </Animated.View>
+      <View style={styles.tabViewport}>
+        <GestureDetector gesture={pan}>
+          <Animated.View style={[styles.tabRow, { width: W * TAB_KEYS.length }, rowStyle]}>
+            <View style={{ width: W }}>
+              <ExpensesTab
+                tripId={tripId}
+                tripStatus={trip?.status || 'open'}
+                expenses={currentExpenses}
+                members={currentGroupMembers}
+                isLoading={isLoading}
+                onDeleteExpense={removeExpense}
+              />
+            </View>
+            <View style={{ width: W }}>
+              <BalancesTab
+                tripName={trip?.name || ''}
+                balances={balances}
+                totalExpenses={totalExpenses}
+              />
+            </View>
+            <View style={{ width: W }}>
+              <SettlementTab
+                tripId={tripId}
+                groupId={trip?.group_id || ''}
+                settlements={settlements}
+                payments={currentPayments}
+                balances={balances}
+                members={currentGroupMembers}
+                onAddPayment={addPayment}
+                onDeletePayment={removePayment}
+              />
+            </View>
+            <View style={{ width: W }}>
+              <HistoryTab auditLogs={auditLogs} members={currentGroupMembers} />
+            </View>
+          </Animated.View>
+        </GestureDetector>
+      </View>
     </View>
   );
 }
@@ -212,7 +253,8 @@ function describeBalance(b: number): { label: string; tone: 'success' | 'danger'
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabContent: { flex: 1 },
+  tabViewport: { flex: 1, overflow: 'hidden' },
+  tabRow: { flex: 1, flexDirection: 'row' },
   heroWrap: {
     marginHorizontal: 16,
     marginTop: 12,

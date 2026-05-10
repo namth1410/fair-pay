@@ -1,17 +1,14 @@
 import { useLocalSearchParams } from 'expo-router';
 
-import { ExpenseFormScreen } from '../../../../../components/expense/ExpenseFormScreen';
+import { ExpenseFormScreen } from '../../../components/expense/ExpenseFormScreen';
 
-export default function NewExpenseScreen() {
+export default function NewExpenseFromHomeScreen() {
   const params = useLocalSearchParams<{
-    id: string;
     expenseId?: string;
     imageUri?: string;
     imageSizeBytes?: string;
     imageWidth?: string;
   }>();
-  const tripId = params.id;
-  if (!tripId) return null;
 
   const sizeBytes = params.imageSizeBytes ? parseInt(params.imageSizeBytes, 10) : NaN;
   const width = params.imageWidth ? parseInt(params.imageWidth, 10) : NaN;
@@ -22,7 +19,6 @@ export default function NewExpenseScreen() {
 
   return (
     <ExpenseFormScreen
-      initialTripId={tripId}
       presetExpenseId={params.expenseId}
       initialImage={initialImage}
     />

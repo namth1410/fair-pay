@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
+import { TabHeader } from '../../../components/header/TabHeader';
 import {
   AppText,
   AppTextField,
@@ -95,9 +96,10 @@ export default function SettingsScreen() {
   const avatarSeed = profile?.display_name || user?.email || 'user';
 
   return (
-    <>
+    <View style={[styles.root, { backgroundColor: c.background }]}>
+      <TabHeader routeName="settings" title="Cài đặt" />
       <ScrollView
-        style={{ backgroundColor: c.background }}
+        style={{ flex: 1, backgroundColor: c.background }}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -292,11 +294,12 @@ export default function SettingsScreen() {
       </ScrollView>
 
       <FeedbackSheet isOpen={feedbackOpen} onOpenChange={setFeedbackOpen} />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   content: { padding: 16, paddingBottom: 120 },
   firstSectionTitle: {
     marginTop: 4,

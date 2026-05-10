@@ -1,5 +1,5 @@
 import { FieldError, Input, Label, TextField } from 'heroui-native';
-import type { KeyboardTypeOptions } from 'react-native';
+import type { KeyboardTypeOptions, StyleProp, TextStyle } from 'react-native';
 
 interface AppTextFieldProps {
   label?: string;
@@ -18,6 +18,7 @@ interface AppTextFieldProps {
   onBlur?: () => void;
   accessibilityLabel?: string;
   maxLength?: number;
+  inputStyle?: StyleProp<TextStyle>;
 }
 
 export function AppTextField({
@@ -37,6 +38,7 @@ export function AppTextField({
   onBlur,
   accessibilityLabel,
   maxLength,
+  inputStyle,
 }: AppTextFieldProps) {
   return (
     <TextField isInvalid={!!error} accessibilityLabel={accessibilityLabel}>
@@ -55,6 +57,7 @@ export function AppTextField({
         onFocus={onFocus}
         onBlur={onBlur}
         maxLength={maxLength}
+        style={inputStyle}
       />
       {error ? <FieldError>{error}</FieldError> : null}
     </TextField>

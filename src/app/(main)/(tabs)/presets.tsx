@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { PresetFormModal } from '../../../components/common/PresetFormModal';
+import { TabHeader } from '../../../components/header/TabHeader';
 import {
   AppCard,
   BouncyDialog,
@@ -71,6 +72,7 @@ export default function PresetsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
+      <TabHeader routeName="presets" title="Preset khoản chi" />
       {presets.length === 0 && !loading ? (
         <View style={styles.emptyWrap}>
           <EmptyState

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import {
   computeMoneySuggestions,
@@ -76,6 +77,7 @@ export function MoneyTextField({
         onFocus={onFocus}
         onBlur={onBlur}
         accessibilityLabel={accessibilityLabel}
+        inputStyle={styles.boldValue}
       />
       {showSuggestions && suggestions.length > 0 ? (
         <ScrollView
@@ -118,5 +120,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  boldValue: {
+    fontFamily: fonts.bold,
   },
 });

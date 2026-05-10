@@ -1,34 +1,59 @@
-import type { BottomTabHeaderProps } from '@react-navigation/bottom-tabs';
-import { Tabs } from 'expo-router';
+import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
+import { withLayoutContext } from 'expo-router';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { GlassCapsuleHeader } from '../../../components/header/GlassCapsuleHeader';
+import { AppDock } from '../../../components/common/AppDock';
+import { QuickAddActionSheet } from '../../../components/common/QuickAddActionSheet';
+import {
+  createReanimatedTabNavigator,
+  type ReanimatedTabNavigationEventMap,
+  type ReanimatedTabNavigationOptions,
+} from '../../../components/common/ReanimatedTabsNavigator';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 
-// Tabs giữ screens MOUNTED sau lần focus đầu — tap dock chỉ swap visible
-// view, không remount + không refetch data → UX instant. AppDock vẫn render
-// overlay từ (main)/_layout.tsx, nên tabBar built-in được ẩn hoàn toàn.
-//
-// Header dùng chung GlassCapsuleHeader. Type của Tabs header (BottomTabHeaderProps)
-// có shape khác NativeStackHeaderProps (không có `back`) — cast vì
-// GlassCapsuleHeader đã handle back=undefined → hasBack=false → no back ball.
+const { Navigator } = createReanimatedTabNavigator();
+
+const ReanimatedTabs = withLayoutContext<
+  ReanimatedTabNavigationOptions,
+  typeof Navigator,
+  TabNavigationState<ParamListBase>,
+  ReanimatedTabNavigationEventMap
+>(Navigator);
+
 export default function TabsLayout() {
   const c = useAppTheme();
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   return (
-    <Tabs
-      screenOptions={{
-        sceneStyle: { backgroundColor: c.background },
-        header: (props: BottomTabHeaderProps) =>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          <GlassCapsuleHeader {...(props as any)} />,
-        tabBarStyle: { display: 'none' },
-      }}
-      tabBar={() => null}
-    >
-      <Tabs.Screen name="index" options={{ headerShown: false }} />
-      <Tabs.Screen name="notifications" options={{ title: 'Thông báo' }} />
-      <Tabs.Screen name="presets" options={{ title: 'Preset khoản chi' }} />
-      <Tabs.Screen name="settings" options={{ title: 'Cài đặt' }} />
-    </Tabs>
+    <View style={[styles.root, { backgroundColor: c.background }]}>
+      {/* Header render trong từng tab screen → slide cùng scene khi đổi tab. */}
+      <ReanimatedTabs
+        // jumpMode="smooth" trong navigator → tap tab xa không slide qua tab
+        // giữa. Swipe gesture vẫn ở từng adjacent (lib tự handle ±1 index).
+        sceneContainerStyle={{ backgroundColor: c.background }}
+        renderMode="lazy"
+        swipeEnabled
+      >
+        <ReanimatedTabs.Screen name="index" />
+        <ReanimatedTabs.Screen name="notifications" />
+        <ReanimatedTabs.Screen name="presets" />
+        <ReanimatedTabs.Screen name="settings" />
+      </ReanimatedTabs>
+
+      <AppDock
+        onPlusPress={() => setQuickAddOpen(true)}
+        isPlusActive={quickAddOpen}
+      />
+
+      <QuickAddActionSheet
+        isOpen={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+      />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

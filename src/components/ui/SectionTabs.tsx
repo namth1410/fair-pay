@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from './AppText';
 
 interface TabItem {
@@ -29,6 +30,7 @@ interface Layout {
 
 export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
   const c = useAppTheme();
+  const animationsEnabled = useAnimationsEnabled();
   const layouts = useRef<Record<string, Layout>>({});
   const [initialized, setInitialized] = useState(false);
 
@@ -40,7 +42,7 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
   const updateIndicator = (key: string, animate = true) => {
     const l = layouts.current[key];
     if (!l) return;
-    if (animate) {
+    if (animate && animationsEnabled) {
       indicatorX.value = withSpring(l.x, { damping: 18, stiffness: 220 });
       indicatorW.value = withSpring(l.width, { damping: 18, stiffness: 220 });
     } else {

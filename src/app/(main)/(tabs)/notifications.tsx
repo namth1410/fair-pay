@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { TabHeader } from '../../../components/header/TabHeader';
 import { NotificationRow } from '../../../components/notifications/NotificationRow';
 import { AppText, EmptyState, ListSkeleton } from '../../../components/ui';
 import { SkiaFireBorder } from '../../../components/ui/skia';
@@ -272,6 +273,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
+      <TabHeader routeName="notifications" title="Thông báo" />
       {/* Filter chips */}
       <View style={styles.filterBar}>
         <View style={styles.chipRow}>

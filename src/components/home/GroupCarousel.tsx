@@ -11,7 +11,6 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 
-import { SuckTarget, useBlackHole } from '../../contexts/BlackHoleTransition';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupWithMemberCount } from '../../services/group.service';
 import { hapticLight } from '../../utils/haptics';
@@ -27,8 +26,8 @@ interface GroupCarouselProps {
 // avatar portrait cũng không bị cắt mất phần lớn. INFO_HEIGHT cố định.
 const INFO_HEIGHT = 140;
 // Behind cards are translated down (rel=2 → translateY 32 + scale 0.88) so the
-// stack View bounds need to extend below the top card height; otherwise the
-// SuckTarget snapshot would crop the bottom of the peeking cards.
+// stack View bounds need to extend below the top card height; otherwise Android
+// would clip the bottom of the peeking cards.
 const STACK_BOTTOM_OVERFLOW = 36;
 const SWIPE_THRESHOLD = 80;
 const SWIPE_VELOCITY_THRESHOLD = 600;
@@ -49,7 +48,6 @@ function useMirroredIndex(sv: SharedValue<number>): number {
 
 export function GroupCarousel({ groups, groupBalances }: GroupCarouselProps) {
   const router = useRouter();
-  const blackHole = useBlackHole();
   const c = useAppTheme();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -68,11 +66,9 @@ export function GroupCarousel({ groups, groupBalances }: GroupCarouselProps) {
 
   const handlePressActive = useCallback(
     (groupId: string) => {
-      blackHole.suck({
-        onCovered: () => router.push(`/(main)/groups/${groupId}`),
-      });
+      router.push(`/(main)/groups/${groupId}`);
     },
-    [blackHole, router],
+    [router],
   );
 
   const fireHaptic = useCallback(() => hapticLight(), []);
@@ -142,36 +138,31 @@ export function GroupCarousel({ groups, groupBalances }: GroupCarouselProps) {
       ]}
     >
       <GestureDetector gesture={pan}>
-        {/* SuckTarget wraps the stack so the black-hole transition can capture
-            the visible cards as one snapshot. radius matches card borderRadius
-            so the snapshot's rounded corners line up with the visible top card. */}
-        <SuckTarget radius={24}>
-          <View
-            style={[
-              styles.stack,
-              { width: cardWidth, height: cardHeight + STACK_BOTTOM_OVERFLOW },
-            ]}
-          >
-            {groups.map((g, i) => (
-              <GroupCarouselCard
-                key={g.id}
-                id={g.id}
-                name={g.name}
-                avatarUrl={g.avatar_url}
-                memberCount={g.member_count}
-                balance={groupBalances[g.id] ?? 0}
-                absoluteIndex={i}
-                total={total}
-                topIndex={topIndex}
-                dragX={dragX}
-                cardWidth={cardWidth}
-                cardHeight={cardHeight}
-                screenWidth={screenWidth}
-                onPressActive={() => handlePressActive(g.id)}
-              />
-            ))}
-          </View>
-        </SuckTarget>
+        <View
+          style={[
+            styles.stack,
+            { width: cardWidth, height: cardHeight + STACK_BOTTOM_OVERFLOW },
+          ]}
+        >
+          {groups.map((g, i) => (
+            <GroupCarouselCard
+              key={g.id}
+              id={g.id}
+              name={g.name}
+              avatarUrl={g.avatar_url}
+              memberCount={g.member_count}
+              balance={groupBalances[g.id] ?? 0}
+              absoluteIndex={i}
+              total={total}
+              topIndex={topIndex}
+              dragX={dragX}
+              cardWidth={cardWidth}
+              cardHeight={cardHeight}
+              screenWidth={screenWidth}
+              onPressActive={() => handlePressActive(g.id)}
+            />
+          ))}
+        </View>
       </GestureDetector>
 
       {total > 1 && (

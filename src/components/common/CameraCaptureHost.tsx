@@ -1,11 +1,10 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { Camera as CameraIcon, RefreshCcw, X } from 'lucide-react-native';
+import { X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -76,27 +75,14 @@ function CameraCaptureScreen() {
   const window = useWindowDimensions();
   const squareSize = window.width;
 
-  const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [cameraReady, setCameraReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<CameraCaptureResult | null>(null);
   const [error, setError] = useState('');
   const cameraRef = useRef<CameraView>(null);
 
-  useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
-      requestPermission();
-    }
-  }, [permission]);
-
   const handleClose = () => {
     resolveAndClose(null);
-  };
-
-  const handleFlip = () => {
-    setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
-    setCameraReady(false);
   };
 
   const handleCapture = async () => {
@@ -134,61 +120,12 @@ function CameraCaptureScreen() {
     if (preview) resolveAndClose(preview);
   };
 
-  if (!permission) {
-    return (
-      <View style={styles.root}>
-        <ActivityIndicator color="#FFFFFF" />
-      </View>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-        <View style={styles.topBar}>
-          <Pressable onPress={handleClose} hitSlop={12} style={styles.iconBtn}>
-            <X size={24} color="#FFFFFF" strokeWidth={2} />
-          </Pressable>
-        </View>
-        <View style={styles.permissionBody}>
-          <CameraIcon size={48} color="#FFFFFF" strokeWidth={1.6} />
-          <AppText variant="title" style={styles.whiteText} center>
-            Cần quyền truy cập camera
-          </AppText>
-          <AppText variant="body" style={styles.whiteMuted} center>
-            Fair Pay cần camera để chụp ảnh hoá đơn hoặc avatar nhóm.
-          </AppText>
-          {permission.canAskAgain ? (
-            <Pressable onPress={requestPermission} style={[styles.primaryBtn, styles.permissionBtn]}>
-              <AppText variant="body" weight="semibold" style={styles.primaryBtnText}>
-                Cấp quyền
-              </AppText>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => Linking.openSettings()} style={[styles.primaryBtn, styles.permissionBtn]}>
-              <AppText variant="body" weight="semibold" style={styles.primaryBtnText}>
-                Mở Cài đặt
-              </AppText>
-            </Pressable>
-          )}
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
         <Pressable onPress={handleClose} hitSlop={12} style={styles.iconBtn}>
           <X size={24} color="#FFFFFF" strokeWidth={2} />
         </Pressable>
-        {!preview ? (
-          <Pressable onPress={handleFlip} hitSlop={12} style={styles.iconBtn}>
-            <RefreshCcw size={22} color="#FFFFFF" strokeWidth={2} />
-          </Pressable>
-        ) : (
-          <View style={styles.iconBtn} />
-        )}
       </View>
 
       <View style={styles.viewfinderWrap}>
@@ -202,7 +139,7 @@ function CameraCaptureScreen() {
             <CameraView
               ref={cameraRef}
               style={StyleSheet.absoluteFill}
-              facing={facing}
+              facing="back"
               onCameraReady={() => setCameraReady(true)}
               responsiveOrientationWhenOrientationLocked={false}
             />
@@ -351,22 +288,7 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     color: '#000000',
   },
-  permissionBody: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    gap: 16,
-  },
-  permissionBtn: {
-    flex: 0,
-    alignSelf: 'stretch',
-    marginTop: 8,
-  },
   whiteText: {
     color: '#FFFFFF',
-  },
-  whiteMuted: {
-    color: 'rgba(255,255,255,0.7)',
   },
 });

@@ -1,13 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView, useKeyboardHandler } from 'react-native-keyboard-controller';
+import { runOnJS } from 'react-native-reanimated';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { computeMoneySuggestions, formatThousands } from '../../utils/format';
 import { AppText } from './AppText';
 
 interface MoneyChipsDockProps {
-  /** Chỉ hiện khi input tiền đang focus (consumer track qua onFocus/onBlur). */
+  /**
+   * Input tiền đang focus (consumer track qua onFocus/onBlur). Component tự
+   * gate thêm theo keyboard visibility — chip sẽ ẩn nếu user đóng bàn phím
+   * bằng nút hệ thống dù input còn focus (Oppo/Samsung/Xiaomi).
+   */
   visible: boolean;
   /** Raw digit string của input tiền. */
   amountStr: string;
@@ -17,8 +22,18 @@ interface MoneyChipsDockProps {
 
 export function MoneyChipsDock({ visible, amountStr, onPick }: MoneyChipsDockProps) {
   const c = useAppTheme();
+  const [keyboardOpening, setKeyboardOpening] = useState(false);
+  useKeyboardHandler(
+    {
+      onStart: (e) => {
+        'worklet';
+        runOnJS(setKeyboardOpening)(e.height > 0);
+      },
+    },
+    [],
+  );
   const suggestions = useMemo(() => computeMoneySuggestions(amountStr), [amountStr]);
-  if (!visible || suggestions.length === 0) return null;
+  if (!visible || !keyboardOpening || suggestions.length === 0) return null;
 
   return (
     <KeyboardStickyView offset={{ closed: 0, opened: 0 }} style={styles.dock}>

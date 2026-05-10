@@ -30,6 +30,18 @@ export async function fetchTrips(groupId: string): Promise<Trip[]> {
   return data || [];
 }
 
+/** Fetch all trips user has access to (across all groups). RLS scopes by membership. */
+export async function fetchAllUserTrips(): Promise<Trip[]> {
+  const { data, error } = await supabase
+    .from('trips')
+    .select('*')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 /** Create a trip (admin only) */
 export async function createTrip(
   groupId: string,

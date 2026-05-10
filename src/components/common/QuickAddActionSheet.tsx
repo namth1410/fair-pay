@@ -1,34 +1,22 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button } from 'heroui-native';
+import * as Crypto from 'expo-crypto';
+import { router } from 'expo-router';
+import { BottomSheet } from 'heroui-native';
 import { Camera, ImageIcon, Pencil } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { getErrorMessage } from '../../utils/error';
-import {
-  type AvatarSource,
-  pickAndProcessAvatar,
-  type ProcessedAvatar,
-} from '../../utils/imageProcessing';
+import { type AvatarSource, pickImage } from '../../utils/imageProcessing';
 import { AppText } from '../ui';
-import { GroupTripPickerSheet } from './GroupTripPickerSheet';
 
 interface QuickAddActionSheetProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-type SheetState =
-  | { kind: 'choose' }
-  | { kind: 'picking'; source: AvatarSource }
-  | { kind: 'preview'; processed: ProcessedAvatar };
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
-}
+type SheetState = { kind: 'choose' } | { kind: 'picking'; source: AvatarSource };
 
 export function QuickAddActionSheet({
   isOpen,
@@ -37,8 +25,6 @@ export function QuickAddActionSheet({
   const c = useAppTheme();
   const [state, setState] = useState<SheetState>({ kind: 'choose' });
   const [errorMsg, setErrorMsg] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerImage, setPickerImage] = useState<ProcessedAvatar | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -47,162 +33,116 @@ export function QuickAddActionSheet({
     }
   }, [isOpen]);
 
+  const navigateToForm = (image?: {
+    uri: string;
+    width: number;
+    sizeBytes: number;
+  }) => {
+    const expenseId = Crypto.randomUUID();
+    const params = new URLSearchParams();
+    params.set('expenseId', expenseId);
+    if (image) {
+      params.set('imageUri', image.uri);
+      params.set('imageSizeBytes', String(image.sizeBytes));
+      params.set('imageWidth', String(image.width));
+    }
+    onOpenChange(false);
+    router.push(`/expenses/new?${params.toString()}` as never);
+  };
+
   const handlePick = async (source: AvatarSource) => {
     setErrorMsg('');
     setState({ kind: 'picking', source });
     try {
-      const processed = await pickAndProcessAvatar(source);
-      if (!processed) {
+      const picked = await pickImage(source);
+      if (!picked) {
         setState({ kind: 'choose' });
         return;
       }
-      setState({ kind: 'preview', processed });
+      navigateToForm({
+        uri: picked.uri,
+        width: picked.width,
+        sizeBytes: picked.sizeBytes,
+      });
     } catch (err) {
       setErrorMsg(getErrorMessage(err));
       setState({ kind: 'choose' });
     }
   };
 
-  const proceedToPicker = (image: ProcessedAvatar | null) => {
-    setPickerImage(image);
-    setPickerOpen(true);
-    onOpenChange(false);
-  };
-
   const handleManual = () => {
-    proceedToPicker(null);
-  };
-
-  const handleContinue = () => {
-    if (state.kind !== 'preview') return;
-    proceedToPicker(state.processed);
+    navigateToForm();
   };
 
   const isPicking = state.kind === 'picking';
-  const isPreview = state.kind === 'preview';
 
   return (
-    <>
-      <BottomSheet
-        isOpen={isOpen}
-        onOpenChange={(open) => {
-          if (isPicking) return;
-          onOpenChange(open);
-        }}
-      >
-        <BottomSheet.Portal>
-          <BottomSheet.Overlay />
-          <BottomSheet.Content enableDynamicSizing={false} snapPoints={['55%']}>
-            <BottomSheetView style={styles.container}>
-              <View style={styles.header}>
-                <BottomSheet.Title>Thêm khoản chi mới</BottomSheet.Title>
-              </View>
+    <BottomSheet
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        if (isPicking) return;
+        onOpenChange(open);
+      }}
+    >
+      <BottomSheet.Portal>
+        <BottomSheet.Overlay />
+        <BottomSheet.Content>
+          <BottomSheetView style={styles.container}>
+            <View style={styles.header}>
+              <BottomSheet.Title>Thêm khoản chi mới</BottomSheet.Title>
+            </View>
 
-              {isPreview && state.kind === 'preview' ? (
-                <View style={styles.previewBody}>
-                  <View style={styles.previewImageWrap}>
-                    <Image
-                      source={{ uri: state.processed.uri }}
-                      style={styles.previewImage}
-                    />
-                  </View>
-                  <AppText variant="caption" tone="muted">
-                    {state.processed.width}×{state.processed.width} •{' '}
-                    {formatBytes(state.processed.sizeBytes)}
+            <View style={styles.chooseBody}>
+              <AppText variant="caption" tone="muted" style={styles.hint}>
+                Chọn cách tạo khoản chi mới. Ảnh sẽ được đính kèm làm bằng chứng
+                (1:1, tối đa 2 MB).
+              </AppText>
+
+              {errorMsg ? (
+                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                  <AppText variant="caption" tone="danger">
+                    {errorMsg}
                   </AppText>
+                </View>
+              ) : null}
 
-                  {errorMsg ? (
-                    <View
-                      style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}
-                    >
-                      <AppText variant="caption" tone="danger">
-                        {errorMsg}
-                      </AppText>
-                    </View>
-                  ) : null}
-
-                  <View style={styles.actionsRow}>
-                    <View style={styles.actionFlex}>
-                      <Button
-                        variant="secondary"
-                        size="lg"
-                        onPress={() => setState({ kind: 'choose' })}
-                      >
-                        <Button.Label>Đổi ảnh</Button.Label>
-                      </Button>
-                    </View>
-                    <View style={styles.actionFlex}>
-                      <Button variant="primary" size="lg" onPress={handleContinue}>
-                        <Button.Label>Tiếp tục</Button.Label>
-                      </Button>
-                    </View>
-                  </View>
+              {isPicking ? (
+                <View style={styles.busyRow}>
+                  <ActivityIndicator color={c.foreground} />
+                  <AppText variant="body" tone="muted">
+                    Đang mở...
+                  </AppText>
                 </View>
               ) : (
-                <View style={styles.chooseBody}>
-                  <AppText variant="caption" tone="muted" style={styles.hint}>
-                    Chọn cách tạo khoản chi mới. Ảnh sẽ được đính kèm làm bằng
-                    chứng (1:1, tối đa 2 MB).
-                  </AppText>
-
-                  {errorMsg ? (
-                    <View
-                      style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}
-                    >
-                      <AppText variant="caption" tone="danger">
-                        {errorMsg}
-                      </AppText>
-                    </View>
-                  ) : null}
-
-                  {isPicking ? (
-                    <View style={styles.busyRow}>
-                      <ActivityIndicator color={c.foreground} />
-                      <AppText variant="body" tone="muted">
-                        Đang xử lý ảnh...
-                      </AppText>
-                    </View>
-                  ) : (
-                    <View style={styles.actionsCol}>
-                      <ActionRow
-                        icon={<Camera size={22} color={c.foreground} strokeWidth={1.9} />}
-                        label="Chụp ảnh"
-                        sublabel="Mở camera để chụp hoá đơn"
-                        onPress={() => handlePick('camera')}
-                        c={c}
-                      />
-                      <ActionRow
-                        icon={<ImageIcon size={22} color={c.foreground} strokeWidth={1.9} />}
-                        label="Chọn từ thư viện"
-                        sublabel="Lấy ảnh có sẵn trên máy"
-                        onPress={() => handlePick('library')}
-                        c={c}
-                      />
-                      <ActionRow
-                        icon={<Pencil size={22} color={c.foreground} strokeWidth={1.9} />}
-                        label="Nhập thủ công"
-                        sublabel="Tạo khoản chi không cần ảnh"
-                        onPress={handleManual}
-                        c={c}
-                      />
-                    </View>
-                  )}
+                <View style={styles.actionsCol}>
+                  <ActionRow
+                    icon={<Camera size={22} color={c.foreground} strokeWidth={1.9} />}
+                    label="Chụp ảnh"
+                    sublabel="Mở camera để chụp hoá đơn"
+                    onPress={() => handlePick('camera')}
+                    c={c}
+                  />
+                  <ActionRow
+                    icon={<ImageIcon size={22} color={c.foreground} strokeWidth={1.9} />}
+                    label="Chọn từ thư viện"
+                    sublabel="Lấy ảnh có sẵn trên máy"
+                    onPress={() => handlePick('library')}
+                    c={c}
+                  />
+                  <ActionRow
+                    icon={<Pencil size={22} color={c.foreground} strokeWidth={1.9} />}
+                    label="Nhập thủ công"
+                    sublabel="Tạo khoản chi không cần ảnh"
+                    onPress={handleManual}
+                    c={c}
+                  />
                 </View>
               )}
-            </BottomSheetView>
-          </BottomSheet.Content>
-        </BottomSheet.Portal>
-      </BottomSheet>
-
-      <GroupTripPickerSheet
-        isOpen={pickerOpen}
-        onOpenChange={(open) => {
-          setPickerOpen(open);
-          if (!open) setPickerImage(null);
-        }}
-        image={pickerImage}
-      />
-    </>
+            </View>
+          </BottomSheetView>
+        </BottomSheet.Content>
+      </BottomSheet.Portal>
+    </BottomSheet>
   );
 }
 
@@ -230,9 +170,7 @@ function ActionRow({ icon, label, sublabel, onPress, c }: ActionRowProps) {
         },
       ]}
     >
-      <View style={[styles.actionIcon, { backgroundColor: c.surface }]}>
-        {icon}
-      </View>
+      <View style={[styles.actionIcon, { backgroundColor: c.surface }]}>{icon}</View>
       <View style={styles.actionTextWrap}>
         <AppText variant="body" weight="semibold">
           {label}
@@ -263,13 +201,6 @@ const styles = StyleSheet.create({
   actionsCol: {
     gap: 10,
   },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  actionFlex: {
-    flex: 1,
-  },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -289,21 +220,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
-  },
-  previewBody: {
-    paddingTop: 8,
-    gap: 12,
-    alignItems: 'center',
-  },
-  previewImageWrap: {
-    width: 220,
-    height: 220,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  previewImage: {
-    width: 220,
-    height: 220,
   },
   errorBox: {
     padding: 12,

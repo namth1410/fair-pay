@@ -22,7 +22,6 @@ import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { SplashScene } from '../components/common/SplashScene';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
-import { BlackHoleTransitionProvider } from '../contexts/BlackHoleTransition';
 import { LightningTransitionProvider } from '../contexts/LightningTransition';
 import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
@@ -159,11 +158,9 @@ export default function RootLayout() {
             <OfflineBanner />
             <MorphTransitionProvider>
               <LightningTransitionProvider>
-                <BlackHoleTransitionProvider>
-                  <AuthGate>
-                    <Slot />
-                  </AuthGate>
-                </BlackHoleTransitionProvider>
+                <AuthGate>
+                  <Slot />
+                </AuthGate>
               </LightningTransitionProvider>
             </MorphTransitionProvider>
             <ThemeTransitionOverlay />

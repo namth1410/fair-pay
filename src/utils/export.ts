@@ -3,6 +3,8 @@ import type { RefObject } from 'react';
 import type { View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
+import { ensureMediaSavePermission } from './permissions';
+
 export interface ExportResult {
   success: boolean;
   message: string;
@@ -11,8 +13,9 @@ export interface ExportResult {
 /** Capture a component as image and save to device gallery */
 export async function exportToImage(viewRef: RefObject<View | null>): Promise<ExportResult> {
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') {
+    const granted = await ensureMediaSavePermission();
+    if (!granted) {
+      // Helper đã show Alert "Mở Cài đặt" nếu cần. Caller chỉ cần biết failed.
       return { success: false, message: 'Cần quyền truy cập thư viện ảnh để lưu' };
     }
 
