@@ -29,7 +29,6 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
   const titleRef = useRef('');
   const [amountStr, setAmountStr] = useState('');
   const [resetKey, setResetKey] = useState(0);
-  const [showInputs, setShowInputs] = useState(false);
   const [hasTitle, setHasTitle] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>('food');
   const [error, setError] = useState('');
@@ -38,7 +37,6 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
 
   useEffect(() => {
     if (!isOpen) {
-      setShowInputs(false);
       setAmountFocused(false);
       return;
     }
@@ -115,7 +113,6 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
           keyboardBehavior="extend"
           keyboardBlurBehavior="restore"
           android_keyboardInputMode="adjustResize"
-          onChange={(index) => setShowInputs(index >= 0)}
         >
           <BottomSheetScrollView
             style={styles.scrollView}
@@ -128,65 +125,46 @@ export function PresetFormModal({ isOpen, onOpenChange, preset }: PresetFormModa
             </View>
 
             <View style={styles.body}>
-              {showInputs ? (
-                <BottomSheetTextInput
-                  key={`title-${resetKey}`}
-                  placeholder="Tên preset"
-                  placeholderTextColor={c.muted}
-                  defaultValue={titleRef.current}
-                  onChangeText={handleTitleChange}
-                  returnKeyType="next"
-                  accessibilityLabel="Tên preset"
-                  autoFocus={!isEdit}
-                  style={[
-                    styles.input,
-                    {
-                      color: c.foreground,
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.input,
-                    { backgroundColor: c.surfaceAlt, borderColor: c.divider },
-                  ]}
-                />
-              )}
+              <BottomSheetTextInput
+                key={`title-${resetKey}`}
+                placeholder="Tên preset"
+                placeholderTextColor={c.muted}
+                defaultValue={titleRef.current}
+                onChangeText={handleTitleChange}
+                returnKeyType="next"
+                accessibilityLabel="Tên preset"
+                style={[
+                  styles.input,
+                  {
+                    color: c.foreground,
+                    backgroundColor: c.surfaceAlt,
+                    borderColor: c.divider,
+                  },
+                ]}
+              />
 
-              {showInputs ? (
-                <BottomSheetTextInput
-                  key={`amount-${resetKey}`}
-                  placeholder="Số tiền (VND)"
-                  placeholderTextColor={c.muted}
-                  value={formatThousands(amountStr)}
-                  onChangeText={handleAmountChange}
-                  onFocus={() => setAmountFocused(true)}
-                  onBlur={() => setAmountFocused(false)}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  onSubmitEditing={handleSubmit}
-                  accessibilityLabel="Số tiền"
-                  style={[
-                    styles.input,
-                    {
-                      color: c.foreground,
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                      fontFamily: fonts.bold,
-                    },
-                  ]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.input,
-                    { backgroundColor: c.surfaceAlt, borderColor: c.divider },
-                  ]}
-                />
-              )}
+              <BottomSheetTextInput
+                key={`amount-${resetKey}`}
+                placeholder="Số tiền (VND)"
+                placeholderTextColor={c.muted}
+                value={formatThousands(amountStr)}
+                onChangeText={handleAmountChange}
+                onFocus={() => setAmountFocused(true)}
+                onBlur={() => setAmountFocused(false)}
+                keyboardType="number-pad"
+                returnKeyType="done"
+                onSubmitEditing={handleSubmit}
+                accessibilityLabel="Số tiền"
+                style={[
+                  styles.input,
+                  {
+                    color: c.foreground,
+                    backgroundColor: c.surfaceAlt,
+                    borderColor: c.divider,
+                    fontFamily: fonts.bold,
+                  },
+                ]}
+              />
 
               <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                 Danh mục

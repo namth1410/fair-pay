@@ -79,6 +79,21 @@ export function computeBalances(
 }
 
 /**
+ * Lọc bỏ những member đã rời nhóm (left_at !== null) MÀ balance = 0.
+ * Member đã rời có balance ≠ 0 vẫn được giữ vì lịch sử quan trọng.
+ * Active member (left_at === null) luôn giữ kể cả balance = 0.
+ */
+export function filterInactiveZeroBalance(
+  balances: BalanceResult[],
+  leftMap: Map<string, string | null>
+): BalanceResult[] {
+  return balances.filter((b) => {
+    const isLeft = !!leftMap.get(b.memberId);
+    return !isLeft || b.balance !== 0;
+  });
+}
+
+/**
  * Overload: tính balance từ plain arrays (backward compatible với test cũ).
  * memberIds dùng luôn làm displayName.
  */

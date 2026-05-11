@@ -24,16 +24,12 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
 
   const messageRef = useRef('');
   const [resetKey, setResetKey] = useState(0);
-  const [showInput, setShowInput] = useState(false);
   const [canSubmit, setCanSubmit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
-    if (!isOpen) {
-      setShowInput(false);
-      return;
-    }
+    if (!isOpen) return;
     messageRef.current = '';
     setResetKey((k) => k + 1);
     setCanSubmit(false);
@@ -78,7 +74,6 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
           keyboardBehavior="extend"
           keyboardBlurBehavior="restore"
           android_keyboardInputMode="adjustResize"
-          onChange={(index) => setShowInput(index >= 0)}
         >
           <BottomSheetView style={styles.container}>
             <View style={styles.header}>
@@ -89,37 +84,25 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
               <AppText variant="caption" tone="muted" style={styles.hint}>
                 Mọi phản hồi của bạn đều giúp app tốt hơn. Hãy chia sẻ những gì bạn thấy chưa ổn hoặc tính năng bạn mong muốn.
               </AppText>
-              {showInput ? (
-                <BottomSheetTextInput
-                  key={resetKey}
-                  placeholder="Viết góp ý của bạn..."
-                  placeholderTextColor={c.muted}
-                  defaultValue=""
-                  onChangeText={handleChangeText}
-                  multiline
-                  maxLength={FEEDBACK_MAX_LENGTH}
-                  textAlignVertical="top"
-                  accessibilityLabel="Nội dung góp ý"
-                  style={[
-                    styles.input,
-                    {
-                      color: c.foreground,
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
-                />
-              )}
+              <BottomSheetTextInput
+                key={resetKey}
+                placeholder="Viết góp ý của bạn..."
+                placeholderTextColor={c.muted}
+                defaultValue=""
+                onChangeText={handleChangeText}
+                multiline
+                maxLength={FEEDBACK_MAX_LENGTH}
+                textAlignVertical="top"
+                accessibilityLabel="Nội dung góp ý"
+                style={[
+                  styles.input,
+                  {
+                    color: c.foreground,
+                    backgroundColor: c.surfaceAlt,
+                    borderColor: c.divider,
+                  },
+                ]}
+              />
               <AppText variant="meta" tone="muted" style={styles.lengthHint}>
                 Tối thiểu {FEEDBACK_MIN_LENGTH}, tối đa {FEEDBACK_MAX_LENGTH} ký tự
               </AppText>

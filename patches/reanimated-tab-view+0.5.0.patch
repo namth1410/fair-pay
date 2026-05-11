@@ -1,0 +1,44 @@
+diff --git a/node_modules/reanimated-tab-view/lib/commonjs/components/TabView.js b/node_modules/reanimated-tab-view/lib/commonjs/components/TabView.js
+index d452a40..c330828 100644
+--- a/node_modules/reanimated-tab-view/lib/commonjs/components/TabView.js
++++ b/node_modules/reanimated-tab-view/lib/commonjs/components/TabView.js
+@@ -103,7 +103,8 @@ const TabViewWithoutProviders = exports.TabViewWithoutProviders = /*#__PURE__*/_
+     style: [styles.container, containerLayoutStyle],
+     onLayout: onTabViewLayout
+   }, /*#__PURE__*/_react.default.createElement(_reactNative.View, {
+-    style: styles.absoluteHeaderContainer
++    style: styles.absoluteHeaderContainer,
++    pointerEvents: "box-none"
+   }, /*#__PURE__*/_react.default.createElement(_reactNativeGestureHandler.GestureDetector, {
+     gesture: scrollLikePanGesture
+   }, /*#__PURE__*/_react.default.createElement(_reactNativeReanimated.default.View, {
+diff --git a/node_modules/reanimated-tab-view/lib/module/components/TabView.js b/node_modules/reanimated-tab-view/lib/module/components/TabView.js
+index a968511..6b2e2a7 100644
+--- a/node_modules/reanimated-tab-view/lib/module/components/TabView.js
++++ b/node_modules/reanimated-tab-view/lib/module/components/TabView.js
+@@ -95,7 +95,8 @@ export const TabViewWithoutProviders = /*#__PURE__*/React.memo(() => {
+     style: [styles.container, containerLayoutStyle],
+     onLayout: onTabViewLayout
+   }, /*#__PURE__*/React.createElement(View, {
+-    style: styles.absoluteHeaderContainer
++    style: styles.absoluteHeaderContainer,
++    pointerEvents: "box-none"
+   }, /*#__PURE__*/React.createElement(GestureDetector, {
+     gesture: scrollLikePanGesture
+   }, /*#__PURE__*/React.createElement(Animated.View, {
+diff --git a/node_modules/reanimated-tab-view/src/components/TabView.tsx b/node_modules/reanimated-tab-view/src/components/TabView.tsx
+index 756a83a..cb0c837 100644
+--- a/node_modules/reanimated-tab-view/src/components/TabView.tsx
++++ b/node_modules/reanimated-tab-view/src/components/TabView.tsx
+@@ -107,7 +107,10 @@ export const TabViewWithoutProviders = React.memo(() => {
+           style={[styles.container, containerLayoutStyle]}
+           onLayout={onTabViewLayout}
+         >
+-          <View style={styles.absoluteHeaderContainer}>
++          <View
++            style={styles.absoluteHeaderContainer}
++            pointerEvents="box-none"
++          >
+             <GestureDetector gesture={scrollLikePanGesture}>
+               <Animated.View style={animatedTranslateYStyle}>
+                 <TabViewHeader />

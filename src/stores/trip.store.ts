@@ -15,11 +15,14 @@ import {
   type Payment,
 } from '../services/payment.service';
 import {
+  clearTrip,
   closeTrip,
   createTrip,
+  deleteTrip,
   fetchTrips,
   reopenTrip,
   type Trip,
+  updateTripName,
 } from '../services/trip.service';
 import type { SplitResult } from '../utils/split';
 
@@ -48,6 +51,9 @@ interface TripState {
   loadTrips: (groupId: string) => Promise<void>;
   addTrip: (groupId: string, name: string, type?: Trip['type']) => Promise<void>;
   toggleTripStatus: (trip: Trip) => Promise<void>;
+  renameTrip: (tripId: string, name: string) => Promise<void>;
+  clearCurrentTrip: (tripId: string) => Promise<void>;
+  deleteCurrentTrip: (tripId: string, groupId: string) => Promise<void>;
 
   loadExpenses: (tripId: string) => Promise<void>;
   addExpense: (params: {
@@ -110,6 +116,28 @@ export const useTripStore = create<TripState>((set, get) => ({
       await reopenTrip(trip.id);
     }
     await get().loadTrips(trip.group_id);
+  },
+
+  renameTrip: async (tripId, name) => {
+    await updateTripName(tripId, name);
+    const trip = get().trips.find((t) => t.id === tripId);
+    if (trip) await get().loadTrips(trip.group_id);
+  },
+
+  clearCurrentTrip: async (tripId) => {
+    await clearTrip(tripId);
+    const trip = get().trips.find((t) => t.id === tripId);
+    await Promise.all([
+      get().loadExpenses(tripId),
+      get().loadPayments(tripId),
+      get().loadBalances(tripId),
+      trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
+    ]);
+  },
+
+  deleteCurrentTrip: async (tripId, groupId) => {
+    await deleteTrip(tripId);
+    await get().loadTrips(groupId);
   },
 
   loadExpenses: async (tripId) => {

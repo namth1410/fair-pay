@@ -1,3 +1,4 @@
+import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
 import { validateName } from '../utils/validate';
@@ -225,81 +226,20 @@ export async function approveJoinRequest(
   requestId: string,
   groupId: string
 ): Promise<void> {
-  await assertRole(groupId, ['admin']);
-
-  const reviewerId = await getAuthUserId();
-  if (!reviewerId) throw new Error('Chưa đăng nhập');
-
-  // Fetch request — bắt buộc filter group_id để chặn cross-tenant spoof
-  // (admin nhóm A truyền requestId của nhóm B sẽ insert user nhóm B vào nhóm A).
-  const { data: req, error: fetchErr } = await supabase
-    .from('join_requests')
-    .select('user_id, display_name')
-    .eq('id', requestId)
-    .eq('group_id', groupId)
-    .eq('status', 'pending')
-    .single();
-  if (fetchErr || !req) throw new Error('Yêu cầu không tồn tại hoặc đã được xử lý');
-
-  // Kiểm tra xem user có record cũ không (đã từng là member, đã rời)
-  const { data: oldMember } = await supabase
-    .from('group_members')
-    .select('id')
-    .eq('group_id', groupId)
-    .eq('user_id', req.user_id)
-    .not('left_at', 'is', null)
-    .maybeSingle();
-
-  if (oldMember) {
-    // Rejoin: reset left_at, giữ nguyên member ID → kế thừa lịch sử (BR-04)
-    const { error: rejoinErr } = await supabase
-      .from('group_members')
-      .update({ left_at: null })
-      .eq('id', oldMember.id);
-    if (rejoinErr) throw rejoinErr;
-  } else {
-    // New member: insert
-    const { error: memErr } = await supabase.from('group_members').insert({
-      group_id: groupId,
-      user_id: req.user_id,
-      display_name: req.display_name,
-      role: 'member',
-    });
-    // code 23505 = duplicate key — user đã được duyệt bởi admin khác (race condition)
-    if (memErr && memErr.code !== '23505') throw memErr;
-  }
-
-  // Đánh dấu approved — eq('status', 'pending') chặn double-fire khi 2 admin race
-  await supabase
-    .from('join_requests')
-    .update({
-      status: 'approved',
-      reviewed_by: reviewerId,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq('id', requestId)
-    .eq('group_id', groupId)
-    .eq('status', 'pending');
-
-  await logAction({
-    groupId,
-    action: 'member.join_approved',
-    targetId: req.user_id,
-    afterData: { display_name: req.display_name, request_id: requestId },
-  });
-
-  // Notify requester
+  // Pre-fetch group name để RPC render title VN ("Bạn đã được duyệt vào nhóm X")
   const { data: groupRow } = await supabase
     .from('groups')
     .select('name')
     .eq('id', groupId)
-    .single();
-  await notifyJoinResolved('member.join_approved', {
-    groupId,
-    groupName: groupRow?.name ?? '',
-    reviewerId,
-    requesterUserId: req.user_id,
+    .maybeSingle();
+
+  // RPC approve_join_request: atomic insert/rejoin member + update status + audit + notify
+  const { error } = await supabase.rpc('approve_join_request', {
+    p_request_id: requestId,
+    p_group_id: groupId,
+    p_group_name: groupRow?.name ?? '',
   });
+  if (error) throw error;
 }
 
 /** F-23: Admin từ chối join request */
@@ -486,6 +426,50 @@ export async function removeMember(memberId: string): Promise<void> {
     .eq('id', memberId);
 
   if (error) throw error;
+}
+
+/**
+ * Rename a member's display_name (admin only).
+ * Áp dụng cho cả member thật và member ảo. KHÔNG đổi tên cho member đã rời.
+ */
+export async function renameMember(
+  memberId: string,
+  newDisplayName: string
+): Promise<void> {
+  const { data: target } = await supabase
+    .from('group_members')
+    .select('group_id, display_name, left_at')
+    .eq('id', memberId)
+    .single();
+
+  if (!target) throw new Error('Thành viên không tồn tại');
+  if (target.left_at)
+    throw new Error('Không thể đổi tên thành viên đã rời nhóm');
+
+  await assertRole(target.group_id, ['admin']);
+
+  const trimmed = newDisplayName.trim();
+  const nameErr = validateName(trimmed, 'Tên thành viên');
+  if (nameErr) throw new Error(nameErr);
+  if (trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
+    throw new Error(`Tên thành viên không được quá ${DISPLAY_NAME_MAX_LENGTH} ký tự`);
+  }
+  if (trimmed === target.display_name) return; // no-op nếu trùng tên cũ
+
+  const { error } = await supabase
+    .from('group_members')
+    .update({ display_name: trimmed })
+    .eq('id', memberId);
+
+  if (error) throw error;
+
+  await logAction({
+    groupId: target.group_id,
+    action: 'member.rename',
+    targetId: memberId,
+    beforeData: { display_name: target.display_name },
+    afterData: { display_name: trimmed },
+  });
 }
 
 /** Update group name (admin only) */

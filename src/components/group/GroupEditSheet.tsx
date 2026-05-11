@@ -2,7 +2,7 @@ import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-shee
 import { File } from 'expo-file-system';
 import { BottomSheet, Button, useToast } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import {
@@ -74,7 +74,6 @@ export function GroupEditSheet({
   // Name section state — uncontrolled to avoid Vietnamese IME bug
   const nameRef = useRef(groupName);
   const [resetKey, setResetKey] = useState(0);
-  const [showInput, setShowInput] = useState(false);
   const [nameDirty, setNameDirty] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [isSavingName, setIsSavingName] = useState(false);
@@ -84,7 +83,6 @@ export function GroupEditSheet({
       // Reset on close so next open is clean
       setAvatarState({ kind: 'choose' });
       setAvatarError('');
-      setShowInput(false);
       setNameError(null);
       setNameDirty(false);
       setIsSavingName(false);
@@ -205,9 +203,13 @@ export function GroupEditSheet({
           keyboardBehavior="extend"
           keyboardBlurBehavior="restore"
           android_keyboardInputMode="adjustResize"
-          onChange={(index) => setShowInput(index >= 0)}
         >
-          <BottomSheetScrollView contentContainerStyle={styles.container}>
+          <BottomSheetScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.header}>
               <BottomSheet.Title>Sửa nhóm</BottomSheet.Title>
             </View>
@@ -217,38 +219,26 @@ export function GroupEditSheet({
               <AppText variant="label" tone="muted" style={styles.sectionLabel}>
                 Tên nhóm
               </AppText>
-              {showInput ? (
-                <BottomSheetTextInput
-                  key={resetKey}
-                  placeholder="Tên nhóm"
-                  placeholderTextColor={c.muted}
-                  defaultValue={groupName}
-                  onChangeText={handleChangeName}
-                  returnKeyType="done"
-                  onSubmitEditing={handleSaveName}
-                  maxLength={100}
-                  accessibilityLabel="Tên nhóm"
-                  editable={!isSavingName}
-                  style={[
-                    styles.input,
-                    {
-                      color: c.foreground,
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
-                />
-              )}
+              <BottomSheetTextInput
+                key={resetKey}
+                placeholder="Tên nhóm"
+                placeholderTextColor={c.muted}
+                defaultValue={groupName}
+                onChangeText={handleChangeName}
+                returnKeyType="done"
+                onSubmitEditing={handleSaveName}
+                maxLength={100}
+                accessibilityLabel="Tên nhóm"
+                editable={!isSavingName}
+                style={[
+                  styles.input,
+                  {
+                    color: c.foreground,
+                    backgroundColor: c.surfaceAlt,
+                    borderColor: c.divider,
+                  },
+                ]}
+              />
               {nameError ? (
                 <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
                   <AppText variant="caption" tone="danger">{nameError}</AppText>
@@ -357,18 +347,16 @@ export function GroupEditSheet({
                         </View>
                       </View>
                       {currentAvatarUrl ? (
-                        <Pressable
+                        <Button
+                          variant="danger"
+                          size="md"
                           onPress={handleRemoveAvatar}
-                          disabled={avatarState.kind === 'removing'}
-                          style={({ pressed }) => [
-                            styles.removeBtn,
-                            { opacity: pressed ? 0.5 : 1 },
-                          ]}
+                          isDisabled={avatarState.kind === 'removing'}
                         >
-                          <AppText variant="body" tone="danger" weight="semibold">
+                          <Button.Label>
                             {avatarState.kind === 'removing' ? 'Đang xóa...' : 'Xóa ảnh'}
-                          </AppText>
-                        </Pressable>
+                          </Button.Label>
+                        </Button>
                       ) : null}
                     </View>
                   )}
@@ -385,7 +373,10 @@ export function GroupEditSheet({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 24,
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
     paddingVertical: 8,
@@ -406,7 +397,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 16,
+    marginVertical: 12,
   },
   currentRow: {
     flexDirection: 'row',
@@ -427,11 +418,6 @@ const styles = StyleSheet.create({
   },
   actionFlex: {
     flex: 1,
-  },
-  removeBtn: {
-    alignSelf: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
   },
   chooseBody: {
     gap: 12,

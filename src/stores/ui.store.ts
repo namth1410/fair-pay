@@ -12,6 +12,10 @@ interface UIState {
    */
   presetsAddRequestSeq: number;
   requestPresetsAdd: () => void;
+
+  /** Cùng pattern presetsAddRequestSeq — bridge nút Share ở header trip → mở ExportScopeSheet. */
+  tripExportRequestSeq: number;
+  requestTripExport: () => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -21,4 +25,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   presetsAddRequestSeq: 0,
   requestPresetsAdd: () =>
     set({ presetsAddRequestSeq: get().presetsAddRequestSeq + 1 }),
+
+  tripExportRequestSeq: 0,
+  requestTripExport: () =>
+    set({ tripExportRequestSeq: get().tripExportRequestSeq + 1 }),
 }));

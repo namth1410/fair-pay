@@ -23,10 +23,14 @@ const ACTION_LABELS: Record<string, string> = {
   'trip.create': 'Tạo chuyến đi',
   'trip.close': 'Đóng chuyến đi',
   'trip.reopen': 'Mở lại chuyến đi',
+  'trip.rename': 'Đổi tên chuyến đi',
+  'trip.clear': 'Reset chuyến đi',
+  'trip.delete': 'Xóa chuyến đi',
   'member.role_change':    'Thay đổi vai trò',
   'member.join_approved':  'Duyệt yêu cầu tham gia',
   'member.join_rejected':  'Từ chối yêu cầu tham gia',
   'member.virtual_add':    'Thêm thành viên ảo',
+  'member.rename':         'Đổi tên thành viên',
 };
 
 export function getActionLabel(action: string): string {

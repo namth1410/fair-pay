@@ -15,6 +15,8 @@ export type NotificationType =
   | 'member.join_rejected'
   | 'member.role_change'
   | 'trip.closed'
+  | 'trip.cleared'
+  | 'trip.deleted'
   | 'trip.reminder_settle';
 
 export type NotificationSettingKey =
@@ -88,6 +90,10 @@ export function formatNotificationTitle(params: {
       return `Bạn được chuyển sang ${role === 'admin' ? 'quản trị viên' : 'thành viên'}`;
     case 'trip.closed':
       return `Chuyến đi ${tripName ?? ''} đã được đóng`.trim();
+    case 'trip.cleared':
+      return `${actorName} đã reset chuyến đi ${tripName ?? ''}`.trim();
+    case 'trip.deleted':
+      return `${actorName} đã xóa chuyến đi ${tripName ?? ''}`.trim();
     case 'trip.reminder_settle':
       return `Bạn còn nợ ${toName ?? ''} ${money} trong ${tripName ?? 'chuyến đi'}`.trim();
     default:

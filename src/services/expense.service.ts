@@ -1,5 +1,11 @@
 import { supabase } from '../config/supabase';
-import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
+import {
+  computeBalances as computeBalancesPure,
+  type ExpenseData,
+  filterInactiveZeroBalance,
+  type PaymentData,
+} from '../utils/balance';
+import { formatNotificationTitle } from '../utils/notificationFormat';
 import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
 import { logAction } from './audit.service';
@@ -77,109 +83,49 @@ export async function createExpense(params: {
   const amountErr = validatePositiveAmount(params.amount);
   if (amountErr) throw new Error(amountErr);
 
-  await assertRole(params.groupId, ['admin', 'member']);
-
-  // Verify trip thuộc đúng group + chưa đóng
-  const { data: trip, error: tripErr } = await supabase
-    .from('trips')
-    .select('group_id, status')
-    .eq('id', params.tripId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (tripErr) throw tripErr;
-  if (!trip || trip.group_id !== params.groupId) {
-    throw new Error('Chuyến không thuộc nhóm này');
-  }
-  if (trip.status === 'closed') {
-    throw new Error('Chuyến đã đóng, không thể thêm khoản chi');
-  }
-
-  // Verify paidByMemberId là member active của group (chống cross-group injection)
-  const { data: payerMember } = await supabase
-    .from('group_members')
-    .select('id')
-    .eq('id', params.paidByMemberId)
-    .eq('group_id', params.groupId)
-    .maybeSingle();
-  if (!payerMember) {
-    throw new Error('Người trả không thuộc nhóm này');
-  }
-
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  // Insert expense
-  const insertPayload: Record<string, unknown> = {
-    trip_id: params.tripId,
-    group_id: params.groupId,
-    title: params.title,
-    amount: params.amount,
-    category: params.category,
-    paid_by: params.paidByMemberId,
-    split_type: params.splitType,
-    date: params.date || new Date().toISOString(),
-    note: params.note || null,
-    image_url: params.imageUrl ?? null,
-    created_by: userId,
-  };
-  if (params.id) insertPayload.id = params.id;
-
-  const { data: expense, error: expErr } = await supabase
-    .from('expenses')
-    .insert(insertPayload)
-    .select()
-    .single();
-
-  if (expErr) throw expErr;
-
-  // Insert splits — rollback expense if splits fail to maintain BR-02 invariant
-  const splitRows = params.splits.map((s) => ({
-    expense_id: expense.id,
-    member_id: s.memberId,
-    amount: s.amount,
-  }));
-
-  const { error: splitErr } = await supabase
-    .from('expense_splits')
-    .insert(splitRows);
-
-  if (splitErr) {
-    // Rollback: delete the orphaned expense to prevent data corruption
-    await supabase.from('expenses').delete().eq('id', expense.id);
-    throw splitErr;
-  }
-
-  // Audit + notify (best-effort, không block flow chính)
+  // Pre-fetch actor display_name để truyền cho RPC (dùng format title + dedup)
   const { data: actor } = await supabase
     .from('users')
     .select('display_name')
     .eq('id', userId)
     .maybeSingle();
   const actorName = actor?.display_name || 'Thành viên';
-  await Promise.all([
-    logAction({
-      groupId: params.groupId,
-      tripId: params.tripId,
-      action: 'expense.create',
-      targetId: expense.id,
-      afterData: {
-        title: params.title,
-        amount: params.amount,
-        category: params.category,
-      },
-    }),
-    notifyExpenseEvent('expense.created', {
-      groupId: params.groupId,
-      tripId: params.tripId,
-      actorId: userId,
-      actorName,
-      expenseId: expense.id,
-      expenseTitle: params.title,
-      amount: params.amount,
-    }),
-  ]);
+  const initialTitle = formatNotificationTitle({
+    type: 'expense.created',
+    actorName,
+    targetTitle: params.title,
+    amount: params.amount,
+  });
 
-  return expense;
+  // RPC create_expense: atomic insert expense + splits + audit + notify
+  const { data, error } = await supabase
+    .rpc('create_expense', {
+      p_id: params.id ?? null,
+      p_trip_id: params.tripId,
+      p_group_id: params.groupId,
+      p_title: params.title,
+      p_amount: params.amount,
+      p_category: params.category,
+      p_paid_by: params.paidByMemberId,
+      p_split_type: params.splitType,
+      p_splits: params.splits.map((s) => ({
+        member_id: s.memberId,
+        amount: s.amount,
+      })),
+      p_note: params.note ?? null,
+      p_date: params.date ?? null,
+      p_image_url: params.imageUrl ?? null,
+      p_initial_title: initialTitle,
+      p_actor_name: actorName,
+    })
+    .single<Expense>();
+
+  if (error) throw error;
+  if (!data) throw new Error('Tạo khoản chi thất bại');
+  return data;
 }
 
 /** Soft delete expense — BR-04 */
@@ -274,7 +220,7 @@ export async function calculateBalances(
   // Khác với fetchGroupMembers() chỉ lấy active members cho hiển thị danh sách.
   const { data: members } = await supabase
     .from('group_members')
-    .select('id, display_name')
+    .select('id, display_name, left_at')
     .eq('group_id', tripRes.data.group_id);
 
   if (!members) return [];
@@ -301,5 +247,10 @@ export async function calculateBalances(
   }));
 
   // Delegate to shared pure function (same code as tests use)
-  return computeBalancesPure(memberList, expenseData, paymentData);
+  const all = computeBalancesPure(memberList, expenseData, paymentData);
+
+  // Filter: member đã rời (left_at !== null) chỉ giữ nếu còn balance ≠ 0 (lịch sử quan trọng).
+  // Active member giữ nguyên kể cả balance = 0 (cân bằng).
+  const leftMap = new Map(members.map((m) => [m.id, m.left_at as string | null]));
+  return filterInactiveZeroBalance(all, leftMap);
 }

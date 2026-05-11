@@ -27,6 +27,20 @@ const ERROR_MAP: Record<string, string> = {
   'violates foreign key constraint': 'Dữ liệu liên quan không tồn tại',
   'JWT expired': 'Phiên đăng nhập hết hạn, vui lòng đăng nhập lại',
 
+  // RPC custom error codes (clear_trip / delete_trip / create_expense / approve_join_request)
+  not_admin: 'Chỉ admin mới có quyền thực hiện thao tác này',
+  not_authorized: 'Bạn không có quyền thực hiện thao tác này',
+  not_authenticated: 'Vui lòng đăng nhập lại',
+  trip_not_found: 'Chuyến đi không tồn tại',
+  trip_not_in_group: 'Chuyến không thuộc nhóm này',
+  trip_closed: 'Chuyến đã đóng, không thể thêm khoản chi',
+  payer_not_in_group: 'Người trả không thuộc nhóm này',
+  invalid_title: 'Tên không hợp lệ',
+  invalid_amount: 'Số tiền không hợp lệ',
+  invalid_splits: 'Chia tiền không hợp lệ',
+  splits_sum_mismatch: 'Tổng chia tiền không khớp số tiền',
+  request_not_found: 'Yêu cầu không tồn tại hoặc đã được xử lý',
+
   // Feedback rate limit (DB trigger — xem migration feedback_daily_limit_trigger)
   feedback_daily_limit_exceeded:
     'Bạn đã gửi tối đa 3 góp ý hôm nay, vui lòng quay lại vào ngày mai',

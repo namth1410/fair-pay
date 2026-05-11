@@ -1,5 +1,5 @@
 import { useNavigation } from 'expo-router';
-import { ArrowLeft, Plus } from 'lucide-react-native';
+import { ArrowLeft, FileDown, Plus } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 
@@ -28,6 +28,7 @@ export function useHeaderSlots(
   const c = useAppTheme();
   const navigation = useNavigation();
   const requestPresetsAdd = useUIStore((s) => s.requestPresetsAdd);
+  const requestTripExport = useUIStore((s) => s.requestTripExport);
 
   return useMemo<RouteSlots>(() => {
     const backSlot: Slot = {
@@ -66,9 +67,29 @@ export function useHeaderSlots(
       ),
     };
 
+    const tripExportSlot: Slot = {
+      id: 'trip-export',
+      render: () => (
+        <Pressable
+          onPress={() => {
+            hapticLight();
+            requestTripExport();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Xuất PDF diễn giải"
+          android_ripple={{ color: c.divider, borderless: true, radius: 22 }}
+          style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.5 }]}
+        >
+          <FileDown size={20} color={c.foreground} strokeWidth={1.9} />
+        </Pressable>
+      ),
+    };
+
     const rightBalls: Slot[] = [];
     if (routeName === 'presets') {
       rightBalls.push(presetsAddSlot);
+    } else if (routeName === 'trips/[id]/index') {
+      rightBalls.push(tripExportSlot);
     }
 
     return {
@@ -82,6 +103,7 @@ export function useHeaderSlots(
     c.divider,
     navigation,
     requestPresetsAdd,
+    requestTripExport,
   ]);
 }
 

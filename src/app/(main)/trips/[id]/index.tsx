@@ -1,6 +1,6 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Info } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -13,27 +13,32 @@ import Animated, {
 
 import { BalancesTab } from '../../../../components/trip/BalancesTab';
 import { ExpensesTab } from '../../../../components/trip/ExpensesTab';
+import { ExportScopeSheet } from '../../../../components/trip/ExportScopeSheet';
 import { HistoryTab } from '../../../../components/trip/HistoryTab';
 import { MyBalanceExplanationSheet } from '../../../../components/trip/MyBalanceExplanationSheet';
 import { SettlementTab } from '../../../../components/trip/SettlementTab';
+import { TripManagementTab } from '../../../../components/trip/TripManagementTab';
 import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../../components/ui';
 import { useAppTheme } from '../../../../hooks/useAppTheme';
 import { type AuditLog, fetchAuditLogs } from '../../../../services/audit.service';
 import { useAuthStore } from '../../../../stores/auth.store';
 import { useGroupStore } from '../../../../stores/group.store';
 import { useTripStore } from '../../../../stores/trip.store';
+import { useUIStore } from '../../../../stores/ui.store';
 import { explainMyTripBalance } from '../../../../utils/explainBalance';
+import type { TripExportData } from '../../../../utils/exportHtml';
 import { hapticLight } from '../../../../utils/haptics';
 
-type Tab = 'expenses' | 'balances' | 'settle' | 'history';
+type Tab = 'expenses' | 'balances' | 'settle' | 'history' | 'manage';
 
-const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history'];
+const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history', 'manage'];
 
 const TAB_ITEMS = [
   { key: 'expenses', label: 'Chi phí' },
   { key: 'balances', label: 'Số dư' },
   { key: 'settle', label: 'Quyết toán' },
   { key: 'history', label: 'Lịch sử' },
+  { key: 'manage', label: 'Quản lý' },
 ];
 
 const TAB_ANIM = { duration: 280, easing: Easing.out(Easing.cubic) } as const;
@@ -41,6 +46,7 @@ const SWIPE_VELOCITY_THRESHOLD = 500;
 
 export default function TripDetailScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const c = useAppTheme();
   const { width: W } = useWindowDimensions();
 
@@ -52,11 +58,14 @@ export default function TripDetailScreen() {
     loadBalances,
   } = useTripStore();
   const { currentGroupMembers, loadMembers } = useGroupStore();
+  const groups = useGroupStore((s) => s.groups);
   const profile = useAuthStore((s) => s.profile);
+  const tripExportRequestSeq = useUIStore((s) => s.tripExportRequestSeq);
 
   const [tab, setTab] = useState<Tab>('expenses');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [explainOpen, setExplainOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const targetIdx = TAB_KEYS.indexOf(tab);
   const progress = useSharedValue(targetIdx);
@@ -107,11 +116,58 @@ export default function TripDetailScreen() {
 
   const trip = trips.find((t) => t.id === tripId);
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const groupName = useMemo(
+    () => groups.find((g) => g.id === trip?.group_id)?.name ?? '',
+    [groups, trip?.group_id],
+  );
+
+  // Builder cho ExportScopeSheet — chỉ chạy khi user nhấn xuất.
+  const getExportData = useCallback((): TripExportData => {
+    return {
+      tripName: trip?.name ?? 'Chuyến đi',
+      groupName,
+      generatedAt: new Date().toISOString(),
+      members: currentGroupMembers.map((m) => ({
+        id: m.id,
+        displayName: m.display_name,
+        isVirtual: !!m.is_virtual,
+      })),
+      expenses: currentExpenses.map((e) => ({
+        id: e.id,
+        title: e.title,
+        amount: e.amount,
+        paidBy: e.paid_by,
+        category: e.category,
+        date: e.date,
+        note: e.note,
+        splits: e.expense_splits.map((s) => ({
+          memberId: s.member_id,
+          amount: s.amount,
+        })),
+      })),
+      payments: currentPayments.map((p) => ({
+        id: p.id,
+        fromMemberId: p.from_member_id,
+        toMemberId: p.to_member_id,
+        amount: p.amount,
+        date: p.date,
+        note: p.note,
+      })),
+      balances,
+      settlements,
+    };
+  }, [trip?.name, groupName, currentGroupMembers, currentExpenses, currentPayments, balances, settlements]);
 
   const myMemberId = useMemo(() => {
     if (!profile) return null;
     const m = currentGroupMembers.find((mb) => mb.user_id === profile.id && !mb.left_at);
     return m?.id ?? null;
+  }, [profile, currentGroupMembers]);
+
+  const isAdmin = useMemo(() => {
+    if (!profile) return false;
+    const me = currentGroupMembers.find((mb) => mb.user_id === profile.id && !mb.left_at);
+    return me?.role === 'admin';
   }, [profile, currentGroupMembers]);
 
   const explanation = useMemo(() => {
@@ -154,6 +210,12 @@ export default function TripDetailScreen() {
   useEffect(() => {
     if (trip?.group_id) loadMembers(trip.group_id);
   }, [trip?.group_id]);
+
+  // Header share button (qua useUIStore.requestTripExport) → mở sheet.
+  useEffect(() => {
+    if (tripExportRequestSeq === 0) return;
+    setExportOpen(true);
+  }, [tripExportRequestSeq]);
 
   if (!tripId) return null;
 
@@ -201,6 +263,13 @@ export default function TripDetailScreen() {
         explanation={explanation}
       />
 
+      <ExportScopeSheet
+        isOpen={exportOpen}
+        onOpenChange={setExportOpen}
+        getExportData={getExportData}
+        members={currentGroupMembers}
+      />
+
       <SectionTabs items={TAB_ITEMS} selected={tab} onSelect={(key) => setTab(key as Tab)} />
 
       <View style={styles.tabViewport}>
@@ -237,6 +306,15 @@ export default function TripDetailScreen() {
             </View>
             <View style={{ width: W }}>
               <HistoryTab auditLogs={auditLogs} members={currentGroupMembers} />
+            </View>
+            <View style={{ width: W }}>
+              {trip ? (
+                <TripManagementTab
+                  trip={trip}
+                  isAdmin={isAdmin}
+                  onDeleted={() => router.back()}
+                />
+              ) : null}
             </View>
           </Animated.View>
         </GestureDetector>

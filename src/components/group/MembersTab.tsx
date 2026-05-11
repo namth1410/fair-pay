@@ -42,6 +42,7 @@ interface MembersTabProps {
   isAdmin: boolean;
   onShare: () => void;
   onKick: (member: GroupMember) => void;
+  onRename: (member: GroupMember) => void;
   onApprove: (req: JoinRequest) => void;
   onReject: (req: JoinRequest) => void;
   onAddVirtual: () => void;
@@ -49,7 +50,7 @@ interface MembersTabProps {
 
 export const MembersTab = React.memo(function MembersTab({
   members, pendingRequests, inviteCode, isAdmin,
-  onShare, onKick, onApprove, onReject, onAddVirtual,
+  onShare, onKick, onRename, onApprove, onReject, onAddVirtual,
 }: MembersTabProps) {
   const c = useAppTheme();
 
@@ -66,10 +67,20 @@ export const MembersTab = React.memo(function MembersTab({
         <View style={styles.memberTrailing}>
           <View style={styles.pillRow}>
             {item.is_virtual ? <VirtualPill color={c.muted} /> : null}
-            <RolePill role={item.role as Role} color={roleColor[item.role as Role]} />
+            {item.role === 'admin' ? (
+              <RolePill role="admin" color={roleColor.admin} />
+            ) : null}
           </View>
           {isAdmin && item.role !== 'admin' ? (
             <View style={styles.memberActions}>
+              <Pressable
+                onPress={() => onRename(item)}
+                accessibilityRole="button"
+                accessibilityLabel="Đổi tên"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <AppText variant="meta" weight="medium" tone="primary">Đổi tên</AppText>
+              </Pressable>
               <Pressable
                 onPress={() => onKick(item)}
                 accessibilityRole="button"

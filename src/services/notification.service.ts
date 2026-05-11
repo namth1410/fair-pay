@@ -1,4 +1,4 @@
-import { NOTIF_DEDUP_WINDOW_MS, NOTIF_PAGE_SIZE } from '../config/constants';
+import { NOTIF_PAGE_SIZE } from '../config/constants';
 import { supabase } from '../config/supabase';
 import {
   formatNotificationTitle,
@@ -111,10 +111,10 @@ interface CreateNotificationsParams {
 }
 
 /**
- * Insert một loạt notifications cho nhiều recipients.
- * Có dedup 10 phút: nếu user đã có notif chưa đọc cùng (group, type, actor)
- * trong window → UPDATE row đó (gộp count + target_ids + refresh created_at)
- * thay vì insert mới.
+ * Insert một loạt notifications cho nhiều recipients qua RPC `create_notifications_batch`.
+ * RPC handle dedup 10 phút atomic (UPDATE existing chưa-đọc hoặc INSERT mới).
+ * Actor luôn = auth_user_id() ở DB-side (anti-spoof) — `params.actorId` chỉ
+ * dùng client-side trước khi gọi (vd: exclude actor khỏi recipients).
  *
  * Failure-tolerant — gọi từ service mutation, lỗi không block main flow:
  * caller PHẢI bọc try/catch (giống pattern logAction).
@@ -125,89 +125,17 @@ export async function createNotifications(
   const recipients = Array.from(new Set(params.recipients)).filter(Boolean);
   if (!recipients.length) return;
 
-  const since = new Date(Date.now() - NOTIF_DEDUP_WINDOW_MS).toISOString();
-
-  // 1) Tìm các notif chưa đọc khớp dedup key trong window
-  let dedupQuery = supabase
-    .from('notifications')
-    .select('id, user_id, data')
-    .in('user_id', recipients)
-    .eq('type', params.type)
-    .is('read_at', null)
-    .gte('created_at', since);
-  if (params.groupId) {
-    dedupQuery = dedupQuery.eq('group_id', params.groupId);
-  } else {
-    dedupQuery = dedupQuery.is('group_id', null);
-  }
-  if (params.actorId) {
-    dedupQuery = dedupQuery.eq('actor_id', params.actorId);
-  } else {
-    dedupQuery = dedupQuery.is('actor_id', null);
-  }
-  const { data: existing } = await dedupQuery;
-
-  const existingByUser = new Map<string, { id: string; data: Record<string, unknown> }>();
-  for (const row of (existing ?? []) as { id: string; user_id: string; data: Record<string, unknown> | null }[]) {
-    existingByUser.set(row.user_id, { id: row.id, data: row.data ?? {} });
-  }
-
-  // 2) Tách thành update & insert
-  const newTargetId = (params.data?.target_id as string | undefined) ?? null;
-  const updates: PromiseLike<unknown>[] = [];
-  const inserts: Array<Record<string, unknown>> = [];
-
-  for (const userId of recipients) {
-    const found = existingByUser.get(userId);
-    if (found) {
-      const oldData = found.data;
-      const oldCount = ((oldData.count as number | undefined) ?? 1) + 1;
-      const oldIds = ((oldData.target_ids as string[] | undefined) ?? []).slice();
-      if (newTargetId && !oldIds.includes(newTargetId)) oldIds.push(newTargetId);
-
-      const dedupTitle = formatNotificationTitle({
-        type: params.type,
-        actorName: params.actorName ?? 'Ai đó',
-        count: oldCount,
-      });
-
-      updates.push(
-        supabase
-          .from('notifications')
-          .update({
-            title: dedupTitle,
-            data: {
-              ...oldData,
-              count: oldCount,
-              target_ids: oldIds,
-            },
-            created_at: new Date().toISOString(),
-          })
-          .eq('id', found.id)
-      );
-    } else {
-      inserts.push({
-        user_id: userId,
-        group_id: params.groupId,
-        trip_id: params.tripId ?? null,
-        type: params.type,
-        actor_id: params.actorId,
-        title: params.title,
-        body: params.body ?? null,
-        data: {
-          count: 1,
-          target_ids: newTargetId ? [newTargetId] : [],
-          ...(params.data ?? {}),
-        },
-      });
-    }
-  }
-
-  const tasks: PromiseLike<unknown>[] = [...updates];
-  if (inserts.length) {
-    tasks.push(supabase.from('notifications').insert(inserts));
-  }
-  await Promise.all(tasks);
+  const { error } = await supabase.rpc('create_notifications_batch', {
+    p_recipients: recipients,
+    p_type: params.type,
+    p_group_id: params.groupId ?? null,
+    p_trip_id: params.tripId ?? null,
+    p_title: params.title,
+    p_actor_name: params.actorName ?? 'Ai đó',
+    p_body: params.body ?? null,
+    p_data: params.data ?? {},
+  });
+  if (error) throw error;
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────────
@@ -607,5 +535,61 @@ export async function notifyTripClosed(input: TripClosedInput): Promise<void> {
     });
   } catch (e) {
     if (__DEV__) console.warn('[Notif] trip_closed failed:', e);
+  }
+}
+
+export async function notifyTripCleared(input: TripClosedInput): Promise<void> {
+  try {
+    const recipients = await getGroupRecipients({
+      groupId: input.groupId,
+      excludeUserId: input.actorId,
+      settingKey: 'notify_activity',
+    });
+    if (!recipients.length) return;
+    const title = formatNotificationTitle({
+      type: 'trip.cleared',
+      actorName: input.actorName,
+      tripName: input.tripName,
+    });
+    await createNotifications({
+      type: 'trip.cleared',
+      recipients,
+      actorId: input.actorId,
+      actorName: input.actorName,
+      groupId: input.groupId,
+      tripId: input.tripId,
+      title,
+      data: { target_id: input.tripId, trip_name: input.tripName },
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('[Notif] trip_cleared failed:', e);
+  }
+}
+
+export async function notifyTripDeleted(input: TripClosedInput): Promise<void> {
+  try {
+    const recipients = await getGroupRecipients({
+      groupId: input.groupId,
+      excludeUserId: input.actorId,
+      settingKey: 'notify_activity',
+    });
+    if (!recipients.length) return;
+    const title = formatNotificationTitle({
+      type: 'trip.deleted',
+      actorName: input.actorName,
+      tripName: input.tripName,
+    });
+    await createNotifications({
+      type: 'trip.deleted',
+      recipients,
+      actorId: input.actorId,
+      actorName: input.actorName,
+      groupId: input.groupId,
+      tripId: input.tripId,
+      title,
+      data: { target_id: input.tripId, trip_name: input.tripName },
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('[Notif] trip_deleted failed:', e);
   }
 }

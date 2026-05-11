@@ -17,6 +17,7 @@ import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemb
 import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
+import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
 import { AppText, Avatar, BouncyDialog, ConfirmDialog, SectionTabs, VoroConfirmDialog } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
@@ -93,6 +94,8 @@ export default function GroupDetailScreen() {
   const [addVirtualOpen, setAddVirtualOpen] = useState(false);
   const [tripToToggle, setTripToToggle] = useState<Trip | null>(null);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [memberToRename, setMemberToRename] = useState<GroupMember | null>(null);
   const sharingRef = useRef(false);
 
   const group = groups.find((g) => g.id === id);
@@ -325,9 +328,6 @@ export default function GroupDetailScreen() {
           >
             {group.name}
           </AppText>
-          <AppText variant="caption" tone="muted">
-            {currentGroupMembers.length} thành viên · {trips.length} chuyến đi
-          </AppText>
         </Pressable>
       ) : null}
 
@@ -368,6 +368,7 @@ export default function GroupDetailScreen() {
                 isAdmin={isAdmin}
                 onShare={handleShare}
                 onKick={handleKick}
+                onRename={(m) => { setMemberToRename(m); setRenameOpen(true); }}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onAddVirtual={() => setAddVirtualOpen(true)}
@@ -411,6 +412,19 @@ export default function GroupDetailScreen() {
               label: 'Đã thêm thành viên ảo',
               description: name,
             })
+          }
+        />
+      ) : null}
+
+      {id ? (
+        <RenameMemberSheet
+          isOpen={renameOpen}
+          onOpenChange={setRenameOpen}
+          memberId={memberToRename?.id ?? ''}
+          currentName={memberToRename?.display_name ?? ''}
+          groupId={id}
+          onSuccess={() =>
+            toast.show({ variant: 'success', label: 'Đã đổi tên thành viên' })
           }
         />
       ) : null}

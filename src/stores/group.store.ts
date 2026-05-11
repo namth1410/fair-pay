@@ -17,6 +17,7 @@ import {
   type JoinResult,
   rejectJoinRequest,
   removeMember,
+  renameMember,
   updateGroup,
   updateMemberRole,
 } from '../services/group.service';
@@ -38,6 +39,7 @@ interface GroupState {
   rejectRequest: (requestId: string, groupId: string) => Promise<void>;
   changeRole: (memberId: string, role: 'admin' | 'member', groupId: string) => Promise<void>;
   kickMember: (memberId: string, groupId: string) => Promise<void>;
+  renameMemberInGroup: (memberId: string, newName: string, groupId: string) => Promise<void>;
   addVirtualMember: (groupId: string, displayName: string) => Promise<void>;
   removeGroup: (groupId: string) => Promise<void>;
   setGroupAvatar: (groupId: string, avatarUrl: string | null) => void;
@@ -113,6 +115,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   kickMember: async (memberId, groupId) => {
     await removeMember(memberId);
+    await get().loadMembers(groupId);
+  },
+
+  renameMemberInGroup: async (memberId, newName, groupId) => {
+    await renameMember(memberId, newName);
     await get().loadMembers(groupId);
   },
 

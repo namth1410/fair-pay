@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -21,6 +27,8 @@ interface SectionTabsProps {
   items: TabItem[];
   selected: string;
   onSelect: (key: string) => void;
+  /** Căn giữa khi tabs vừa trong container; vẫn scroll trái nếu tràn. Mặc định false (left-align). */
+  centered?: boolean;
 }
 
 interface Layout {
@@ -28,10 +36,12 @@ interface Layout {
   width: number;
 }
 
-export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
+export function SectionTabs({ items, selected, onSelect, centered = false }: SectionTabsProps) {
   const c = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();
   const layouts = useRef<Record<string, Layout>>({});
+  const scrollRef = useRef<ScrollView>(null);
+  const viewportW = useRef(0);
   const [initialized, setInitialized] = useState(false);
 
   const indicatorX = useSharedValue(0);
@@ -43,17 +53,36 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
     const l = layouts.current[key];
     if (!l) return;
     if (animate && animationsEnabled) {
-      indicatorX.value = withSpring(l.x, { damping: 18, stiffness: 220 });
-      indicatorW.value = withSpring(l.width, { damping: 18, stiffness: 220 });
+      indicatorX.value = withSpring(l.x, { damping: 22, stiffness: 420, mass: 0.6 });
+      indicatorW.value = withSpring(l.width, { damping: 22, stiffness: 420, mass: 0.6 });
     } else {
       indicatorX.value = l.x;
       indicatorW.value = l.width;
     }
   };
 
+  // Cuộn ngang sao cho tab đang chọn nằm gọn trong viewport — tránh
+  // trường hợp tap "Số dư" mà label bị cắt do strip overflow.
+  const scrollToTab = (key: string, animate = true) => {
+    const l = layouts.current[key];
+    const vw = viewportW.current;
+    if (!l || vw === 0) return;
+    const center = l.x + l.width / 2 - vw / 2;
+    const maxScroll = Math.max(0, l.x + l.width - vw + 16);
+    const target = Math.max(0, Math.min(maxScroll, center));
+    scrollRef.current?.scrollTo({ x: target, y: 0, animated: animate && animationsEnabled });
+  };
+
   useEffect(() => {
-    if (initialized) updateIndicator(selected);
+    if (initialized) {
+      updateIndicator(selected);
+      scrollToTab(selected);
+    }
   }, [selected, initialized]);
+
+  const onScrollLayout = (e: LayoutChangeEvent) => {
+    viewportW.current = e.nativeEvent.layout.width;
+  };
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorX.value }],
@@ -61,17 +90,29 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
   }));
 
   return (
-    <View style={styles.wrap}>
-      <View style={styles.tabs} accessibilityRole="tablist">
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.indicator,
-            { backgroundColor: c.accentSoft, borderColor: c.primaryStrong },
-            indicatorStyle,
-          ]}
-        />
-        {visible.map((item) => {
+    <View style={styles.wrap} onLayout={onScrollLayout}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          centered && styles.scrollContentCentered,
+        ]}
+      >
+        <View
+          style={[styles.tabs, centered && styles.tabsCentered]}
+          accessibilityRole="tablist"
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.indicator,
+              { backgroundColor: c.accentSoft, borderColor: c.primaryStrong },
+              indicatorStyle,
+            ]}
+          />
+          {visible.map((item) => {
           const isActive = item.key === selected;
           return (
             <Pressable
@@ -112,21 +153,31 @@ export function SectionTabs({ items, selected, onSelect }: SectionTabsProps) {
             </Pressable>
           );
         })}
-      </View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+  },
+  scrollContentCentered: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   tabs: {
     flexDirection: 'row',
     gap: 4,
     alignSelf: 'flex-start',
     position: 'relative',
+  },
+  tabsCentered: {
+    alignSelf: 'center',
   },
   indicator: {
     position: 'absolute',

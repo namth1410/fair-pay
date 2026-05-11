@@ -24,16 +24,12 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
   const [mode, setMode] = useState<Mode>('create');
   const valueRef = useRef('');
   const [resetKey, setResetKey] = useState(0);
-  const [showInput, setShowInput] = useState(false);
   const [hasContent, setHasContent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
-    if (!isOpen) {
-      setShowInput(false);
-      return;
-    }
+    if (!isOpen) return;
     setMode('create');
     valueRef.current = '';
     setResetKey((k) => k + 1);
@@ -93,7 +89,6 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
           keyboardBehavior="extend"
           keyboardBlurBehavior="restore"
           android_keyboardInputMode="adjustResize"
-          onChange={(index) => setShowInput(index >= 0)}
         >
           <BottomSheetView style={styles.container}>
             <View style={styles.header}>
@@ -119,38 +114,25 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
                     : 'Nhập mã 6 ký tự được người quản trị chia sẻ.'}
                 </AppText>
 
-                {showInput ? (
-                  <BottomSheetTextInput
-                    key={`${mode}-${resetKey}`}
-                    placeholder={isCreate ? 'Tên nhóm mới' : 'a1b2c3'}
-                    placeholderTextColor={c.muted}
-                    defaultValue=""
-                    onChangeText={handleChangeText}
-                    returnKeyType="done"
-                    onSubmitEditing={handleSubmit}
-                    autoCapitalize={isCreate ? 'sentences' : 'none'}
-                    accessibilityLabel={isCreate ? 'Tên nhóm mới' : 'Mã mời'}
-                    autoFocus
-                    style={[
-                      styles.input,
-                      {
-                        color: c.foreground,
-                        backgroundColor: c.surfaceAlt,
-                        borderColor: c.divider,
-                      },
-                    ]}
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: c.surfaceAlt,
-                        borderColor: c.divider,
-                      },
-                    ]}
-                  />
-                )}
+                <BottomSheetTextInput
+                  key={`${mode}-${resetKey}`}
+                  placeholder={isCreate ? 'Tên nhóm mới' : 'a1b2c3'}
+                  placeholderTextColor={c.muted}
+                  defaultValue=""
+                  onChangeText={handleChangeText}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  autoCapitalize={isCreate ? 'sentences' : 'none'}
+                  accessibilityLabel={isCreate ? 'Tên nhóm mới' : 'Mã mời'}
+                  style={[
+                    styles.input,
+                    {
+                      color: c.foreground,
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
 
                 {formError ? (
                   <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>

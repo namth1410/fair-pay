@@ -9,8 +9,8 @@
  * *** đảm bảo test và production dùng CÙNG code — no drift.
  */
 
-import type { ExpenseData, PaymentData } from '../utils/balance';
-import { computeBalancesSimple } from '../utils/balance';
+import type { BalanceResult, ExpenseData, PaymentData } from '../utils/balance';
+import { computeBalancesSimple, filterInactiveZeroBalance } from '../utils/balance';
 
 // ═══════════════════════════════════════════════════
 // TC-02: Số dư sau expense
@@ -253,5 +253,52 @@ describe('BR-05: Payment trên chuyến đã đóng vẫn cập nhật balance',
     ]);
     expect(b['A']).toBe(0);
     expect(b['B']).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════
+// Filter: member đã rời với balance = 0 phải bị ẩn khỏi danh sách
+// (Repro của bug "thành viên ảo Địn xóa đi nhưng vẫn hiện balance 0")
+// ═══════════════════════════════════════════════════
+
+describe('filterInactiveZeroBalance: ẩn member đã rời có balance = 0', () => {
+  const balances: BalanceResult[] = [
+    { memberId: 'A', memberName: 'An',    balance: 200000 },
+    { memberId: 'B', memberName: 'Binh',  balance: 0 },        // active, balance 0
+    { memberId: 'C', memberName: 'Chi',   balance: -200000 },
+    { memberId: 'D', memberName: 'Diu',   balance: 0 },        // đã rời, balance 0 (bug case)
+    { memberId: 'E', memberName: 'Em',    balance: -100000 },  // đã rời, có balance
+  ];
+
+  it('ẩn member đã rời có balance = 0, giữ active + đã rời có balance ≠ 0', () => {
+    const leftMap = new Map<string, string | null>([
+      ['A', null],
+      ['B', null],
+      ['C', null],
+      ['D', '2026-01-15T00:00:00Z'],
+      ['E', '2026-02-20T00:00:00Z'],
+    ]);
+    const filtered = filterInactiveZeroBalance(balances, leftMap);
+    expect(filtered.map((b) => b.memberId)).toEqual(['A', 'B', 'C', 'E']);
+  });
+
+  it('không có member nào đã rời → giữ nguyên list', () => {
+    const leftMap = new Map<string, string | null>([
+      ['A', null], ['B', null], ['C', null], ['D', null], ['E', null],
+    ]);
+    const filtered = filterInactiveZeroBalance(balances, leftMap);
+    expect(filtered).toHaveLength(5);
+  });
+
+  it('member đã rời với balance ≠ 0 vẫn hiện (lịch sử)', () => {
+    const onlyOne: BalanceResult[] = [
+      { memberId: 'X', memberName: 'Xuan', balance: 500000 },
+    ];
+    const leftMap = new Map<string, string | null>([
+      ['X', '2026-03-01T00:00:00Z'],
+    ]);
+    const filtered = filterInactiveZeroBalance(onlyOne, leftMap);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.memberId).toBe('X');
   });
 });

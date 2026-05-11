@@ -59,15 +59,11 @@ export function AddToPickerSheet({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [resetKey, setResetKey] = useState(0);
-  const [showInput, setShowInput] = useState(false);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!isOpen) {
-      setShowInput(false);
-      return;
-    }
+    if (!isOpen) return;
     setSearchQuery('');
     setResetKey((k) => k + 1);
     setError('');
@@ -158,7 +154,6 @@ export function AddToPickerSheet({
           keyboardBehavior="extend"
           keyboardBlurBehavior="restore"
           android_keyboardInputMode="adjustResize"
-          onChange={(index) => setShowInput(index >= 0)}
         >
           <View style={styles.container}>
             <View style={styles.header}>
@@ -172,20 +167,16 @@ export function AddToPickerSheet({
               ]}
             >
               <Search size={18} color={c.muted} />
-              {showInput ? (
-                <BottomSheetTextInput
-                  key={resetKey}
-                  defaultValue=""
-                  onChangeText={handleChangeSearch}
-                  placeholder="Tìm nhóm hoặc chuyến..."
-                  placeholderTextColor={c.muted}
-                  style={[styles.searchInput, { color: c.foreground }]}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              ) : (
-                <View style={styles.searchInputPlaceholder} />
-              )}
+              <BottomSheetTextInput
+                key={resetKey}
+                defaultValue=""
+                onChangeText={handleChangeSearch}
+                placeholder="Tìm nhóm hoặc chuyến..."
+                placeholderTextColor={c.muted}
+                style={[styles.searchInput, { color: c.foreground }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
             </View>
 
             {loading ? (
@@ -514,10 +505,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     padding: 0,
-  },
-  searchInputPlaceholder: {
-    flex: 1,
-    height: 20,
   },
   scrollContent: {
     paddingTop: 4,

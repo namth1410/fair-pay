@@ -66,9 +66,22 @@ src/
 
 ### Supabase queries
 - Mọi query liên quan `group_members` PHẢI có `.is('left_at', null)` trừ khi cần hiển thị lịch sử.
-- Expense + splits insert PHẢI có rollback nếu splits fail (đã có trong `expense.service.ts`).
 - Ưu tiên `Promise.all()` cho queries độc lập — tránh chạy tuần tự không cần thiết.
 - Khi loop filter data theo trip/group, dùng `Map` pre-index thay vì `.filter()` trong vòng lặp.
+
+### RPC atomic (multi-step writes)
+- Các mutation nhiều bước (insert + splits + audit + notify) PHẢI gọi RPC để đảm bảo atomic — KHÔNG ghép bằng Promise.all client-side. Hiện có 7 RPC:
+  - `clear_trip`, `delete_trip` — trip lifecycle ([trip.service.ts](src/services/trip.service.ts))
+  - `create_expense` — atomic insert expense + splits + audit + notify ([expense.service.ts](src/services/expense.service.ts))
+  - `approve_join_request` — atomic insert/rejoin member + status + audit + notify ([group.service.ts](src/services/group.service.ts))
+  - `create_notifications_batch` — atomic batch fan-out + dedup window 10 phút ([notification.service.ts](src/services/notification.service.ts))
+  - `cleanup_notifications` — daily cron 03:00 ICT (pg_cron scheduled, không gọi từ TS)
+- Pattern RPC: `SECURITY DEFINER + SET search_path = public, pg_temp` + explicit `is_admin()/is_member()` check + REVOKE PUBLIC + GRANT authenticated + `COMMENT ON FUNCTION` liệt kê error codes. Tham khảo [supabase/migrations/20260511134015_trip_clear_and_delete_rpc.sql](supabase/migrations/20260511134015_trip_clear_and_delete_rpc.sql).
+- Actor luôn = `auth_user_id()` ở SQL — KHÔNG nhận `p_actor_id` từ client để chống spoofing.
+- Map Postgres error codes → tiếng Việt ở [src/utils/error.ts](src/utils/error.ts). Khi thêm errcode mới ở SQL, NHỚ thêm vào ERROR_MAP.
+- Internal SQL helpers (`_get_group_recipients`, `_format_dedup_title`, `_create_notifications_dedup`, `_log_action`) chỉ gọi từ RPC khác — KHÔNG GRANT authenticated.
+- `_format_dedup_title` SQL ↔ `formatNotificationTitle` TS ([src/utils/notificationFormat.ts](src/utils/notificationFormat.ts)) phải đồng bộ logic plural khi sửa.
+- Dedup window literal `interval '10 minutes'` trong `_create_notifications_dedup` SQL phải đồng bộ với `NOTIF_DEDUP_WINDOW_MS` ở [src/config/constants.ts](src/config/constants.ts).
 
 ### TypeScript
 - **KHÔNG dùng `: any`** trong service layer. Dùng `as Type` cast hoặc define interface cho Supabase returns.
@@ -90,8 +103,8 @@ src/
 - IME tiếng Việt (telex/VNI) **bị loạn dấu/nhân ký tự** khi gõ trong `BottomSheetTextInput` controlled. Mọi re-render trong lúc compose dấu sẽ reset IME state. Lỗi gốc ở RN (issue #19339 đã lock không có resolution); gorhom #902/#1494 là cùng triệu chứng. Input ngoài bottom sheet KHÔNG bị.
 - Pattern fix bắt buộc: input **uncontrolled** — `defaultValue=""` + `onChangeText` ghi vào `useRef` (không trigger render). Track riêng `hasContent` boundary boolean để bật/tắt nút submit (chỉ flip khi rỗng↔không rỗng, không re-render mỗi keystroke). Đọc giá trị từ ref ở `handleSubmit`.
 - Reset input khi mở lại sheet: đổi `key={resetKey}` để remount. KHÔNG dùng `inputRef.current.clear()` — `BottomSheetTextInput` dùng GH `TextInput` branded type, không match `RefObject<RnTextInput>`.
-- `autoFocus` trên `BottomSheetTextInput` luôn render gây 2 bug: (1) bàn phím tự mở khi screen mount (input mount từ đầu dù sheet đóng) và (2) sheet không extend khi focus lần đầu (gorhom keyboard listener chưa kịp gắn).
-- Fix: chỉ render input sau khi sheet animate xong qua `onChange={(index) => setShowInput(index >= 0)}` trên `BottomSheet.Content`. `showInput=false` thì render placeholder `View` cùng kích thước input (tránh layout shift). `autoFocus` chỉ chạy khi sheet đã ở snap point ổn định → keyboardBehavior="extend" hoạt động đúng.
+- **KHÔNG dùng `autoFocus`** trên `BottomSheetTextInput`. Bug gốc: input luôn render → autoFocus chạy khi screen mount → (1) keyboard tự mở dù sheet còn đóng, (2) sheet không extend (gorhom keyboard listener chưa kịp gắn). UX-wise cũng bad cho EDIT sheet: input rỗng → autoFocus → keyboard mở → value mới fill (vì giá trị từ prop chưa kịp inject vào defaultValue khi input mount). User phải tap input để mở keyboard — chấp nhận thêm 1 tap đổi lấy code đơn giản + UX nhất quán.
+- Hệ quả: KHÔNG cần pattern `showInput` (trì hoãn render input sau khi sheet animate xong qua `onChange` của `BottomSheet.Content`) nữa. Pattern đó từng được tạo CHỈ để né bug autoFocus. Bỏ autoFocus → render input trực tiếp + `defaultValue={initialValue}` + `key={resetKey}` đủ rồi.
 - Snap points + keyboard: `enableDynamicSizing={false}` + `snapPoints={['X%', 'Y%']}` + `keyboardBehavior="extend"` + `keyboardBlurBehavior="restore"` + `android_keyboardInputMode="adjustResize"`. Dynamic sizing không có "đỉnh" để extend → keyboard sẽ che input.
 - Reference implementation: `src/components/common/AddVirtualMemberSheet.tsx`.
 - **ĐỪNG thử workaround sau** (đã verify KHÔNG WORK): thay `BottomSheetTextInput` bằng plain `TextInput` (kết hợp `react-native-keyboard-controller` ở root) → vẫn loạn dấu (bug nằm ở `BottomSheet.useAnimatedKeyboard` re-renders, không chỉ riêng `BottomSheetTextInput`) **và** sheet không extend (gorhom không detect plain TextInput). Giữ pattern uncontrolled-ref.
