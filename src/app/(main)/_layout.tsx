@@ -32,6 +32,10 @@ export default function MainLayout() {
           name="expenses/new"
           options={{ title: 'Thêm khoản chi' }}
         />
+        <Stack.Screen
+          name="preset-form"
+          options={{ title: 'Preset khoản chi' }}
+        />
       </Stack>
     </View>
   );

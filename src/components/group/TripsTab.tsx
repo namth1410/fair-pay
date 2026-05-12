@@ -9,11 +9,11 @@ import {
   AppCard,
   AppText,
   AppTextField,
-  CategoryIcon,
   ChipPicker,
   EmptyState,
   FormReveal,
   ListSkeleton,
+  TripIcon,
 } from '../ui';
 
 const TRIP_TYPE_LABELS: Record<string, string> = {
@@ -65,7 +65,7 @@ export const TripsTab = React.memo(function TripsTab({
       title={item.name}
       subtitle={`${TRIP_TYPE_LABELS[item.type]} · ${item.status === 'open' ? 'Đang mở' : 'Đã đóng'}`}
       onPress={() => onTripPress(item.id)}
-      leading={<CategoryIcon kind="trip" value={item.type} size={40} />}
+      leading={<TripIcon value={item.type} size={40} />}
       trailing={
         isAdmin ? (
           <Pressable

@@ -39,10 +39,10 @@
         }
       ],
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "Cho phép Fair Pay dùng camera để chụp ảnh hoá đơn và avatar.",
-          "recordAudioAndroid": false
+          "cameraPermissionText": "Cho phép Fair Pay dùng camera để chụp ảnh hoá đơn và avatar.",
+          "enableMicrophonePermission": false
         }
       ],
       [

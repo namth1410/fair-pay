@@ -1,4 +1,3 @@
-import { CameraView } from 'expo-camera';
 import { X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -12,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Camera, useCameraDevice } from 'react-native-vision-camera';
 
 import { AppText } from '../ui';
 
@@ -73,34 +73,30 @@ export function CameraCaptureHost() {
 function CameraCaptureScreen() {
   const window = useWindowDimensions();
   const squareSize = window.width;
+  const device = useCameraDevice('back');
 
-  const [cameraReady, setCameraReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<CameraCaptureResult | null>(null);
   const [error, setError] = useState('');
-  const cameraRef = useRef<CameraView>(null);
+  const cameraRef = useRef<Camera>(null);
 
   const handleClose = () => {
     resolveAndClose(null);
   };
 
+  // takeSnapshot trên Android = GPU view screenshot (~16ms), trên iOS lấy
+  // frame từ video pipeline (cần video={true}). Khác hẳn expo-camera
+  // takePictureAsync vốn block ~500-1500ms do full-res JPEG encode trên
+  // native thread. Đây là cách TikTok/Instagram đạt "chụp phát ăn luôn".
   const handleCapture = async () => {
-    if (busy || !cameraReady || !cameraRef.current) return;
+    if (busy || !cameraRef.current) return;
     setBusy(true);
     setError('');
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.9,
-        // skipProcessing=true bỏ bước native rotate/re-encode để orient đúng.
-        // Android trả URI ngay sau khi bitmap save xong → preview hiện liền.
-        // EXIF orientation vẫn được ghi vào file, <Image> và ImageManipulator
-        // ở compress step tự respect nên không bị xoay sai. iOS no-op.
-        skipProcessing: true,
-      });
-      if (!photo) throw new Error('Không chụp được ảnh');
-      // Hiện preview luôn raw (không crop pixel) — crop sẽ gộp vào compress
-      // step ở compressForUpload, giảm 1 lần decode+encode full-res.
-      setPreview({ uri: photo.uri, width: photo.width, height: photo.height });
+      const snap = await cameraRef.current.takeSnapshot({ quality: 90 });
+      // path là local filesystem path, cần file:// prefix cho RN <Image>.
+      const uri = snap.path.startsWith('file://') ? snap.path : `file://${snap.path}`;
+      setPreview({ uri, width: snap.width, height: snap.height });
     } catch (err) {
       setError((err as Error)?.message ?? 'Không chụp được ảnh');
     } finally {
@@ -133,20 +129,21 @@ function CameraCaptureScreen() {
               style={{ width: squareSize, height: squareSize }}
               resizeMode="cover"
             />
-          ) : (
-            <CameraView
+          ) : device ? (
+            <Camera
               ref={cameraRef}
               style={StyleSheet.absoluteFill}
-              facing="back"
-              onCameraReady={() => setCameraReady(true)}
-              responsiveOrientationWhenOrientationLocked={false}
+              device={device}
+              isActive={true}
+              photo={true}
+              video={true}
+              resizeMode="cover"
             />
-          )}
-          {!preview && !cameraReady ? (
+          ) : (
             <View style={styles.cameraLoading}>
               <ActivityIndicator color="#FFFFFF" />
             </View>
-          ) : null}
+          )}
         </View>
 
         {error ? (
@@ -175,10 +172,10 @@ function CameraCaptureScreen() {
         ) : (
           <Pressable
             onPress={handleCapture}
-            disabled={busy || !cameraReady}
+            disabled={busy || !device}
             style={({ pressed }) => [
               styles.shutterOuter,
-              { opacity: !cameraReady || busy ? 0.5 : pressed ? 0.85 : 1 },
+              { opacity: !device || busy ? 0.5 : pressed ? 0.85 : 1 },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Chụp ảnh"

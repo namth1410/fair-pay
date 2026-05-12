@@ -1,4 +1,3 @@
-import type { ExpenseCategory } from '../config/constants';
 import { supabase } from '../config/supabase';
 import type { ExpensePresetRow, PresetSplitEntry } from '../types/database.types';
 import {
@@ -18,7 +17,6 @@ export type PresetSplitType = 'equal' | 'ratio' | 'custom';
 export interface PresetCreateParams {
   title: string;
   amount: number;
-  category: ExpenseCategory;
   tripId?: string | null;
   paidByMemberId?: string | null;
   splitType?: PresetSplitType | null;
@@ -78,7 +76,7 @@ export async function fetchPresets(): Promise<ExpensePreset[]> {
 
 /**
  * Tạo preset mới. 2 scope:
- *  - Global: không trip_id → lưu {title, amount, category}
+ *  - Global: không trip_id → lưu {title, amount}
  *  - Trip-pinned: có trip_id → có thể lưu thêm paid_by + splits (optional)
  *
  * Constraints DB:
@@ -102,7 +100,7 @@ export async function createPreset(params: PresetCreateParams): Promise<ExpenseP
       user_id: userId,
       title: params.title.trim(),
       amount: params.amount,
-      category: params.category,
+      category: 'other',
       trip_id: params.tripId ?? null,
       paid_by_member_id: params.paidByMemberId ?? null,
       split_type: params.splitType ?? null,
@@ -139,7 +137,6 @@ export async function updatePreset(
     .update({
       title: params.title.trim(),
       amount: params.amount,
-      category: params.category,
       trip_id: params.tripId ?? null,
       paid_by_member_id: params.paidByMemberId ?? null,
       split_type: params.splitType ?? null,

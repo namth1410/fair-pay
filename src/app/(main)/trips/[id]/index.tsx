@@ -125,6 +125,8 @@ export default function TripDetailScreen() {
       tripName: trip?.name ?? 'Chuyến đi',
       groupName,
       generatedAt: new Date().toISOString(),
+      status: trip?.status ?? 'open',
+      closedAt: trip?.closed_at ?? null,
       members: currentGroupMembers.map((m) => ({
         id: m.id,
         displayName: m.display_name,
@@ -135,7 +137,6 @@ export default function TripDetailScreen() {
         title: e.title,
         amount: e.amount,
         paidBy: e.paid_by,
-        category: e.category,
         date: e.date,
         note: e.note,
         splits: e.expense_splits.map((s) => ({
@@ -154,7 +155,7 @@ export default function TripDetailScreen() {
       balances,
       settlements,
     };
-  }, [trip?.name, groupName, currentGroupMembers, currentExpenses, currentPayments, balances, settlements]);
+  }, [trip?.name, trip?.status, trip?.closed_at, groupName, currentGroupMembers, currentExpenses, currentPayments, balances, settlements]);
 
   const myMemberId = useMemo(() => {
     if (!profile) return null;

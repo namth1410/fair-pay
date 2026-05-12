@@ -1,13 +1,8 @@
 import {
-  Bus,
-  Coffee,
-  Gamepad2,
-  HomeIcon,
   type LucideIcon,
   MoreHorizontal,
   PartyPopper,
   Plane,
-  ShoppingBag,
   Utensils,
 } from 'lucide-react-native';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
@@ -15,13 +10,6 @@ import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { useAppTheme } from '../../hooks/useAppTheme';
 
 export type TripType = 'travel' | 'meal' | 'event' | 'other';
-export type ExpenseCategory =
-  | 'food'
-  | 'transport'
-  | 'accommodation'
-  | 'fun'
-  | 'shopping'
-  | 'other';
 
 const TRIP_ICONS: Record<TripType, LucideIcon> = {
   travel: Plane,
@@ -30,28 +18,15 @@ const TRIP_ICONS: Record<TripType, LucideIcon> = {
   other: MoreHorizontal,
 };
 
-const EXPENSE_ICONS: Record<ExpenseCategory, LucideIcon> = {
-  food: Coffee,
-  transport: Bus,
-  accommodation: HomeIcon,
-  fun: Gamepad2,
-  shopping: ShoppingBag,
-  other: MoreHorizontal,
-};
-
-interface CategoryIconProps {
-  kind: 'trip' | 'expense';
-  value: string;
+interface TripIconProps {
+  value: TripType;
   size?: number;
   style?: ViewStyle;
 }
 
-export function CategoryIcon({ kind, value, size = 44, style }: CategoryIconProps) {
+export function TripIcon({ value, size = 44, style }: TripIconProps) {
   const c = useAppTheme();
-  const Icon =
-    kind === 'trip'
-      ? TRIP_ICONS[value as TripType] ?? MoreHorizontal
-      : EXPENSE_ICONS[value as ExpenseCategory] ?? MoreHorizontal;
+  const Icon = TRIP_ICONS[value] ?? MoreHorizontal;
 
   return (
     <View

@@ -71,7 +71,6 @@ export async function createExpense(params: {
   groupId: string;
   title: string;
   amount: number;
-  category: string;
   paidByMemberId: string;
   splitType: 'equal' | 'ratio' | 'custom';
   splits: SplitResult[];
@@ -109,7 +108,7 @@ export async function createExpense(params: {
       p_group_id: params.groupId,
       p_title: params.title,
       p_amount: params.amount,
-      p_category: params.category,
+      p_category: 'other',
       p_paid_by: params.paidByMemberId,
       p_split_type: params.splitType,
       p_splits: params.splits.map((s) => ({

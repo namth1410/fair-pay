@@ -5,11 +5,9 @@ import { Receipt } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
-import { EXPENSE_CATEGORIES as CATEGORIES } from '../../config/constants';
 import type { ExpenseWithSplits } from '../../services/expense.service';
 import type { GroupMember } from '../../services/group.service';
 import {
-  CategoryIcon,
   ConfirmDialog,
   EmptyState,
   ListSkeleton,
@@ -65,8 +63,7 @@ export const ExpensesTab = React.memo(function ExpensesTab({
             renderItem={({ item }) => (
               <SwipeableCard
                 title={item.title}
-                subtitle={`${getMemberName(item.paid_by)} đã trả · ${CATEGORIES.find((ct) => ct.key === item.category)?.label}`}
-                leading={<CategoryIcon kind="expense" value={item.category} size={40} />}
+                subtitle={`${getMemberName(item.paid_by)} đã trả`}
                 onDelete={isOpen ? () => handleDelete(item) : undefined}
                 onLongPress={isOpen ? () => handleDelete(item) : undefined}
                 trailing={<Money value={item.amount} variant="default" tone="primary" />}

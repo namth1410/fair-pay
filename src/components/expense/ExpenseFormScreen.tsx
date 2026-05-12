@@ -15,10 +15,6 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  EXPENSE_CATEGORIES as CATEGORIES,
-  type ExpenseCategory,
-} from '../../config/constants';
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import {
@@ -78,7 +74,6 @@ interface ExpenseFormScreenProps {
   /** Pre-fill từ preset apply (URL params hoặc preset lookup). */
   prefillTitle?: string;
   prefillAmount?: number;
-  prefillCategory?: ExpenseCategory;
   /** Khi navigate kèm preset ID, form sẽ áp full data (paid_by + splits) khi members load xong. */
   applyPresetId?: string;
 }
@@ -89,7 +84,6 @@ export function ExpenseFormScreen({
   presetExpenseId,
   prefillTitle,
   prefillAmount,
-  prefillCategory,
   applyPresetId,
 }: ExpenseFormScreenProps) {
   const c = useAppTheme();
@@ -131,7 +125,6 @@ export function ExpenseFormScreen({
   const [amountStr, setAmountStr] = useState(
     prefillAmount !== undefined ? String(prefillAmount) : '',
   );
-  const [category, setCategory] = useState<ExpenseCategory>(prefillCategory ?? 'food');
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('equal');
@@ -285,7 +278,6 @@ export function ExpenseFormScreen({
     (preset: ExpensePreset) => {
       setTitle(preset.title);
       setAmountStr(String(preset.amount));
-      setCategory(preset.category);
       setFormError('');
       setSavePreset(false);
       // Trip-pinned full preset → apply paid_by + splits (best-effort qua current members).
@@ -355,7 +347,6 @@ export function ExpenseFormScreen({
     try {
       const submittedTitle = title.trim();
       const submittedAmount = amount;
-      const submittedCategory = category;
 
       let imageUrl: string | null = null;
       let uploadedExpenseId: string | undefined = presetId;
@@ -391,7 +382,6 @@ export function ExpenseFormScreen({
           groupId: currentGroupId,
           title: submittedTitle,
           amount,
-          category,
           paidByMemberId: paidBy,
           splitType,
           splits,
@@ -417,7 +407,6 @@ export function ExpenseFormScreen({
           await addPreset({
             title: submittedTitle,
             amount: submittedAmount,
-            category: submittedCategory,
           });
           toast.show({
             variant: 'success',
@@ -446,7 +435,6 @@ export function ExpenseFormScreen({
     ratios,
     customAmounts,
     title,
-    category,
     paidBy,
     note,
     currentTripId,
@@ -585,15 +573,6 @@ export function ExpenseFormScreen({
             onFocus={() => setAmountFocused(true)}
             onBlur={() => setAmountFocused(false)}
             accessibilityLabel="Số tiền"
-          />
-
-          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-            Danh mục
-          </AppText>
-          <ChipPicker
-            options={CATEGORIES}
-            selected={category}
-            onSelect={(k) => setCategory(k as ExpenseCategory)}
           />
 
           <AppText variant="meta" tone="muted" style={styles.fieldLabel}>

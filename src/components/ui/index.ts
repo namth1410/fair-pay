@@ -4,7 +4,7 @@ export { AppText } from './AppText';
 export { AppTextField } from './AppTextField';
 export { Avatar } from './Avatar';
 export { BouncyDialog } from './BouncyDialog';
-export { CategoryIcon } from './CategoryIcon';
+export { TripIcon } from './TripIcon';
 export { ChipPicker } from './ChipPicker';
 export { ConfirmDialog } from './ConfirmDialog';
 export { EmptyState } from './EmptyState';

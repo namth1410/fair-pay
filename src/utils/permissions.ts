@@ -1,7 +1,7 @@
-import { Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { Alert, Linking } from 'react-native';
+import { Camera as VisionCamera } from 'react-native-vision-camera';
 
 type PermKind = 'camera' | 'library' | 'mediaSave';
 
@@ -57,11 +57,22 @@ async function ensure(
   return false;
 }
 
+// VisionCamera permission API trả string status thay vì {granted, canAskAgain}.
+// Map sang PermLike để dùng chung pattern ensure(). Sau khi requestCameraPermission
+// trả 'denied' (đã bị từ chối, OS không show dialog nữa) → canAskAgain=false →
+// fallback sang settings alert.
+function visionCameraStatusToPermLike(status: string): PermLike {
+  return {
+    granted: status === 'granted',
+    canAskAgain: status === 'not-determined',
+  };
+}
+
 export function ensureCameraPermission(): Promise<boolean> {
   return ensure(
     'camera',
-    Camera.getCameraPermissionsAsync,
-    Camera.requestCameraPermissionsAsync,
+    async () => visionCameraStatusToPermLike(VisionCamera.getCameraPermissionStatus()),
+    async () => visionCameraStatusToPermLike(await VisionCamera.requestCameraPermission()),
   );
 }
 

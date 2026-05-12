@@ -72,7 +72,6 @@ interface TripState {
     groupId: string;
     title: string;
     amount: number;
-    category: string;
     paidByMemberId: string;
     splitType: 'equal' | 'ratio' | 'custom';
     splits: SplitResult[];
@@ -180,7 +179,6 @@ export const useTripStore = create<TripState>((set, get) => ({
       groupId: params.groupId,
       title: params.title,
       amount: params.amount,
-      category: params.category,
       paidByMemberId: params.paidByMemberId,
       splitType: params.splitType,
       splits: params.splits,

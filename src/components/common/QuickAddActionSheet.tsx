@@ -120,7 +120,6 @@ export function QuickAddActionSheet({
     baseParams.set('expenseId', expenseId);
     baseParams.set('prefillTitle', preset.title);
     baseParams.set('prefillAmount', String(preset.amount));
-    baseParams.set('prefillCategory', preset.category);
 
     // Trip-pinned full preset → confirm dialog → submit RPC luôn, không qua form.
     if (isFullPreset(preset)) {
@@ -153,7 +152,6 @@ export function QuickAddActionSheet({
         groupId: applied.tripGroupId,
         title: confirmPreset.title,
         amount: confirmPreset.amount,
-        category: confirmPreset.category,
         paidByMemberId: applied.paidByMemberId,
         splitType: applied.splitType,
         splits: applied.splits,
@@ -261,8 +259,8 @@ export function QuickAddActionSheet({
                   </View>
                 ) : null}
                 {contextPresets.length === 0 && presetsLoaded ? (
-                  <View style={[styles.emptyPresetBox, { backgroundColor: c.surfaceAlt, borderColor: c.divider }]}>
-                    <AppText variant="caption" tone="muted">
+                  <View style={[styles.emptyPresetBox, { borderColor: c.divider }]}>
+                    <AppText variant="caption" tone="muted" style={styles.emptyPresetText}>
                       Chưa có preset. Tạo preset để thêm khoản chi nhanh hơn.
                     </AppText>
                     <Pressable
@@ -456,18 +454,22 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   emptyPresetBox: {
-    padding: 12,
+    padding: 14,
     borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
+    borderWidth: 1,
+    borderStyle: 'dashed',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
+  },
+  emptyPresetText: {
+    textAlign: 'center',
   },
   emptyPresetLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
   actionsCol: {
     gap: 10,

@@ -42,21 +42,3 @@ export const NOTIF_DEDUP_WINDOW_MS = 10 * 60 * 1000; // 10 phút — gộp dupli
 export const SETTLE_SUGGEST_MIN_AMOUNT = 200_000;     // VND — ngưỡng gợi ý settle
 export const SETTLE_SUGGEST_AGE_DAYS = 3;             // số ngày trip không hoạt động trước khi gợi ý
 export const SETTLE_SUGGEST_COOLDOWN_DAYS = 7;        // không gửi lại settle suggest cùng cặp trong N ngày
-
-// Expense categories — shared single source of truth
-export type ExpenseCategory =
-  | 'food'
-  | 'transport'
-  | 'accommodation'
-  | 'fun'
-  | 'shopping'
-  | 'other';
-
-export const EXPENSE_CATEGORIES: { key: ExpenseCategory; label: string }[] = [
-  { key: 'food', label: 'Ăn uống' },
-  { key: 'transport', label: 'Di chuyển' },
-  { key: 'accommodation', label: 'Chỗ ở' },
-  { key: 'fun', label: 'Vui chơi' },
-  { key: 'shopping', label: 'Mua sắm' },
-  { key: 'other', label: 'Khác' },
-];

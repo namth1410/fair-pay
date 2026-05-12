@@ -28,6 +28,8 @@ const SAMPLE_DATA: TripExportData = {
   tripName: 'Đà Lạt tháng 4',
   groupName: 'Nhóm bạn cấp 3',
   generatedAt: '2026-05-11T10:30:00.000Z',
+  status: 'open',
+  closedAt: null,
   members: [
     { id: 'A', displayName: 'An', isVirtual: false },
     { id: 'B', displayName: 'Bình', isVirtual: false },
@@ -39,7 +41,6 @@ const SAMPLE_DATA: TripExportData = {
       title: 'Ăn tối',
       amount: 300_000,
       paidBy: 'A',
-      category: 'food',
       date: '2026-04-20',
       note: null,
       splits: [
@@ -53,7 +54,6 @@ const SAMPLE_DATA: TripExportData = {
       title: 'Taxi',
       amount: 240_000,
       paidBy: 'B',
-      category: 'transport',
       date: '2026-04-21',
       note: 'Đi sân bay',
       splits: [
@@ -107,11 +107,6 @@ describe('buildTripGroupHtml', () => {
 
   it('shows expense notes when present', () => {
     expect(html).toContain('Đi sân bay');
-  });
-
-  it('renders Vietnamese category labels', () => {
-    expect(html).toContain('Ăn uống');
-    expect(html).toContain('Di chuyển');
   });
 
   it('does NOT mark virtual members in PDF (recipient should not distinguish)', () => {
@@ -187,11 +182,90 @@ describe('buildTripPersonHtml', () => {
   });
 });
 
+describe('buildTripGroupHtml — trip status', () => {
+  it('shows "Đang mở" badge for open trip', () => {
+    const html = buildTripGroupHtml(SAMPLE_DATA);
+    expect(html).toContain('status-badge open');
+    expect(html).toContain('Đang mở');
+  });
+
+  it('shows "Đã hoàn thành" badge with closedAt date for closed trip', () => {
+    const closed: TripExportData = {
+      ...SAMPLE_DATA,
+      status: 'closed',
+      closedAt: '2026-04-30T08:00:00.000Z',
+    };
+    const html = buildTripGroupHtml(closed);
+    expect(html).toContain('status-badge closed');
+    expect(html).toContain('Đã hoàn thành');
+    expect(html).toContain('30/04/2026');
+  });
+
+  it('shows warning banner when closed but balances != 0', () => {
+    const closed: TripExportData = {
+      ...SAMPLE_DATA,
+      status: 'closed',
+      closedAt: '2026-04-30T08:00:00.000Z',
+    };
+    const html = buildTripGroupHtml(closed);
+    expect(html).toContain('<div class="warning-banner">');
+    expect(html).toContain('vẫn còn số dư chưa quyết toán');
+  });
+
+  it('uses "Số nợ chưa quyết toán" heading when closed + has settlements', () => {
+    const closed: TripExportData = {
+      ...SAMPLE_DATA,
+      status: 'closed',
+      closedAt: '2026-04-30T08:00:00.000Z',
+    };
+    const html = buildTripGroupHtml(closed);
+    expect(html).toContain('Số nợ chưa quyết toán');
+    expect(html).not.toContain('<h2>Gợi ý quyết toán</h2>');
+  });
+
+  it('shows "Đã quyết toán xong" when closed + zero balances', () => {
+    const closedSettled: TripExportData = {
+      ...SAMPLE_DATA,
+      status: 'closed',
+      closedAt: '2026-04-30T08:00:00.000Z',
+      balances: SAMPLE_DATA.members.map((m) => ({
+        memberId: m.id,
+        memberName: m.displayName,
+        balance: 0,
+      })),
+      settlements: [],
+    };
+    const html = buildTripGroupHtml(closedSettled);
+    expect(html).toContain('Đã quyết toán xong');
+    expect(html).not.toContain('<div class="warning-banner">');
+  });
+
+  it('does NOT show warning banner when trip is open + has outstanding balances', () => {
+    const html = buildTripGroupHtml(SAMPLE_DATA);
+    expect(html).not.toContain('<div class="warning-banner">');
+  });
+});
+
+describe('buildTripPersonHtml — trip status', () => {
+  it('shows closed badge in per-person PDF too', () => {
+    const closed: TripExportData = {
+      ...SAMPLE_DATA,
+      status: 'closed',
+      closedAt: '2026-04-30T08:00:00.000Z',
+    };
+    const html = buildTripPersonHtml(closed, 'A');
+    expect(html).toContain('status-badge closed');
+    expect(html).toContain('Đã hoàn thành');
+  });
+});
+
 describe('buildTripGroupHtml — empty cases', () => {
   const empty: TripExportData = {
     tripName: 'Trip rỗng',
     groupName: 'Nhóm rỗng',
     generatedAt: '2026-05-11T00:00:00.000Z',
+    status: 'open',
+    closedAt: null,
     members: [],
     expenses: [],
     payments: [],

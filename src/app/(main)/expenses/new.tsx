@@ -1,9 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 
 import { ExpenseFormScreen } from '../../../components/expense/ExpenseFormScreen';
-import { EXPENSE_CATEGORIES,type ExpenseCategory } from '../../../config/constants';
-
-const VALID_CATEGORIES = new Set(EXPENSE_CATEGORIES.map((c) => c.key));
 
 export default function NewExpenseFromHomeScreen() {
   const params = useLocalSearchParams<{
@@ -14,7 +11,6 @@ export default function NewExpenseFromHomeScreen() {
     imageHeight?: string;
     prefillTitle?: string;
     prefillAmount?: string;
-    prefillCategory?: string;
     applyPresetId?: string;
   }>();
 
@@ -30,10 +26,6 @@ export default function NewExpenseFromHomeScreen() {
       : null;
 
   const prefillAmount = params.prefillAmount ? parseInt(params.prefillAmount, 10) : undefined;
-  const prefillCategory =
-    params.prefillCategory && VALID_CATEGORIES.has(params.prefillCategory as ExpenseCategory)
-      ? (params.prefillCategory as ExpenseCategory)
-      : undefined;
 
   return (
     <ExpenseFormScreen
@@ -45,7 +37,6 @@ export default function NewExpenseFromHomeScreen() {
           ? prefillAmount
           : undefined
       }
-      prefillCategory={prefillCategory}
       applyPresetId={params.applyPresetId}
     />
   );

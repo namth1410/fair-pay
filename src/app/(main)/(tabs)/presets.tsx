@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
 import { MapPin, Pencil, Trash2, Zap } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
@@ -8,14 +9,12 @@ import {
   View,
 } from 'react-native';
 
-import { PresetFormModal } from '../../../components/common/PresetFormModal';
 import { TabHeader } from '../../../components/header/TabHeader';
 import {
   AppText,
   BouncyDialog,
   EmptyState,
 } from '../../../components/ui';
-import { EXPENSE_CATEGORIES } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { type ExpensePreset, isFullPreset } from '../../../services/preset.service';
 import { fetchAllUserTrips, type Trip } from '../../../services/trip.service';
@@ -23,18 +22,12 @@ import { usePresetStore } from '../../../stores/preset.store';
 import { useUIStore } from '../../../stores/ui.store';
 import { getErrorMessage } from '../../../utils/error';
 
-const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  EXPENSE_CATEGORIES.map((c) => [c.key, c.label]),
-);
-
 export default function PresetsScreen() {
   const c = useAppTheme();
   const { toast } = useToast();
   const { presets, loading, loadPresets, removePreset } = usePresetStore();
   const presetsAddRequestSeq = useUIStore((s) => s.presetsAddRequestSeq);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ExpensePreset | null>(null);
   const [toDelete, setToDelete] = useState<ExpensePreset | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -54,17 +47,15 @@ export default function PresetsScreen() {
     return m;
   }, [trips]);
 
-  // Header "+" button increments seq → mở form ở add-mode (editing=null).
+  // Header "+" button increments seq → navigate sang form ở add-mode.
   // Skip lần đầu mount (seq=0 chưa phải user action).
   useEffect(() => {
     if (presetsAddRequestSeq === 0) return;
-    setEditing(null);
-    setFormOpen(true);
+    router.push('/preset-form');
   }, [presetsAddRequestSeq]);
 
   const handleEdit = (preset: ExpensePreset) => {
-    setEditing(preset);
-    setFormOpen(true);
+    router.push(`/preset-form?id=${preset.id}`);
   };
 
   const handleConfirmDelete = async () => {
@@ -99,7 +90,7 @@ export default function PresetsScreen() {
           renderItem={({ item }) => {
             const full = isFullPreset(item);
             const tripName = item.trip_id ? tripNameMap[item.trip_id] : null;
-            const subtitle = `${item.amount.toLocaleString('vi-VN')}đ · ${CATEGORY_LABELS[item.category] ?? item.category}`;
+            const subtitle = `${item.amount.toLocaleString('vi-VN')}đ`;
             return (
               <Pressable
                 onPress={() => handleEdit(item)}
@@ -165,12 +156,6 @@ export default function PresetsScreen() {
           }}
         />
       )}
-
-      <PresetFormModal
-        isOpen={formOpen}
-        onOpenChange={setFormOpen}
-        preset={editing}
-      />
 
       <BouncyDialog
         isOpen={!!toDelete}

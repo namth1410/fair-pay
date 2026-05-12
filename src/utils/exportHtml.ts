@@ -24,7 +24,6 @@ export interface ExportExpense {
   title: string;
   amount: number;
   paidBy: string;
-  category: string;
   date: string;
   note?: string | null;
   splits: { memberId: string; amount: number }[];
@@ -57,21 +56,14 @@ export interface TripExportData {
   tripName: string;
   groupName: string;
   generatedAt: string;
+  status: 'open' | 'closed';
+  closedAt: string | null;
   members: ExportMember[];
   expenses: ExportExpense[];
   payments: ExportPayment[];
   balances: ExportBalance[];
   settlements: ExportSettlement[];
 }
-
-const CATEGORY_LABEL: Record<string, string> = {
-  food: 'Ăn uống',
-  transport: 'Di chuyển',
-  accommodation: 'Chỗ ở',
-  fun: 'Vui chơi',
-  shopping: 'Mua sắm',
-  other: 'Khác',
-};
 
 export function escapeHtml(s: string): string {
   return s
@@ -105,10 +97,6 @@ function memberLabel(memberId: string, members: ExportMember[]): string {
   const m = members.find((x) => x.id === memberId);
   if (!m) return '?';
   return escapeHtml(m.displayName);
-}
-
-function categoryLabel(cat: string): string {
-  return CATEGORY_LABEL[cat] ?? CATEGORY_LABEL.other!;
 }
 
 /** Render danh sách người chia: nếu tất cả split = total/n → "Chia đều cho tất cả". */
@@ -150,7 +138,6 @@ function renderExpensesTable(
           <td class="col-date">${formatDate(exp.date)}</td>
           <td class="col-title">
             <div class="title">${escapeHtml(exp.title)}</div>
-            <div class="meta">${escapeHtml(categoryLabel(exp.category))}</div>
             ${noteHtml}
           </td>
           <td class="col-amount">${formatVND(exp.amount)}</td>
@@ -223,10 +210,18 @@ function balanceLabel(balance: number): string {
   return 'cân bằng';
 }
 
-function renderBalancesTable(balances: ExportBalance[]): string {
+function renderBalancesTable(
+  balances: ExportBalance[],
+  status: 'open' | 'closed',
+): string {
   if (balances.length === 0) {
     return '<p class="muted">Chưa có dữ liệu số dư.</p>';
   }
+  const hasOutstanding = balances.some((b) => b.balance !== 0);
+  const warning =
+    status === 'closed' && hasOutstanding
+      ? '<div class="warning-banner">⚠ Chuyến đi đã hoàn thành nhưng vẫn còn số dư chưa quyết toán. Số liệu dưới đây phản ánh tại thời điểm đóng chuyến.</div>'
+      : '';
   const rows = balances
     .map((b) => {
       const tone = toneOf(b.balance);
@@ -239,7 +234,7 @@ function renderBalancesTable(balances: ExportBalance[]): string {
         </tr>`;
     })
     .join('');
-  return `
+  return `${warning}
     <table class="data">
       <thead>
         <tr>
@@ -252,9 +247,16 @@ function renderBalancesTable(balances: ExportBalance[]): string {
     </table>`;
 }
 
-function renderSettlementsTable(settlements: ExportSettlement[]): string {
+function renderSettlementsTable(
+  settlements: ExportSettlement[],
+  status: 'open' | 'closed',
+): string {
   if (settlements.length === 0) {
-    return '<p class="muted">Cả nhóm đã cân bằng — không cần thanh toán thêm.</p>';
+    const msg =
+      status === 'closed'
+        ? 'Đã quyết toán xong.'
+        : 'Cả nhóm đã cân bằng — không cần thanh toán thêm.';
+    return `<p class="muted">${msg}</p>`;
   }
   const rows = settlements
     .map(
@@ -279,6 +281,14 @@ function renderSettlementsTable(settlements: ExportSettlement[]): string {
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+function settlementSectionHeading(
+  status: 'open' | 'closed',
+  hasSettlements: boolean,
+): string {
+  if (status === 'closed' && hasSettlements) return 'Số nợ chưa quyết toán';
+  return 'Gợi ý quyết toán';
 }
 
 /** Card kết luận net cho mode per-person. */
@@ -490,15 +500,53 @@ const BASE_STYLES = `
     color: #888;
     text-align: center;
   }
+  .status-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 9.5pt;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .status-badge.open {
+    background: #e6f4ea;
+    color: #0a8a3a;
+    border: 1px solid #b7e0c4;
+  }
+  .status-badge.closed {
+    background: #eef0f7;
+    color: #3b3f5c;
+    border: 1px solid #c8cde0;
+  }
+  .warning-banner {
+    margin: 10px 0;
+    padding: 10px 14px;
+    background: #fff8e1;
+    border-left: 4px solid #d49a00;
+    border-radius: 6px;
+    font-size: 10pt;
+    color: #6b4d00;
+  }
 `;
 
-function renderHeader(title: string, sub: string, generatedAt: string): string {
+function renderHeader(
+  title: string,
+  sub: string,
+  generatedAt: string,
+  status: 'open' | 'closed',
+  closedAt: string | null,
+): string {
+  const badge =
+    status === 'closed'
+      ? `<span class="status-badge closed">✓ Đã hoàn thành${closedAt ? ` ngày ${escapeHtml(formatDate(closedAt))}` : ''}</span>`
+      : `<span class="status-badge open">● Đang mở</span>`;
   return `
     <div class="header">
       <h1>${escapeHtml(title)}</h1>
       <div class="sub">${escapeHtml(sub)}</div>
       <div class="meta-row">
         <span>Ngày xuất: ${escapeHtml(formatDateTime(generatedAt))}</span>
+        ${badge}
       </div>
     </div>`;
 }
@@ -542,17 +590,21 @@ export function buildTripGroupHtml(data: TripExportData): string {
       </div>
     </div>`;
 
+  const settlementHeading = settlementSectionHeading(
+    data.status,
+    data.settlements.length > 0,
+  );
   const body = `
-    ${renderHeader(data.tripName, `Nhóm: ${data.groupName}`, data.generatedAt)}
+    ${renderHeader(data.tripName, `Nhóm: ${data.groupName}`, data.generatedAt, data.status, data.closedAt)}
     ${stats}
     <h2>Các khoản chi</h2>
     ${renderExpensesTable(data.expenses, data.members)}
     <h2>Thanh toán đã ghi nhận</h2>
     ${renderPaymentsTable(data.payments, data.members)}
     <h2>Số dư cuối kỳ</h2>
-    ${renderBalancesTable(data.balances)}
-    <h2>Gợi ý quyết toán</h2>
-    ${renderSettlementsTable(data.settlements)}
+    ${renderBalancesTable(data.balances, data.status)}
+    <h2>${settlementHeading}</h2>
+    ${renderSettlementsTable(data.settlements, data.status)}
     ${renderFooter()}`;
 
   return wrapHtml(body, `${data.tripName} — Diễn giải nhóm`);
@@ -591,6 +643,8 @@ export function buildTripPersonHtml(
       data.tripName,
       `Diễn giải cho ${memberName} · Nhóm: ${data.groupName}`,
       data.generatedAt,
+      data.status,
+      data.closedAt,
     )}
     ${renderPersonSummaryCard(memberName, explanation.totalBalance)}
     <h2>Diễn giải chi tiết (liên quan ${escapeHtml(memberName)})</h2>
