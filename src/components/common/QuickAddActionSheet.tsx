@@ -36,6 +36,7 @@ export function QuickAddActionSheet({
   const navigateToForm = (image?: {
     uri: string;
     width: number;
+    height: number;
     sizeBytes: number;
   }) => {
     const expenseId = Crypto.randomUUID();
@@ -45,6 +46,7 @@ export function QuickAddActionSheet({
       params.set('imageUri', image.uri);
       params.set('imageSizeBytes', String(image.sizeBytes));
       params.set('imageWidth', String(image.width));
+      params.set('imageHeight', String(image.height));
     }
     onOpenChange(false);
     router.push(`/expenses/new?${params.toString()}` as never);
@@ -62,6 +64,7 @@ export function QuickAddActionSheet({
       navigateToForm({
         uri: picked.uri,
         width: picked.width,
+        height: picked.height,
         sizeBytes: picked.sizeBytes,
       });
     } catch (err) {

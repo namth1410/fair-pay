@@ -1,5 +1,4 @@
 import { CameraView } from 'expo-camera';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -91,19 +90,17 @@ function CameraCaptureScreen() {
     setError('');
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 1,
-        skipProcessing: false,
+        quality: 0.9,
+        // skipProcessing=true bỏ bước native rotate/re-encode để orient đúng.
+        // Android trả URI ngay sau khi bitmap save xong → preview hiện liền.
+        // EXIF orientation vẫn được ghi vào file, <Image> và ImageManipulator
+        // ở compress step tự respect nên không bị xoay sai. iOS no-op.
+        skipProcessing: true,
       });
       if (!photo) throw new Error('Không chụp được ảnh');
-      const side = Math.min(photo.width, photo.height);
-      const originX = Math.floor((photo.width - side) / 2);
-      const originY = Math.floor((photo.height - side) / 2);
-      const cropped = await ImageManipulator.manipulateAsync(
-        photo.uri,
-        [{ crop: { originX, originY, width: side, height: side } }],
-        { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      setPreview({ uri: cropped.uri, width: cropped.width, height: cropped.height });
+      // Hiện preview luôn raw (không crop pixel) — crop sẽ gộp vào compress
+      // step ở compressForUpload, giảm 1 lần decode+encode full-res.
+      setPreview({ uri: photo.uri, width: photo.width, height: photo.height });
     } catch (err) {
       setError((err as Error)?.message ?? 'Không chụp được ảnh');
     } finally {
@@ -134,6 +131,7 @@ function CameraCaptureScreen() {
             <Image
               source={{ uri: preview.uri }}
               style={{ width: squareSize, height: squareSize }}
+              resizeMode="cover"
             />
           ) : (
             <CameraView

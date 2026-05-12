@@ -44,14 +44,16 @@ async function ensure(
   const current = await get();
   if (current.granted) return true;
 
-  if (current.canAskAgain) {
-    const result = await request();
-    if (result.granted) return true;
-    if (!result.canAskAgain) showSettingsAlert(kind);
-    return false;
-  }
-
-  showSettingsAlert(kind);
+  // LUÔN gọi request() trước, KHÔNG gate sau canAskAgain. Trên Android,
+  // shouldShowRequestPermissionRationale (= canAskAgain trong expo) trả false
+  // CẢ KHI permission chưa từng được hỏi LẪN khi denied vĩnh viễn — không
+  // phân biệt được 2 case. Nếu gate request() sau canAskAgain thì lần tap
+  // đầu tiên sẽ skip dialog hệ thống và show "Mở Cài đặt" oan. Khi denied
+  // thật, request() resolve ngay (không có UI), sau đó canAskAgain vẫn
+  // false → fallback settings alert.
+  const result = await request();
+  if (result.granted) return true;
+  if (!result.canAskAgain) showSettingsAlert(kind);
   return false;
 }
 

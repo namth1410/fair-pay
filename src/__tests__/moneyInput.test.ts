@@ -55,7 +55,7 @@ describe('computeMoneySuggestions', () => {
     expect(computeMoneySuggestions('00')).toEqual(DEFAULT_SUGGESTIONS);
   });
 
-  it('returns 4 multiplied suggestions for "1"', () => {
+  it('single-digit input starts at ×10.000 (e.g. "1")', () => {
     expect(computeMoneySuggestions('1')).toEqual([
       10_000,
       100_000,
@@ -64,35 +64,51 @@ describe('computeMoneySuggestions', () => {
     ]);
   });
 
-  it('returns 4 multiplied suggestions for "12"', () => {
-    expect(computeMoneySuggestions('12')).toEqual([
-      120_000,
-      1_200_000,
-      12_000_000,
-      120_000_000,
+  it('single-digit input "3" → 30k as smallest suggestion', () => {
+    expect(computeMoneySuggestions('3')).toEqual([
+      30_000,
+      300_000,
+      3_000_000,
+      30_000_000,
     ]);
   });
 
-  it('returns 4 multiplied suggestions for "150"', () => {
+  it('multi-digit input starts at ×1.000 (e.g. "12")', () => {
+    expect(computeMoneySuggestions('12')).toEqual([
+      12_000,
+      120_000,
+      1_200_000,
+      12_000_000,
+    ]);
+  });
+
+  it('multi-digit input "35" → 35k as smallest suggestion', () => {
+    expect(computeMoneySuggestions('35')).toEqual([
+      35_000,
+      350_000,
+      3_500_000,
+      35_000_000,
+    ]);
+  });
+
+  it('multi-digit input "150" → starts at 150k', () => {
     expect(computeMoneySuggestions('150')).toEqual([
+      150_000,
       1_500_000,
       15_000_000,
       150_000_000,
-      1_500_000_000,
     ]);
   });
 
   it('caps suggestions exceeding ~999 tỷ', () => {
-    // 5000 × 10000 = 50M, ×100k = 500M, ×1M = 5B, ×10M = 50B (still under 999B)
-    // 99_999 × 10000 = 999.99M, ×100k = ~10B, ×1M = ~100B, ×10M = ~999.99B (just under MAX)
     const result = computeMoneySuggestions('99999');
     expect(result.every((v) => v <= 999_999_999_000)).toBe(true);
     expect(result.length).toBeGreaterThan(0);
   });
 
   it('truncates list when very large numbers exceed cap', () => {
-    // 999_999 × 10M = ~10 nghìn tỷ → exceeds cap → that mult dropped
-    const result = computeMoneySuggestions('999999');
+    // 10_000_000 × 100k = 1000 tỷ → exceeds cap → that mult and beyond dropped
+    const result = computeMoneySuggestions('10000000');
     expect(result.length).toBeLessThan(4);
     expect(result.every((v) => v <= 999_999_999_000)).toBe(true);
   });

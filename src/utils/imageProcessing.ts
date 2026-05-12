@@ -44,28 +44,24 @@ function fileSize(uri: string): number {
   return f.size ?? 0;
 }
 
-async function centerCropSquare(
-  uri: string,
-  width: number,
-  height: number
-): Promise<{ uri: string; size: number }> {
-  const side = Math.min(width, height);
-  const originX = Math.floor((width - side) / 2);
-  const originY = Math.floor((height - side) / 2);
-  const result = await ImageManipulator.manipulateAsync(
-    uri,
-    [{ crop: { originX, originY, width: side, height: side } }],
-    { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
-  );
-  return { uri: result.uri, size: result.width };
-}
+async function processToTarget(
+  srcUri: string,
+  srcWidth: number,
+  srcHeight: number
+): Promise<ProcessedAvatar> {
+  const side = Math.min(srcWidth, srcHeight);
+  const needsCrop = srcWidth !== srcHeight;
+  const originX = needsCrop ? Math.floor((srcWidth - side) / 2) : 0;
+  const originY = needsCrop ? Math.floor((srcHeight - side) / 2) : 0;
 
-async function processToTarget(srcUri: string, srcDim: number): Promise<ProcessedAvatar> {
   for (const { dimension, quality } of ATTEMPTS) {
-    const ops: ImageManipulator.Action[] =
-      dimension !== null && dimension < srcDim
-        ? [{ resize: { width: dimension, height: dimension } }]
-        : [];
+    const ops: ImageManipulator.Action[] = [];
+    if (needsCrop) {
+      ops.push({ crop: { originX, originY, width: side, height: side } });
+    }
+    if (dimension !== null && dimension < side) {
+      ops.push({ resize: { width: dimension, height: dimension } });
+    }
     const result = await ImageManipulator.manipulateAsync(srcUri, ops, {
       compress: quality,
       format: ImageManipulator.SaveFormat.JPEG,
@@ -89,7 +85,8 @@ async function processToTarget(srcUri: string, srcDim: number): Promise<Processe
  */
 export async function pickImage(source: AvatarSource): Promise<PickedImage | null> {
   let workingUri: string;
-  let workingDim: number;
+  let workingWidth: number;
+  let workingHeight: number;
 
   if (source === 'camera') {
     const granted = await ensureCameraPermission();
@@ -97,7 +94,8 @@ export async function pickImage(source: AvatarSource): Promise<PickedImage | nul
     const captured = await captureFromCamera();
     if (!captured) return null;
     workingUri = captured.uri;
-    workingDim = Math.min(captured.width, captured.height);
+    workingWidth = captured.width;
+    workingHeight = captured.height;
   } else {
     const granted = await ensureLibraryPermission();
     if (!granted) return null;
@@ -112,33 +110,31 @@ export async function pickImage(source: AvatarSource): Promise<PickedImage | nul
 
     const asset = result.assets[0];
     workingUri = asset.uri;
-    workingDim = Math.min(asset.width, asset.height);
-
-    // Safeguard: Android's allowsEditing crop sometimes returns non-square dims.
-    if (asset.width !== asset.height && asset.width > 0 && asset.height > 0) {
-      const cropped = await centerCropSquare(asset.uri, asset.width, asset.height);
-      workingUri = cropped.uri;
-      workingDim = cropped.size;
-    }
+    workingWidth = asset.width;
+    workingHeight = asset.height;
+    // Android's allowsEditing crop sometimes returns non-square dims — không
+    // crop ở đây, để compressForUpload xử lý gộp 1 lần.
   }
 
   return {
     uri: workingUri,
-    width: workingDim,
-    height: workingDim,
+    width: workingWidth,
+    height: workingHeight,
     sizeBytes: fileSize(workingUri),
   };
 }
 
 /**
- * Compress image to fit GROUP_AVATAR_MAX_BYTES (2 MB). Loops through quality
- * attempts. Should be called right before upload.
+ * Compress image to fit GROUP_AVATAR_MAX_BYTES (2 MB). Center-crops to square
+ * + resizes + compresses trong 1 lần manipulateAsync (1 decode+encode pass).
+ * Should be called right before upload.
  */
 export async function compressForUpload(
   uri: string,
-  width: number
+  width: number,
+  height: number
 ): Promise<ProcessedAvatar> {
-  return processToTarget(uri, width);
+  return processToTarget(uri, width, height);
 }
 
 /**
@@ -150,5 +146,5 @@ export async function pickAndProcessAvatar(
 ): Promise<ProcessedAvatar | null> {
   const picked = await pickImage(source);
   if (!picked) return null;
-  return processToTarget(picked.uri, picked.width);
+  return processToTarget(picked.uri, picked.width, picked.height);
 }

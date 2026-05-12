@@ -65,6 +65,7 @@ type SplitType = 'equal' | 'ratio' | 'custom';
 interface PendingImage {
   uri: string;
   width: number;
+  height: number;
   sizeBytes: number;
 }
 
@@ -183,6 +184,7 @@ export function ExpenseFormScreen({
       setPendingImage({
         uri: picked.uri,
         width: picked.width,
+        height: picked.height,
         sizeBytes: picked.sizeBytes,
       });
     } catch (e) {
@@ -273,7 +275,11 @@ export function ExpenseFormScreen({
       let uploadedExpenseId: string | undefined = presetId;
       if (pendingImage && presetId) {
         // Compress ngay trước upload — defer khỏi UX critical path để preview nhanh.
-        const compressed = await compressForUpload(pendingImage.uri, pendingImage.width);
+        const compressed = await compressForUpload(
+          pendingImage.uri,
+          pendingImage.width,
+          pendingImage.height,
+        );
         const presign = await requestExpenseImageUploadUrl(
           presetId,
           currentTripId,
@@ -731,7 +737,11 @@ function ImageField({ pendingImage, onOpen, onRemove, c }: ImageFieldProps) {
           accessibilityRole="button"
           accessibilityLabel="Đổi ảnh đính kèm"
         >
-          <Image source={{ uri: pendingImage.uri }} style={styles.imagePreview} />
+          <Image
+            source={{ uri: pendingImage.uri }}
+            style={styles.imagePreview}
+            resizeMode="cover"
+          />
         </Pressable>
         <Pressable
           onPress={onRemove}

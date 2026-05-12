@@ -113,7 +113,7 @@ src/
 - Pattern: chip render là sibling của `BottomSheet.Content` trong `<BottomSheet.Portal>`, dùng `<KeyboardStickyView offset={{ closed: 0, opened: 0 }}>` từ `react-native-keyboard-controller`. Component này tự dock chip ở mép trên keyboard, animation worklet đồng bộ frame-by-frame, đã handle cross-OEM (Xiaomi MIUI, Oppo, Samsung) — không cần tự tính `kbHeight + insets.bottom`.
 - Track focus của input tiền qua `onFocus`/`onBlur` → render chip có điều kiện `isOpen && amountFocused` để không hiện khi user focus input khác.
 - `KeyboardProvider` đã wrap ở root layout (`src/app/_layout.tsx`) — bắt buộc trước khi dùng bất kỳ API nào của keyboard-controller.
-- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — gõ rỗng → defaults `[50k, 100k, 200k, 500k]`; gõ "12" → `[120k, 1.2tr, 12tr, 120tr]`. Cap ở 999 tỷ.
+- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — gõ rỗng → defaults `[50k, 100k, 200k, 500k]`; single-digit start ×10.000 (gõ "3" → `[30k, 300k, 3tr, 30tr]`); multi-digit start ×1.000 (gõ "35" → `[35k, 350k, 3.5tr, 35tr]`, gõ "150" → `[150k, 1.5tr, 15tr, 150tr]`). Cap ở 999 tỷ.
 - Reference implementation: `src/components/common/PresetFormModal.tsx`.
 
 ### User profile
