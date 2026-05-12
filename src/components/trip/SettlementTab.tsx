@@ -27,6 +27,7 @@ interface BalanceEntry {
 
 interface SettlementTabProps {
   tripId: string;
+  tripStatus: string;
   groupId: string;
   settlements: SettlementEntry[];
   payments: Payment[];
@@ -44,9 +45,10 @@ interface SettlementTabProps {
 }
 
 export const SettlementTab = React.memo(function SettlementTab({
-  tripId, groupId, settlements, payments, balances, members,
+  tripId, tripStatus, groupId, settlements, payments, balances, members,
   onAddPayment, onDeletePayment,
 }: SettlementTabProps) {
+  const isOpen = tripStatus === 'open';
   const c = useAppTheme();
   const { toast } = useToast();
 
@@ -116,11 +118,13 @@ export const SettlementTab = React.memo(function SettlementTab({
         <AppText variant="subtitle" weight="semibold" style={styles.sectionTitle}>
           Thanh toán thực tế
         </AppText>
-        <Button variant="primary" size="sm" onPress={() => setShowForm(!showForm)}>
-          <Button.Label>{showForm ? 'Hủy' : 'Ghi nhận thanh toán'}</Button.Label>
-        </Button>
+        {isOpen ? (
+          <Button variant="primary" size="sm" onPress={() => setShowForm(!showForm)}>
+            <Button.Label>{showForm ? 'Hủy' : 'Ghi nhận thanh toán'}</Button.Label>
+          </Button>
+        ) : null}
 
-        <FormReveal isOpen={showForm}>
+        <FormReveal isOpen={isOpen && showForm}>
           <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả tiền</AppText>
           <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
 
@@ -173,8 +177,8 @@ export const SettlementTab = React.memo(function SettlementTab({
             key={pay.id}
             title={`${getMemberName(pay.from_member_id)} → ${getMemberName(pay.to_member_id)}`}
             subtitle={pay.note || undefined}
-            onDelete={() => setDeleteTarget(pay)}
-            onLongPress={() => setDeleteTarget(pay)}
+            onDelete={isOpen ? () => setDeleteTarget(pay) : undefined}
+            onLongPress={isOpen ? () => setDeleteTarget(pay) : undefined}
             trailing={<Money value={pay.amount} variant="default" tone="success" />}
           />
         ))}

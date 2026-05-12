@@ -113,6 +113,16 @@ export interface ExpensePresetRow {
   category: 'food' | 'transport' | 'accommodation' | 'fun' | 'shopping' | 'other';
   created_at: string;
   updated_at: string;
+  trip_id: string | null;
+  paid_by_member_id: string | null;
+  split_type: 'equal' | 'ratio' | 'custom' | null;
+  splits_data: PresetSplitEntry[] | null;
+}
+
+export interface PresetSplitEntry {
+  member_id: string;
+  ratio?: number;
+  amount?: number;
 }
 
 export interface GroupAvatarUploadRow {

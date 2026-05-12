@@ -1,7 +1,7 @@
 import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
@@ -48,6 +48,7 @@ export function AddVirtualMemberSheet({
   const handleSubmit = async () => {
     const trimmed = nameRef.current.trim();
     if (!trimmed || busy) return;
+    Keyboard.dismiss();
     setFormError('');
     setBusy(true);
     try {
@@ -90,6 +91,7 @@ export function AddVirtualMemberSheet({
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit}
                 accessibilityLabel="Tên thành viên ảo"
+                editable={!busy}
                 style={[
                   styles.input,
                   {

@@ -179,6 +179,10 @@ export interface RatioMember {
  * VD: 300k với tỷ lệ [2,1,1] → 150k, 75k, 75k
  *
  * Round to 1000đ, người cuối nhận phần dư (BR-01, BR-02).
+ *
+ * Dùng cumulative-target rounding: round cumulative ratio thay vì từng share độc
+ * lập. Đảm bảo (1) tổng = total exact (BR-02), (2) mỗi amount là bội 1000,
+ * (3) amount >= 0 vì cumulative target đơn điệu không giảm.
  */
 export function splitByRatio(
   total: number,
@@ -191,24 +195,20 @@ export function splitByRatio(
   const sumRatios = members.reduce((sum, m) => sum + m.ratio, 0);
   if (sumRatios <= 0) return members.map((m) => ({ memberId: m.memberId, amount: 0 }));
 
-  // Calculate each share, round to 1000đ
   const splits: SplitResult[] = [];
-  let remaining = total;
+  let allocated = 0;
+  let cumulativeRatio = 0;
 
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < n - 1; i++) {
     const member = members[i]!;
-    if (i === n - 1) {
-      // Last person absorbs remainder — clamp to 0 to prevent negative splits
-      // from accumulated rounding (e.g. many members rounding up)
-      splits.push({ memberId: member.memberId, amount: Math.max(0, remaining) });
-    } else {
-      const raw = (total * member.ratio) / sumRatios;
-      const rounded = Math.round(raw / 1000) * 1000;
-      splits.push({ memberId: member.memberId, amount: rounded });
-      remaining -= rounded;
-    }
+    cumulativeRatio += member.ratio;
+    const cumulativeTarget =
+      Math.round((total * cumulativeRatio) / sumRatios / 1000) * 1000;
+    splits.push({ memberId: member.memberId, amount: cumulativeTarget - allocated });
+    allocated = cumulativeTarget;
   }
 
+  splits.push({ memberId: members[n - 1]!.memberId, amount: total - allocated });
   return splits;
 }
 

@@ -440,19 +440,17 @@ describe('F-07: splitByRatioWithExplanation', () => {
 });
 
 describe('splitByRatio — edge case: remaining không bao giờ âm', () => {
-  it('nhiều người chia số nhỏ — người cuối không nhận amount âm', () => {
+  it('nhiều người chia số nhỏ — người cuối không nhận amount âm, tổng = total', () => {
     // 10.000đ chia cho 11 người ratio đều
-    // Mỗi người raw = 909đ, round = 1000đ → 10 × 1000 = 10.000, remaining = 0
+    // Cumulative-target rounding đảm bảo sum === total (BR-02)
     const members = Array.from({ length: 11 }, (_, i) => ({
       memberId: `M${i}`,
       ratio: 1,
     }));
     const result = splitByRatio(10000, members);
-    // Tất cả amount >= 0
     expect(result.every((s) => s.amount >= 0)).toBe(true);
-    // Tổng <= total (clamp có thể làm tổng < total)
     const sum = result.reduce((acc, s) => acc + s.amount, 0);
-    expect(sum).toBeLessThanOrEqual(10000);
+    expect(sum).toBe(10000);
   });
 
   it('ratio chênh lệch lớn — người cuối không âm', () => {
@@ -531,30 +529,21 @@ describe('Integration: ratio split flow', () => {
   });
 });
 
-describe('BIZ-01: splitByRatio clamp edge case — remaining < 0', () => {
-  it('clamps negative remainder to 0 (all amounts non-negative)', () => {
-    // 5000đ / 7 members ratio 1: raw ≈ 714, rounds to 1000 each
-    // After 6 members: 6000 allocated, remaining = -1000 → clamped to 0
+describe('BIZ-01: splitByRatio overflow edge case — cumulative rounding fix', () => {
+  it('5000đ / 7 members ratio 1 — tổng = total exact (BR-02), không amount âm', () => {
+    // Trước fix: round per-share → mỗi raw=714 round lên 1000 → 6 người × 1000 = 6000
+    // → remaining = -1000 → clamp = 0 → sum = 6000 ≠ 5000 (vi phạm BR-02).
+    // Sau fix: cumulative-target rounding đảm bảo sum === total.
     const members = Array.from({ length: 7 }, (_, i) => ({
       memberId: `M${i}`,
       ratio: 1,
     }));
     const result = splitByRatio(5000, members);
     expect(result.every((s) => s.amount >= 0)).toBe(true);
-  });
-
-  it('validateSplits catches under-distributed splits from clamp', () => {
-    const members = Array.from({ length: 7 }, (_, i) => ({
-      memberId: `M${i}`,
-      ratio: 1,
-    }));
-    const result = splitByRatio(5000, members);
+    expect(result.every((s) => s.amount % 1000 === 0)).toBe(true);
     const sum = result.reduce((acc, s) => acc + s.amount, 0);
-    if (sum < 5000) {
-      // validateSplits should reject splits that don't match the total
-      const err = validateSplits(5000, result);
-      expect(err).not.toBeNull();
-    }
+    expect(sum).toBe(5000);
+    expect(validateSplits(5000, result)).toBeNull();
   });
 
   it('normal case: ratio split sums correctly', () => {
@@ -566,5 +555,30 @@ describe('BIZ-01: splitByRatio clamp edge case — remaining < 0', () => {
     ]);
     const sum = result.reduce((acc, s) => acc + s.amount, 0);
     expect(sum).toBe(900000);
+  });
+
+  it('property: BR-02 holds across random combos (total bội 1k, ratios 1..10)', () => {
+    const rand = (seed: number) => {
+      let s = seed >>> 0;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0x100000000;
+      };
+    };
+    const rng = rand(42);
+    for (let trial = 0; trial < 200; trial++) {
+      const totalK = 1 + Math.floor(rng() * 1000); // 1..1000 (×1000đ)
+      const total = totalK * 1000;
+      const n = 2 + Math.floor(rng() * 14); // 2..15
+      const members = Array.from({ length: n }, (_, i) => ({
+        memberId: `M${i}`,
+        ratio: 1 + Math.floor(rng() * 10), // 1..10
+      }));
+      const result = splitByRatio(total, members);
+      const sum = result.reduce((acc, s) => acc + s.amount, 0);
+      expect(sum).toBe(total);
+      expect(result.every((s) => s.amount >= 0)).toBe(true);
+      expect(result.every((s) => s.amount % 1000 === 0)).toBe(true);
+    }
   });
 });

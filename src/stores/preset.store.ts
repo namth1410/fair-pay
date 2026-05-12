@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 
-import type { ExpenseCategory } from '../config/constants';
 import {
   createPreset,
   deletePreset,
   type ExpensePreset,
   fetchPresets,
+  type PresetCreateParams,
   updatePreset,
 } from '../services/preset.service';
 
@@ -15,19 +15,8 @@ interface PresetState {
   loaded: boolean;
 
   loadPresets: () => Promise<void>;
-  addPreset: (params: {
-    title: string;
-    amount: number;
-    category: ExpenseCategory;
-  }) => Promise<ExpensePreset>;
-  editPreset: (
-    id: string,
-    params: {
-      title: string;
-      amount: number;
-      category: ExpenseCategory;
-    },
-  ) => Promise<ExpensePreset>;
+  addPreset: (params: PresetCreateParams) => Promise<ExpensePreset>;
+  editPreset: (id: string, params: PresetCreateParams) => Promise<ExpensePreset>;
   removePreset: (id: string) => Promise<void>;
   reset: () => void;
 }
@@ -68,3 +57,36 @@ export const usePresetStore = create<PresetState>((set, get) => ({
 
   reset: () => set({ presets: [], loaded: false }),
 }));
+
+/**
+ * Filter + sort presets theo context navigation.
+ *  - Home (tripId=null): hiện ALL preset, sort trip-pinned (recent) > global.
+ *  - In-trip (tripId=X): hiện CHỈ global + trip-pinned-của-X. Sort trip-pinned-X > global.
+ *
+ * Selector này là pure function, dễ test. Component gọi:
+ *   const presets = usePresetStore((s) => getPresetsForContext(s.presets, { tripId }));
+ */
+export function getPresetsForContext(
+  allPresets: ExpensePreset[],
+  ctx: { tripId?: string | null },
+): ExpensePreset[] {
+  const tripId = ctx.tripId ?? null;
+
+  const filtered = allPresets.filter((p) => {
+    if (p.trip_id === null) return true; // global luôn hiện
+    if (tripId === null) return true; // home: hiện cả trip-pinned khác
+    return p.trip_id === tripId; // in-trip: chỉ preset của trip này
+  });
+
+  return filtered.slice().sort((a, b) => {
+    const aIsContext = tripId !== null && a.trip_id === tripId;
+    const bIsContext = tripId !== null && b.trip_id === tripId;
+    if (aIsContext !== bIsContext) return aIsContext ? -1 : 1;
+
+    const aPinned = a.trip_id !== null;
+    const bPinned = b.trip_id !== null;
+    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+
+    return b.updated_at.localeCompare(a.updated_at);
+  });
+}

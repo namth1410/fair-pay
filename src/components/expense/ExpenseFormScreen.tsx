@@ -1,8 +1,8 @@
 import { File } from 'expo-file-system';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useNavigation } from 'expo-router';
 import { Button, Switch, useToast } from 'heroui-native';
-import { ChevronLeft, ImagePlus, X } from 'lucide-react-native';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ImagePlus, MapPin, X } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -16,14 +16,6 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  AppText,
-  AppTextField,
-  ChipPicker,
-  Money,
-  MoneyChipsDock,
-  MoneyTextField,
-} from '../ui';
-import {
   EXPENSE_CATEGORIES as CATEGORIES,
   type ExpenseCategory,
 } from '../../config/constants';
@@ -33,8 +25,9 @@ import {
   removeExpenseImage,
   requestExpenseImageUploadUrl,
 } from '../../services/expenseImage.service';
+import type { ExpensePreset } from '../../services/preset.service';
 import { useGroupStore } from '../../stores/group.store';
-import { usePresetStore } from '../../stores/preset.store';
+import { getPresetsForContext, usePresetStore } from '../../stores/preset.store';
 import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
@@ -52,6 +45,15 @@ import {
   validateSplits,
 } from '../../utils/split';
 import { ImagePickerSheet } from '../common/ImagePickerSheet';
+import {
+  AppText,
+  AppTextField,
+  ChipPicker,
+  Money,
+  MoneyChipsDock,
+  MoneyTextField,
+} from '../ui';
+import { ConfirmDialog } from '../ui';
 import { AddToField } from './AddToField';
 
 const SPLIT_TYPE_OPTIONS = [
@@ -73,15 +75,26 @@ interface ExpenseFormScreenProps {
   initialTripId?: string;
   initialImage?: PendingImage | null;
   presetExpenseId?: string;
+  /** Pre-fill từ preset apply (URL params hoặc preset lookup). */
+  prefillTitle?: string;
+  prefillAmount?: number;
+  prefillCategory?: ExpenseCategory;
+  /** Khi navigate kèm preset ID, form sẽ áp full data (paid_by + splits) khi members load xong. */
+  applyPresetId?: string;
 }
 
 export function ExpenseFormScreen({
   initialTripId,
   initialImage,
   presetExpenseId,
+  prefillTitle,
+  prefillAmount,
+  prefillCategory,
+  applyPresetId,
 }: ExpenseFormScreenProps) {
   const c = useAppTheme();
   const { toast } = useToast();
+  const navigation = useNavigation();
 
   const trips = useTripStore((s) => s.trips);
   const addExpense = useTripStore((s) => s.addExpense);
@@ -91,8 +104,6 @@ export function ExpenseFormScreen({
     ? trips.find((t) => t.id === initialTripId)
     : undefined;
 
-  // Khi vào từ /trips/[id]/expenses/new — initialTripId đã có context.
-  // Khi vào từ /expenses/new — user phải chọn qua AddToField.
   const [currentTripId, setCurrentTripId] = useState<string | undefined>(initialTripId);
   const [currentGroupId, setCurrentGroupId] = useState<string | undefined>(
     initialTrip?.group_id,
@@ -104,7 +115,6 @@ export function ExpenseFormScreen({
     undefined,
   );
 
-  // Pre-gen UUID dùng cho path R2 trước khi insert. Lock 1 lần ở mount.
   const [presetId] = useState<string | undefined>(presetExpenseId);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(
     initialImage ?? null,
@@ -112,12 +122,16 @@ export function ExpenseFormScreen({
   const [imageSheetOpen, setImageSheetOpen] = useState(false);
 
   const members = useGroupStore((s) => s.currentGroupMembers);
-  const { presets, loaded: presetsLoaded, loadPresets, addPreset } = usePresetStore();
+  const allPresets = usePresetStore((s) => s.presets);
+  const presetsLoaded = usePresetStore((s) => s.loaded);
+  const loadPresets = usePresetStore((s) => s.loadPresets);
+  const addPreset = usePresetStore((s) => s.addPreset);
 
-  const [step, setStep] = useState<'basic' | 'split'>('basic');
-  const [title, setTitle] = useState('');
-  const [amountStr, setAmountStr] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory>('food');
+  const [title, setTitle] = useState(prefillTitle ?? '');
+  const [amountStr, setAmountStr] = useState(
+    prefillAmount !== undefined ? String(prefillAmount) : '',
+  );
+  const [category, setCategory] = useState<ExpenseCategory>(prefillCategory ?? 'food');
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('equal');
@@ -127,24 +141,72 @@ export function ExpenseFormScreen({
   const [formError, setFormError] = useState('');
   const [savePreset, setSavePreset] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState(false);
+  const [presetWarnings, setPresetWarnings] = useState<string[]>([]);
+  const presetAppliedRef = useRef(false);
+  const pendingExitActionRef = useRef<unknown>(null);
+  const submittedRef = useRef(false);
+  const bypassExitGuardRef = useRef(false);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
-  const presetTitles = useMemo(() => new Set(presets.map((p) => p.title)), [presets]);
+  const contextPresets = useMemo(
+    () => getPresetsForContext(allPresets, { tripId: currentTripId ?? null }),
+    [allPresets, currentTripId],
+  );
+  const globalTitlesSet = useMemo(
+    () => new Set(allPresets.filter((p) => p.trip_id === null).map((p) => p.title)),
+    [allPresets],
+  );
   const trimmedTitle = title.trim();
   const presetConflict =
-    savePreset && trimmedTitle.length > 0 && presetTitles.has(trimmedTitle);
+    savePreset && trimmedTitle.length > 0 && globalTitlesSet.has(trimmedTitle);
 
   useEffect(() => {
     if (!presetsLoaded) loadPresets().catch(() => {});
   }, [presetsLoaded, loadPresets]);
 
-  // Khi đổi group qua AddToField, load lại members + reset paidBy.
+  const isDirty = useMemo(() => {
+    if (title.trim()) return true;
+    if (amountStr.trim()) return true;
+    if (note.trim()) return true;
+    if (pendingImage) return true;
+    if (savePreset) return true;
+    if (Object.values(ratios).some((v) => v && v.trim() !== '')) return true;
+    if (Object.values(customAmounts).some((v) => v && v.trim() !== ''))
+      return true;
+    return false;
+  }, [title, amountStr, note, pendingImage, savePreset, ratios, customAmounts]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e: { preventDefault: () => void; data: { action: unknown } }) => {
+      if (bypassExitGuardRef.current) {
+        bypassExitGuardRef.current = false;
+        return;
+      }
+      if (!isDirty || busy || submittedRef.current) return;
+      e.preventDefault();
+      pendingExitActionRef.current = e.data.action;
+      setExitConfirm(true);
+    });
+    return unsub;
+  }, [navigation, isDirty, busy]);
+
+  const handleConfirmExit = useCallback(() => {
+    setExitConfirm(false);
+    const action = pendingExitActionRef.current;
+    pendingExitActionRef.current = null;
+    if (action) {
+      bypassExitGuardRef.current = true;
+      navigation.dispatch(action as Parameters<typeof navigation.dispatch>[0]);
+    }
+  }, [navigation]);
+
   useEffect(() => {
     if (!currentGroupId) return;
     loadMembers(currentGroupId).catch(() => {});
   }, [currentGroupId, loadMembers]);
 
-  // Default paidBy về member đầu khi members load xong (lần đầu hoặc đổi group).
+  // Default paidBy về member đầu khi members load xong.
   useEffect(() => {
     const first = members[0];
     if (!first) {
@@ -153,11 +215,38 @@ export function ExpenseFormScreen({
     }
     if (!paidBy || !members.some((m) => m.id === paidBy)) {
       setPaidBy(first.id);
-      // Đổi group → reset split state vì memberIds đã đổi.
       setRatios({});
       setCustomAmounts({});
     }
   }, [members, paidBy]);
+
+  /**
+   * Apply full preset data (paid_by + splits) khi members load xong và preset trip match.
+   * Chạy 1 lần khi presets + members ready. Fallback graceful nếu member rời/thiếu.
+   */
+  useEffect(() => {
+    if (presetAppliedRef.current) return;
+    if (!applyPresetId || !presetsLoaded || members.length === 0 || !currentTripId) return;
+
+    const preset = allPresets.find((p) => p.id === applyPresetId);
+    if (!preset) {
+      presetAppliedRef.current = true;
+      return;
+    }
+    if (preset.trip_id !== null && preset.trip_id !== currentTripId) {
+      presetAppliedRef.current = true;
+      return;
+    }
+
+    presetAppliedRef.current = true;
+    applyPresetFullData(preset, members, {
+      setPaidBy,
+      setSplitType,
+      setRatios,
+      setCustomAmounts,
+      setPresetWarnings,
+    });
+  }, [applyPresetId, presetsLoaded, allPresets, members, currentTripId]);
 
   const handlePickTrip = useCallback(
     (groupId: string, groupName: string, tripId: string, tripName: string) => {
@@ -193,14 +282,26 @@ export function ExpenseFormScreen({
   }, [toast]);
 
   const handleApplyPreset = useCallback(
-    (preset: { title: string; amount: number; category: ExpenseCategory }) => {
+    (preset: ExpensePreset) => {
       setTitle(preset.title);
       setAmountStr(String(preset.amount));
       setCategory(preset.category);
       setFormError('');
       setSavePreset(false);
+      // Trip-pinned full preset → apply paid_by + splits (best-effort qua current members).
+      if (preset.trip_id !== null && preset.trip_id === currentTripId && members.length > 0) {
+        applyPresetFullData(preset, members, {
+          setPaidBy,
+          setSplitType,
+          setRatios,
+          setCustomAmounts,
+          setPresetWarnings,
+        });
+      } else {
+        setPresetWarnings([]);
+      }
     },
-    [],
+    [currentTripId, members],
   );
 
   const splitInputStyle = [
@@ -215,11 +316,10 @@ export function ExpenseFormScreen({
 
   const requireTrip = !initialTripId;
 
-  const handleContinue = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     setFormError('');
-    if (requireTrip && !currentTripId) {
-      return setFormError('Vui lòng chọn nhóm và chuyến');
-    }
+    if (requireTrip && !currentTripId) return setFormError('Vui lòng chọn nhóm và chuyến');
+    if (!currentTripId || !currentGroupId) return setFormError('Không tìm thấy chuyến đi');
     if (!title.trim()) return setFormError('Vui lòng nhập tên khoản chi');
     if (!amountStr.trim()) return setFormError('Vui lòng nhập số tiền');
     const amount = parseInt(amountStr, 10);
@@ -228,19 +328,8 @@ export function ExpenseFormScreen({
     if (amountErr) return setFormError(amountErr);
     if (!paidBy) return setFormError('Vui lòng chọn người trả');
     if (presetConflict)
-      return setFormError(
-        'Đã có preset tên này, đổi tên hoặc bỏ tick "Lưu làm preset"',
-      );
-    setStep('split');
-  }, [requireTrip, currentTripId, title, amountStr, paidBy, presetConflict]);
+      return setFormError('Đã có preset tên này, đổi tên hoặc bỏ tick "Lưu làm preset"');
 
-  const handleSubmit = useCallback(async () => {
-    setFormError('');
-    if (!currentTripId || !currentGroupId) {
-      setFormError('Không tìm thấy chuyến đi');
-      return;
-    }
-    const amount = parseInt(amountStr, 10);
     const memberIds = members.map((m) => m.id);
     let splits: SplitResult[];
 
@@ -260,10 +349,7 @@ export function ExpenseFormScreen({
     }
 
     const err = validateSplits(amount, splits);
-    if (err) {
-      setFormError(err);
-      return;
-    }
+    if (err) return setFormError(err);
 
     setBusy(true);
     try {
@@ -274,7 +360,6 @@ export function ExpenseFormScreen({
       let imageUrl: string | null = null;
       let uploadedExpenseId: string | undefined = presetId;
       if (pendingImage && presetId) {
-        // Compress ngay trước upload — defer khỏi UX critical path để preview nhanh.
         const compressed = await compressForUpload(
           pendingImage.uri,
           pendingImage.width,
@@ -326,7 +411,8 @@ export function ExpenseFormScreen({
         label: 'Đã thêm khoản chi',
         description: submittedTitle,
       });
-      if (savePreset && !presetTitles.has(submittedTitle)) {
+      submittedRef.current = true;
+      if (savePreset && !globalTitlesSet.has(submittedTitle)) {
         try {
           await addPreset({
             title: submittedTitle,
@@ -353,6 +439,7 @@ export function ExpenseFormScreen({
       setBusy(false);
     }
   }, [
+    requireTrip,
     amountStr,
     members,
     splitType,
@@ -366,11 +453,12 @@ export function ExpenseFormScreen({
     currentGroupId,
     addExpense,
     toast,
-    presetTitles,
+    globalTitlesSet,
     savePreset,
     addPreset,
     pendingImage,
     presetId,
+    presetConflict,
   ]);
 
   const amount = parseInt(amountStr, 10) || 0;
@@ -386,16 +474,16 @@ export function ExpenseFormScreen({
         )
       : [];
 
-  const continueDisabled = presetConflict || (requireTrip && !currentTripId);
+  const submitDisabled = busy || presetConflict || (requireTrip && !currentTripId);
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.root, { backgroundColor: c.background }]}>
       <Stack.Screen
         options={{
-          headerTitle: step === 'basic' ? 'Thêm khoản chi' : 'Cách chia',
+          headerTitle: 'Thêm khoản chi',
           headerLeft: () => (
             <Pressable
-              onPress={() => (step === 'split' ? setStep('basic') : router.back())}
+              onPress={() => router.back()}
               style={styles.headerBtn}
               accessibilityLabel="Quay lại"
               hitSlop={8}
@@ -413,166 +501,123 @@ export function ExpenseFormScreen({
         showsVerticalScrollIndicator={false}
         bottomOffset={amountFocused ? 70 : 20}
       >
-          {step === 'basic' ? (
-            <Animated.View entering={FadeInDown.duration(260)} style={styles.formArea}>
-              <AppText variant="meta" tone="muted">
-                Bước 1/2 · Thông tin cơ bản
-              </AppText>
+        <Animated.View entering={FadeInDown.duration(260)} style={styles.formArea}>
+          {requireTrip ? (
+            <AddToField
+              currentTripId={currentTripId}
+              currentGroupId={currentGroupId}
+              currentTripName={currentTripName}
+              currentGroupName={currentGroupName}
+              onPick={handlePickTrip}
+              onClear={handleClearTrip}
+            />
+          ) : null}
 
-              {requireTrip ? (
-                <AddToField
-                  currentTripId={currentTripId}
-                  currentGroupId={currentGroupId}
-                  currentTripName={currentTripName}
-                  currentGroupName={currentGroupName}
-                  onPick={handlePickTrip}
-                  onClear={handleClearTrip}
-                />
-              ) : null}
+          <ImageField
+            pendingImage={pendingImage}
+            onOpen={() => setImageSheetOpen(true)}
+            onRemove={() => setPendingImage(null)}
+            c={c}
+          />
 
-              <ImageField
-                pendingImage={pendingImage}
-                onOpen={() => setImageSheetOpen(true)}
-                onRemove={() => setPendingImage(null)}
-                c={c}
-              />
-
-              {presets.length > 0 ? (
-                <View>
-                  <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-                    Preset
-                  </AppText>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.presetRow}
-                  >
-                    {presets.map((p) => (
-                      <Pressable
-                        key={p.id}
-                        style={[
-                          styles.presetChip,
-                          { backgroundColor: c.surfaceAlt, borderColor: c.divider },
-                        ]}
-                        onPress={() =>
-                          handleApplyPreset({
-                            title: p.title,
-                            amount: p.amount,
-                            category: p.category,
-                          })
-                        }
-                        accessibilityRole="button"
-                        accessibilityLabel={`Áp dụng preset ${p.title}`}
-                      >
-                        <AppText variant="caption" weight="semibold">
-                          {p.title}
-                        </AppText>
-                        <AppText variant="meta" tone="muted">
-                          {p.amount.toLocaleString('vi-VN')}đ
-                        </AppText>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-
-              <AppTextField
-                placeholder="Tên khoản chi"
-                value={title}
-                onChangeText={setTitle}
-                accessibilityLabel="Tên khoản chi"
-              />
-              <MoneyTextField
-                placeholder="Số tiền (VND)"
-                value={amountStr}
-                onChangeText={setAmountStr}
-                showSuggestions={false}
-                onFocus={() => setAmountFocused(true)}
-                onBlur={() => setAmountFocused(false)}
-                accessibilityLabel="Số tiền"
-              />
-
-              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-                Danh mục
-              </AppText>
-              <ChipPicker
-                options={CATEGORIES}
-                selected={category}
-                onSelect={(k) => setCategory(k as ExpenseCategory)}
-              />
-
-              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-                Người trả
-              </AppText>
-              {members.length > 0 ? (
-                <ChipPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
-              ) : (
-                <AppText variant="caption" tone="muted">
-                  {requireTrip && !currentTripId
-                    ? 'Chọn nhóm để xem thành viên'
-                    : 'Đang tải thành viên...'}
+          {presetWarnings.length > 0 ? (
+            <View style={[styles.warningBox, { backgroundColor: c.surfaceAlt, borderColor: c.warning }]}>
+              {presetWarnings.map((w, i) => (
+                <AppText key={i} variant="caption" style={{ color: c.warning }}>
+                  ⚠ {w}
                 </AppText>
-              )}
+              ))}
+            </View>
+          ) : null}
 
-              <AppTextField
-                placeholder="Ghi chú (tùy chọn)"
-                value={note}
-                onChangeText={setNote}
-                accessibilityLabel="Ghi chú"
-              />
-
-              <Pressable
-                style={styles.savePresetRow}
-                onPress={() => setSavePreset((v) => !v)}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: savePreset }}
-                accessibilityLabel="Lưu làm preset"
+          {contextPresets.length > 0 ? (
+            <View>
+              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
+                Preset
+              </AppText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.presetRow}
               >
-                <View style={styles.savePresetInfo}>
-                  <AppText variant="body" weight="medium">
-                    Lưu làm preset
-                  </AppText>
-                  <AppText variant="meta" tone="muted" style={styles.savePresetHint}>
-                    {presetConflict
-                      ? 'Đã có preset tên này, đổi tên hoặc tắt tùy chọn'
-                      : 'Dùng nhanh khoản chi này lần sau'}
-                  </AppText>
-                </View>
-                <View pointerEvents="none">
-                  <Switch isSelected={savePreset} onSelectedChange={setSavePreset} />
-                </View>
-              </Pressable>
+                {contextPresets.map((p) => {
+                  const isTripPinned = p.trip_id !== null;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      style={[
+                        styles.presetChip,
+                        { backgroundColor: c.surfaceAlt, borderColor: c.divider },
+                      ]}
+                      onPress={() => handleApplyPreset(p)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Áp dụng preset ${p.title}`}
+                    >
+                      <AppText variant="caption" weight="semibold" numberOfLines={1}>
+                        {p.title}
+                      </AppText>
+                      <AppText variant="meta" tone="muted">
+                        {p.amount.toLocaleString('vi-VN')}đ
+                      </AppText>
+                      {isTripPinned ? (
+                        <View style={styles.presetBadge}>
+                          <MapPin size={9} color={c.primaryStrong} strokeWidth={2.5} />
+                        </View>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
 
-              {formError ? (
-                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                  <AppText variant="caption" tone="danger">
-                    {formError}
-                  </AppText>
-                </View>
-              ) : null}
+          <AppTextField
+            placeholder="Tên khoản chi"
+            value={title}
+            onChangeText={setTitle}
+            accessibilityLabel="Tên khoản chi"
+          />
+          <MoneyTextField
+            placeholder="Số tiền (VND)"
+            value={amountStr}
+            onChangeText={setAmountStr}
+            showSuggestions={false}
+            onFocus={() => setAmountFocused(true)}
+            onBlur={() => setAmountFocused(false)}
+            accessibilityLabel="Số tiền"
+          />
 
-              <Button
-                variant="primary"
-                size="lg"
-                onPress={handleContinue}
-                isDisabled={continueDisabled}
-              >
-                <Button.Label>Tiếp tục</Button.Label>
-              </Button>
-            </Animated.View>
+          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
+            Danh mục
+          </AppText>
+          <ChipPicker
+            options={CATEGORIES}
+            selected={category}
+            onSelect={(k) => setCategory(k as ExpenseCategory)}
+          />
+
+          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
+            Người trả
+          </AppText>
+          {members.length > 0 ? (
+            <ChipPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
           ) : (
-            <Animated.View entering={FadeInDown.duration(260)} style={styles.formArea}>
-              <AppText variant="meta" tone="muted">
-                Bước 2/2 · Cách chia
-              </AppText>
+            <AppText variant="caption" tone="muted">
+              {requireTrip && !currentTripId
+                ? 'Chọn nhóm để xem thành viên'
+                : 'Đang tải thành viên...'}
+            </AppText>
+          )}
 
-              <View style={[styles.summaryBox, { backgroundColor: c.surfaceAlt }]}>
-                <AppText variant="body" weight="semibold">
-                  {title}
-                </AppText>
-                <Money value={amount} variant="default" tone="primary" />
-              </View>
+          <AppTextField
+            placeholder="Ghi chú (tùy chọn)"
+            value={note}
+            onChangeText={setNote}
+            accessibilityLabel="Ghi chú"
+          />
 
+          {members.length > 0 && amount > 0 ? (
+            <>
               <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                 Cách chia
               </AppText>
@@ -584,10 +629,8 @@ export function ExpenseFormScreen({
 
               {splitType === 'equal' && (
                 <AppText variant="caption" tone="muted" center>
-                  Chia đều cho {members.length} người
-                  {amount > 0
-                    ? ` · ${Math.floor(amount / members.length).toLocaleString('vi-VN')}₫/người`
-                    : ''}
+                  Chia đều cho {members.length} người ·{' '}
+                  {Math.floor(amount / members.length).toLocaleString('vi-VN')}₫/người
                 </AppText>
               )}
 
@@ -612,17 +655,13 @@ export function ExpenseFormScreen({
                         keyboardType="number-pad"
                         accessibilityLabel={`Tỷ lệ ${m.display_name}`}
                       />
-                      {amount > 0 && (
-                        <View style={styles.splitPreview}>
-                          <Money
-                            value={
-                              ratioPreview.find((s) => s.memberId === m.id)?.amount ?? 0
-                            }
-                            variant="compact"
-                            tone="muted"
-                          />
-                        </View>
-                      )}
+                      <View style={styles.splitPreview}>
+                        <Money
+                          value={ratioPreview.find((s) => s.memberId === m.id)?.amount ?? 0}
+                          variant="compact"
+                          tone="muted"
+                        />
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -651,64 +690,75 @@ export function ExpenseFormScreen({
                       />
                     </View>
                   ))}
-                  {amount > 0 &&
-                    (() => {
-                      const sum = members.reduce(
-                        (s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0),
-                        0,
-                      );
-                      const balanced = sum === amount;
-                      return (
-                        <View style={styles.customTotal}>
-                          <AppText
-                            variant="caption"
-                            tone={balanced ? 'success' : 'danger'}
-                            weight="medium"
-                            center
-                          >
-                            Tổng chia: {sum.toLocaleString('vi-VN')}₫ /{' '}
-                            {amount.toLocaleString('vi-VN')}₫
-                          </AppText>
-                        </View>
-                      );
-                    })()}
+                  {(() => {
+                    const sum = members.reduce(
+                      (s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0),
+                      0,
+                    );
+                    const balanced = sum === amount;
+                    return (
+                      <View style={styles.customTotal}>
+                        <AppText
+                          variant="caption"
+                          tone={balanced ? 'success' : 'danger'}
+                          weight="medium"
+                          center
+                        >
+                          Tổng chia: {sum.toLocaleString('vi-VN')}₫ /{' '}
+                          {amount.toLocaleString('vi-VN')}₫
+                        </AppText>
+                      </View>
+                    );
+                  })()}
                 </View>
               )}
+            </>
+          ) : null}
 
-              {formError ? (
-                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                  <AppText variant="caption" tone="danger">
-                    {formError}
-                  </AppText>
-                </View>
-              ) : null}
+          <Pressable
+            style={styles.savePresetRow}
+            onPress={() => setSavePreset((v) => !v)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: savePreset }}
+            accessibilityLabel="Lưu làm preset"
+          >
+            <View style={styles.savePresetInfo}>
+              <AppText variant="body" weight="medium">
+                Lưu làm preset
+              </AppText>
+              <AppText variant="meta" tone="muted" style={styles.savePresetHint}>
+                {presetConflict
+                  ? 'Đã có preset tên này, đổi tên hoặc tắt tùy chọn'
+                  : 'Dùng nhanh khoản chi này lần sau (lưu làm preset toàn cục)'}
+              </AppText>
+            </View>
+            <View pointerEvents="none">
+              <Switch isSelected={savePreset} onSelectedChange={setSavePreset} />
+            </View>
+          </Pressable>
 
-              <View style={styles.buttonRow}>
-                <Button
-                  variant="outline"
-                  size="md"
-                  onPress={() => setStep('basic')}
-                  style={styles.backButton}
-                >
-                  <Button.Label>Quay lại</Button.Label>
-                </Button>
-                <Button
-                  variant="primary"
-                  size="md"
-                  onPress={handleSubmit}
-                  isDisabled={busy || presetConflict}
-                  style={styles.submitButton}
-                >
-                  <Button.Label>{busy ? 'Đang lưu...' : 'Thêm khoản chi'}</Button.Label>
-                </Button>
-              </View>
-            </Animated.View>
-          )}
+          {formError ? (
+            <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+              <AppText variant="caption" tone="danger">
+                {formError}
+              </AppText>
+            </View>
+          ) : null}
+
+          <Button
+            variant="primary"
+            size="lg"
+            onPress={handleSubmit}
+            isDisabled={submitDisabled}
+          >
+            <Button.Label>{busy ? 'Đang lưu...' : 'Thêm khoản chi'}</Button.Label>
+          </Button>
+        </Animated.View>
       </KeyboardAwareScrollView>
       <MoneyChipsDock
-        visible={step === 'basic' && amountFocused}
+        visible={amountFocused}
         amountStr={amountStr}
-        onPick={(amount) => setAmountStr(String(amount))}
+        onPick={(v) => setAmountStr(String(v))}
       />
       <ImagePickerSheet
         isOpen={imageSheetOpen}
@@ -717,8 +767,66 @@ export function ExpenseFormScreen({
         onRemove={() => setPendingImage(null)}
         showRemove={!!pendingImage}
       />
+      <ConfirmDialog
+        isOpen={exitConfirm}
+        onOpenChange={setExitConfirm}
+        title="Thoát mà chưa lưu?"
+        description="Dữ liệu đã nhập sẽ bị mất. Bạn có chắc muốn thoát?"
+        confirmLabel="Thoát"
+        cancelLabel="Ở lại"
+        destructive
+        onConfirm={handleConfirmExit}
+      />
     </SafeAreaView>
   );
+}
+
+/**
+ * Apply paid_by + splits từ preset vào state. Validate member active, fallback graceful.
+ */
+function applyPresetFullData(
+  preset: ExpensePreset,
+  members: { id: string }[],
+  setters: {
+    setPaidBy: (v: string) => void;
+    setSplitType: (v: SplitType) => void;
+    setRatios: (v: Record<string, string>) => void;
+    setCustomAmounts: (v: Record<string, string>) => void;
+    setPresetWarnings: (v: string[]) => void;
+  },
+): void {
+  const activeIds = new Set(members.map((m) => m.id));
+  const warnings: string[] = [];
+
+  if (preset.paid_by_member_id && activeIds.has(preset.paid_by_member_id)) {
+    setters.setPaidBy(preset.paid_by_member_id);
+  } else if (preset.paid_by_member_id) {
+    warnings.push('Người trả mặc định trong preset đã rời nhóm, đặt lại theo nhóm');
+  }
+
+  if (preset.split_type && preset.splits_data) {
+    const allActive = preset.splits_data.every((s) => activeIds.has(s.member_id));
+    if (allActive) {
+      setters.setSplitType(preset.split_type);
+      if (preset.split_type === 'ratio') {
+        const r: Record<string, string> = {};
+        preset.splits_data.forEach((s) => {
+          r[s.member_id] = String(s.ratio ?? 1);
+        });
+        setters.setRatios(r);
+      } else if (preset.split_type === 'custom') {
+        const a: Record<string, string> = {};
+        preset.splits_data.forEach((s) => {
+          a[s.member_id] = String(s.amount ?? 0);
+        });
+        setters.setCustomAmounts(a);
+      }
+    } else {
+      warnings.push('Cách chia trong preset có thành viên đã rời nhóm, đặt mặc định chia đều');
+    }
+  }
+
+  setters.setPresetWarnings(warnings);
 }
 
 interface ImageFieldProps {
@@ -844,6 +952,18 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: 'flex-start',
     gap: 2,
+    position: 'relative',
+  },
+  presetBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
+  warningBox: {
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 4,
   },
   errorBox: {
     padding: 12,
@@ -858,13 +978,6 @@ const styles = StyleSheet.create({
   },
   savePresetInfo: { flex: 1, minWidth: 0 },
   savePresetHint: { marginTop: 2 },
-  summaryBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-  },
   splitSection: {
     gap: 8,
   },
@@ -893,16 +1006,5 @@ const styles = StyleSheet.create({
   customTotal: {
     marginTop: 4,
     paddingVertical: 6,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  backButton: {
-    flex: 1,
-  },
-  submitButton: {
-    flex: 2,
   },
 });

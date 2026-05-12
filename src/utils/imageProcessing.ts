@@ -49,10 +49,26 @@ async function processToTarget(
   srcWidth: number,
   srcHeight: number
 ): Promise<ProcessedAvatar> {
-  const side = Math.min(srcWidth, srcHeight);
-  const needsCrop = srcWidth !== srcHeight;
-  const originX = needsCrop ? Math.floor((srcWidth - side) / 2) : 0;
-  const originY = needsCrop ? Math.floor((srcHeight - side) / 2) : 0;
+  // Normalize EXIF rotation first — Android ImagePicker đôi khi trả
+  // width/height đã xoay logic nhưng bitmap raw chưa xoay, gây crop vượt biên.
+  // Pass mảng rỗng để manipulateAsync decode + re-encode → result.width/height
+  // luôn khớp pixel dimensions thật.
+  let normUri = srcUri;
+  let normW = srcWidth;
+  let normH = srcHeight;
+  if (srcWidth !== srcHeight) {
+    const norm = await ImageManipulator.manipulateAsync(srcUri, [], {
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+    normUri = norm.uri;
+    normW = norm.width;
+    normH = norm.height;
+  }
+
+  const side = Math.min(normW, normH);
+  const needsCrop = normW !== normH;
+  const originX = needsCrop ? Math.floor((normW - side) / 2) : 0;
+  const originY = needsCrop ? Math.floor((normH - side) / 2) : 0;
 
   for (const { dimension, quality } of ATTEMPTS) {
     const ops: ImageManipulator.Action[] = [];
@@ -62,7 +78,7 @@ async function processToTarget(
     if (dimension !== null && dimension < side) {
       ops.push({ resize: { width: dimension, height: dimension } });
     }
-    const result = await ImageManipulator.manipulateAsync(srcUri, ops, {
+    const result = await ImageManipulator.manipulateAsync(normUri, ops, {
       compress: quality,
       format: ImageManipulator.SaveFormat.JPEG,
     });

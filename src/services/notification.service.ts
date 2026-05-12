@@ -204,28 +204,35 @@ export async function markAsRead(ids: string[]): Promise<void> {
   if (!ids.length) return;
   const userId = await getAuthUserId();
   if (!userId) return;
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .in('id', ids)
     .eq('user_id', userId)
     .is('read_at', null);
+  if (error) throw error;
 }
 
 export async function markAllAsRead(): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .eq('user_id', userId)
     .is('read_at', null);
+  if (error) throw error;
 }
 
 export async function deleteNotification(id: string): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
-  await supabase.from('notifications').delete().eq('id', id).eq('user_id', userId);
+  const { error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId);
+  if (error) throw error;
 }
 
 // ── High-level helpers gọi từ service mutation ─────────────────────────────────

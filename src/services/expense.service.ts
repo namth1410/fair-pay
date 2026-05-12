@@ -13,6 +13,7 @@ import { getAuthUserId } from './auth.helper';
 import { removeExpenseImage } from './expenseImage.service';
 import { assertRole } from './group.service';
 import { notifyExpenseEvent } from './notification.service';
+import type { Payment } from './payment.service';
 
 export interface Expense {
   id: string;
@@ -132,10 +133,14 @@ export async function createExpense(params: {
 export async function deleteExpense(expenseId: string): Promise<void> {
   const { data: expense, error: fetchErr } = await supabase
     .from('expenses')
-    .select('group_id, trip_id, title, amount, image_url')
+    .select('group_id, trip_id, title, amount, image_url, trips!inner(status)')
     .eq('id', expenseId)
     .single();
   if (fetchErr || !expense) throw new Error('Khoản chi không tồn tại');
+  const tripStatus = (expense.trips as unknown as { status: string }).status;
+  if (tripStatus === 'closed') {
+    throw new Error('cannot_modify_closed_trip');
+  }
   await assertRole(expense.group_id, ['admin']);
 
   const { error } = await supabase
@@ -183,25 +188,38 @@ export async function deleteExpense(expenseId: string): Promise<void> {
   ]);
 }
 
+export interface TripBalanceMember {
+  id: string;
+  displayName: string;
+  leftAt: string | null;
+}
+
+export interface TripBalanceData {
+  groupId: string;
+  expenses: ExpenseWithSplits[];
+  payments: Payment[];
+  members: TripBalanceMember[];
+}
+
 /**
- * Calculate balance for each member in a trip.
- * Fetches data from Supabase, then delegates to pure function in utils/balance.ts.
+ * Fetch raw data needed for balance computation — 4 queries in parallel.
+ * Tách khỏi compute để store có thể cache + recompute pure sau mutation,
+ * tránh round-trip khi addExpense/addPayment.
  */
-export async function calculateBalances(
-  tripId: string
-): Promise<{ memberId: string; memberName: string; balance: number }[]> {
-  // Parallel fetch: expenses, payments, and trip (all depend only on tripId)
+export async function fetchTripBalanceData(tripId: string): Promise<TripBalanceData | null> {
   const [expensesRes, paymentsRes, tripRes] = await Promise.all([
     supabase
       .from('expenses')
       .select('*, expense_splits(*)')
       .eq('trip_id', tripId)
-      .is('deleted_at', null),
+      .is('deleted_at', null)
+      .order('date', { ascending: false }),
     supabase
       .from('payments')
       .select('*')
       .eq('trip_id', tripId)
-      .is('deleted_at', null),
+      .is('deleted_at', null)
+      .order('date', { ascending: false }),
     supabase
       .from('trips')
       .select('group_id')
@@ -211,46 +229,65 @@ export async function calculateBalances(
 
   if (expensesRes.error) throw expensesRes.error;
   if (paymentsRes.error) throw paymentsRes.error;
-  if (!tripRes.data) return [];
+  if (!tripRes.data) return null;
 
-  const expenses = expensesRes.data;
-  const payments = paymentsRes.data;
-
-  // Lấy TẤT CẢ members (kể cả đã rời) vì expense/payment của họ vẫn ảnh hưởng đến balance.
-  // Khác với fetchGroupMembers() chỉ lấy active members cho hiển thị danh sách.
   const { data: members } = await supabase
     .from('group_members')
     .select('id, display_name, left_at')
     .eq('group_id', tripRes.data.group_id);
 
-  if (!members) return [];
+  return {
+    groupId: tripRes.data.group_id as string,
+    expenses: (expensesRes.data || []) as ExpenseWithSplits[],
+    payments: (paymentsRes.data || []) as Payment[],
+    members: (members || []).map((m) => ({
+      id: m.id as string,
+      displayName: m.display_name as string,
+      leftAt: m.left_at as string | null,
+    })),
+  };
+}
 
-  // Transform to pure function format
-  const expenseData: ExpenseData[] = (expenses || []).map((exp) => ({
-    paidBy: exp.paid_by as string,
-    amount: exp.amount as number,
-    splits: ((exp.expense_splits as { member_id: string; amount: number }[]) || []).map((s) => ({
+/**
+ * Pure compute từ data đã fetch — không I/O. Dùng cho recompute sau mutation
+ * khi store đã có cached expenses/payments/members.
+ */
+export function computeTripBalances(
+  members: TripBalanceMember[],
+  expenses: { paid_by: string; amount: number; expense_splits: { member_id: string; amount: number }[] }[],
+  payments: { from_member_id: string; to_member_id: string; amount: number }[]
+): { memberId: string; memberName: string; balance: number }[] {
+  const expenseData: ExpenseData[] = expenses.map((exp) => ({
+    paidBy: exp.paid_by,
+    amount: exp.amount,
+    splits: (exp.expense_splits || []).map((s) => ({
       memberId: s.member_id,
       amount: s.amount,
     })),
   }));
 
-  const paymentData: PaymentData[] = (payments || []).map((pay) => ({
-    fromMemberId: pay.from_member_id as string,
-    toMemberId: pay.to_member_id as string,
-    amount: pay.amount as number,
+  const paymentData: PaymentData[] = payments.map((pay) => ({
+    fromMemberId: pay.from_member_id,
+    toMemberId: pay.to_member_id,
+    amount: pay.amount,
   }));
 
-  const memberList = members.map((m) => ({
-    id: m.id,
-    displayName: m.display_name,
-  }));
+  const memberList = members.map((m) => ({ id: m.id, displayName: m.displayName }));
 
-  // Delegate to shared pure function (same code as tests use)
   const all = computeBalancesPure(memberList, expenseData, paymentData);
-
-  // Filter: member đã rời (left_at !== null) chỉ giữ nếu còn balance ≠ 0 (lịch sử quan trọng).
-  // Active member giữ nguyên kể cả balance = 0 (cân bằng).
-  const leftMap = new Map(members.map((m) => [m.id, m.left_at as string | null]));
+  const leftMap = new Map(members.map((m) => [m.id, m.leftAt]));
   return filterInactiveZeroBalance(all, leftMap);
+}
+
+/**
+ * Calculate balance for each member in a trip — fetch + compute.
+ * Giữ cho backward compat. Store mới dùng fetchTripBalanceData + computeTripBalances
+ * riêng để cache và recompute pure sau mutation.
+ */
+export async function calculateBalances(
+  tripId: string
+): Promise<{ memberId: string; memberName: string; balance: number }[]> {
+  const data = await fetchTripBalanceData(tripId);
+  if (!data) return [];
+  return computeTripBalances(data.members, data.expenses, data.payments);
 }

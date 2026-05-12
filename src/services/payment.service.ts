@@ -143,10 +143,14 @@ export async function createPayment(params: {
 export async function deletePayment(paymentId: string): Promise<void> {
   const { data: payment, error: fetchErr } = await supabase
     .from('payments')
-    .select('group_id, trip_id, from_member_id, to_member_id, amount')
+    .select('group_id, trip_id, from_member_id, to_member_id, amount, trips!inner(status)')
     .eq('id', paymentId)
     .single();
   if (fetchErr || !payment) throw new Error('Thanh toán không tồn tại');
+  const tripStatus = (payment.trips as unknown as { status: string }).status;
+  if (tripStatus === 'closed') {
+    throw new Error('cannot_modify_closed_trip');
+  }
   await assertRole(payment.group_id, ['admin']);
 
   const { error } = await supabase

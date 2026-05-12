@@ -79,7 +79,7 @@ export default function GroupDetailScreen() {
   } = useTripStore(
     useShallow((s) => ({
       trips: s.trips,
-      tripsLoading: s.isLoading,
+      tripsLoading: s.isLoadingTrips,
       loadTrips: s.loadTrips,
       addTrip: s.addTrip,
       toggleTripStatus: s.toggleTripStatus,

@@ -92,9 +92,13 @@ export function MoneyTextField({
               onPress={() => handlePickSuggestion(amount)}
               accessibilityRole="button"
               accessibilityLabel={`Chọn ${formatThousands(amount)} đồng`}
-              style={[
+              style={({ pressed }) => [
                 styles.chip,
-                { backgroundColor: c.accentSoft, borderColor: c.divider },
+                {
+                  backgroundColor: c.surface,
+                  borderColor: c.divider,
+                  opacity: pressed ? 0.7 : 1,
+                },
               ]}
             >
               <AppText
@@ -116,10 +120,15 @@ const styles = StyleSheet.create({
   container: { gap: 6 },
   chipRow: { gap: 6, paddingVertical: 2, paddingRight: 8 },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
   },
   boldValue: {
     fontFamily: fonts.bold,

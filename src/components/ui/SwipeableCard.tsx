@@ -1,5 +1,5 @@
 import { Trash2 } from 'lucide-react-native';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
@@ -69,6 +69,7 @@ export function SwipeableCard({
   ...cardProps
 }: SwipeableCardProps) {
   const swipeableRef = useRef<SwipeableMethods>(null);
+  const [revealed, setRevealed] = useState(false);
 
   const handleDelete = useCallback(() => {
     hapticMedium();
@@ -104,10 +105,13 @@ export function SwipeableCard({
       overshootRight={false}
       friction={2}
       containerStyle={styles.swipeContainer}
+      onSwipeableOpenStartDrag={() => setRevealed(true)}
+      onSwipeableClose={() => setRevealed(false)}
     >
       <AppCard
         {...cardProps}
         onLongPress={onLongPress ? handleLongPress : undefined}
+        style={revealed ? styles.cardRevealed : undefined}
       />
     </ReanimatedSwipeable>
   );
@@ -130,5 +134,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     borderBottomRightRadius: 14,
     gap: 4,
+  },
+  cardRevealed: {
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
   },
 });

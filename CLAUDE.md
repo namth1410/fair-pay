@@ -140,22 +140,43 @@ src/
 - Tham chiếu chi tiết: `docs/technical-specification.md` §3.10 + §6, `docs/business-requirements.md` §11.5 + §8 (BR-NOTIF-01..07).
 
 ### Preset khoản chi
-- Per-user, scope qua `getAuthUserId()`. Bảng `expense_presets` có RLS: `user_id = auth_user_id()`.
-- Chỉ lưu `{title, amount, category}` — KHÔNG lưu `paid_by`, `splits` (đổi theo nhóm).
+- Per-user, scope qua `getAuthUserId()`. Bảng `expense_presets` có RLS đầy đủ 4 policies SELECT/INSERT/UPDATE/DELETE (`user_id = auth_user_id()`).
+- 2 scope:
+  - **Global** (`trip_id IS NULL`): lưu `{title, amount, category}`. Template tái dùng cross-group.
+  - **Trip-pinned** (`trip_id` NOT NULL): lưu thêm OPTIONAL `paid_by_member_id`, `split_type`, `splits_data`. CASCADE xóa khi xóa trip. Group implicit qua `trips.group_id`.
+- `splits_data` jsonb lưu **rule** (member list + ratio/amount), KHÔNG lưu final amounts → đổi `amount` preset không phá splits:
+  - `split_type='equal'` → `[{member_id}]`
+  - `split_type='ratio'` → `[{member_id, ratio}]`
+  - `split_type='custom'` → `[{member_id, amount}]`
+- Constraints DB: `preset_scope_consistency` (paid_by/splits chỉ valid khi trip_id set), `preset_splits_pair` (split_type ↔ splits_data đi cùng).
+- "Full" preset = trip-pinned có đủ `paid_by + splits` → enable 1-tap submit từ dock qua confirm dialog. Check qua `isFullPreset()`.
+- Apply preset vào trip qua `applyPresetToTrip()` ở [preset.service.ts](src/services/preset.service.ts): validate paid_by + splits members còn `left_at IS NULL`, fallback graceful (current user / chia đều all active) + warnings inline.
+- 2 partial unique indexes thay vì `UNIQUE(user_id, title)`: `(user_id, title) WHERE trip_id IS NULL` cho global, `(user_id, title, trip_id) WHERE trip_id IS NOT NULL` cho trip-pinned. Service catch `23505` → throw "Đã có preset trùng tên trong phạm vi này".
 - Hard delete (không có `deleted_at`). Xóa có confirm qua `BouncyDialog`.
-- `UNIQUE(user_id, title)` — service catch Postgres `23505` ở cả `createPreset` và `updatePreset` → throw "Đã có preset trùng tên".
-- Reuse `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ) + `validateName` (từ `src/utils/validate.ts`).
-- Sort theo `updated_at DESC` — mới cập nhật/tạo ở đầu. Cột `updated_at` tự động refresh qua trigger `set_updated_at`.
+- `paid_by_member_id` ON DELETE SET NULL (member rời không phải xóa hard); validate runtime + fallback ở apply-time.
+- Reuse `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ) + `validateName` (từ `src/utils/validate.ts`) + `splitEqual`/`splitByRatio` để resolve final amounts khi apply.
+- Sort theo `updated_at DESC`. Cột `updated_at` tự động refresh qua trigger `set_updated_at`.
 - **Edit preset KHÔNG cascade** vào expense đã dùng — preset chỉ là template, expense đã có bản sao dữ liệu riêng.
 - KHÔNG log audit (personal data, không liên quan group).
 - `EXPENSE_CATEGORIES` ở `src/config/constants.ts` là single source of truth — KHÔNG hardcode lại trong component.
 
 ### Preset UI flow
-- Màn quản lý riêng: route `(main)/presets.tsx` — list + CRUD đầy đủ (thêm/sửa/xóa). Entry từ Settings → "Preset khoản chi" (`router.push('/presets')`).
-- Form thêm/sửa dùng chung `PresetFormModal` (BottomSheet); `preset` prop = null → thêm, có giá trị → sửa.
-- Trong `ExpenseFormSheet`: pick preset bằng chip row horizontal (auto-fill title/amount/category). Tạo preset mới qua **Switch "Lưu làm preset"** trong step basic — tạo preset ngay sau khi submit expense thành công, KHÔNG có popup xác nhận riêng.
-- Pre-check trùng title: khi Switch ON + title trim trùng preset cũ → `presetConflict` = true → disable nút "Tiếp tục"/"Thêm khoản chi" + hint inline. Title rỗng không trigger check.
-- Khi user pick preset có sẵn → auto tắt Switch (tránh lưu lại bản thân nó).
+- Màn quản lý riêng: route `(tabs)/presets.tsx` — list + CRUD đầy đủ. List item hiện badge `📍 {tripName}` cho trip-pinned + badge `⚡ 1-tap` cho full preset.
+- Form thêm/sửa dùng chung `PresetFormModal` (BottomSheet) với scope picker: Global / Gắn chuyến đi. Khi pick trip → optional paid_by ChipPicker + optional split section (equal/ratio/custom với member checkboxes).
+- Selector `getPresetsForContext({ tripId })` ở [preset.store.ts](src/stores/preset.store.ts):
+  - **Home** (`tripId=null`): all presets (global + all trip-pinned). Sort trip-pinned > global.
+  - **In-trip** (`tripId=X`): **chỉ** global + trip-pinned-của-X. KHÔNG hiện trip-pinned của trip khác (tránh nhiễu).
+- Entry **dock "+"** mở `QuickAddActionSheet`:
+  - Chip row preset (hoặc empty state hint "Tạo preset" → /presets).
+  - Tap **global** → navigate `/expenses/new?prefill...` (form pre-fill, user chọn trip).
+  - Tap **trip-pinned partial** → navigate `/trips/{tripId}/expenses/new?applyPresetId=...&prefill...` (form pre-fill trip + có sẵn).
+  - Tap **trip-pinned full** → `BouncyDialog` confirm → tap "Tạo" → `applyPresetToTrip` → `createExpense` RPC trực tiếp, KHÔNG mở form. Warning được hiển thị qua toast variant `warning` nếu có fallback.
+  - 3 button "Chụp ảnh / Chọn thư viện / Nhập thủ công" giữ nguyên ở dưới.
+- Entry **in-trip "+"** (ExpensesTab): đi thẳng `/trips/{tripId}/expenses/new` → form. Trong form có chip row preset filter strict theo `currentTripId` (chỉ global + trip-pinned của trip này). Tap chip → apply full data ngay vào state (fallback graceful nếu member thay đổi).
+- **Form Thêm khoản chi** đã merge 2-step (`basic` + `Cách chia`) thành 1 màn scroll — bỏ button "Tiếp tục", có 1 submit "Thêm khoản chi" duy nhất ở cuối.
+- Switch "Lưu làm preset" trong form → tạo **global** preset (không trip). Pre-check trùng title chỉ check global scope (`presetConflict` true → disable submit + hint inline).
+- `applyPresetId` URL param: form effect mount → lookup preset trong store → nếu trip match + full data → apply paid_by + splits qua `applyPresetFullData` helper. Stale member → fallback default + warning banner trên form.
+- **AppDock chỉ visible ở (tabs) main pages** — không cần truyền `currentTripId` xuống QuickAddActionSheet.
 
 ### Testing
 - Tests nằm trong `src/__tests__/` — chỉ test hàm thuần (utils).

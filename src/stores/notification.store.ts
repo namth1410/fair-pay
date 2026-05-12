@@ -87,48 +87,53 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     if (!ids.length) return;
     const idSet = new Set(ids);
     const now = new Date().toISOString();
+    const prevItems = get().items;
+    const prevUnread = get().unreadCount;
+    const flippedCount = prevItems.filter((n) => idSet.has(n.id) && !n.read_at).length;
     set({
-      items: get().items.map((n) =>
+      items: prevItems.map((n) =>
         idSet.has(n.id) && !n.read_at ? { ...n, read_at: now } : n
       ),
-      unreadCount: Math.max(
-        0,
-        get().unreadCount - get().items.filter((n) => idSet.has(n.id) && !n.read_at).length
-      ),
+      unreadCount: Math.max(0, prevUnread - flippedCount),
     });
     try {
       await markAsReadApi(ids);
-    } catch {
-      // optimistic — silent
+    } catch (e) {
+      set({ items: prevItems, unreadCount: prevUnread });
+      if (__DEV__) console.warn('[Notif] markAsRead rollback:', e);
     }
   },
 
   markAllAsRead: async () => {
     const now = new Date().toISOString();
+    const prevItems = get().items;
+    const prevUnread = get().unreadCount;
     set({
-      items: get().items.map((n) => (n.read_at ? n : { ...n, read_at: now })),
+      items: prevItems.map((n) => (n.read_at ? n : { ...n, read_at: now })),
       unreadCount: 0,
     });
     try {
       await markAllAsReadApi();
-    } catch {
-      // silent — refresh will reconcile
+    } catch (e) {
+      set({ items: prevItems, unreadCount: prevUnread });
+      if (__DEV__) console.warn('[Notif] markAllAsRead rollback:', e);
     }
   },
 
   remove: async (id) => {
-    const removed = get().items.find((n) => n.id === id);
+    const prevItems = get().items;
+    const prevUnread = get().unreadCount;
+    const removed = prevItems.find((n) => n.id === id);
+    if (!removed) return;
     set({
-      items: get().items.filter((n) => n.id !== id),
-      unreadCount:
-        removed && !removed.read_at
-          ? Math.max(0, get().unreadCount - 1)
-          : get().unreadCount,
+      items: prevItems.filter((n) => n.id !== id),
+      unreadCount: !removed.read_at ? Math.max(0, prevUnread - 1) : prevUnread,
     });
     try {
       await deleteNotificationApi(id);
-    } catch {
-      // silent
+    } catch (e) {
+      set({ items: prevItems, unreadCount: prevUnread });
+      if (__DEV__) console.warn('[Notif] remove rollback:', e);
     }
   },
 

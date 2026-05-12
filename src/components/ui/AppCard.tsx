@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -18,6 +18,7 @@ interface AppCardProps {
   trailing?: React.ReactNode;
   borderLeft?: { width: number; color: string };
   titleTone?: 'default' | 'muted' | 'primary';
+  style?: StyleProp<ViewStyle>;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -31,6 +32,7 @@ export function AppCard({
   trailing,
   borderLeft,
   titleTone = 'default',
+  style,
 }: AppCardProps) {
   const c = useAppTheme();
   const scale = useSharedValue(1);
@@ -75,6 +77,7 @@ export function AppCard({
       shadowColor: c.foreground,
     },
     borderLeft && { borderLeftWidth: borderLeft.width, borderLeftColor: borderLeft.color },
+    style,
   ];
 
   if (interactive) {

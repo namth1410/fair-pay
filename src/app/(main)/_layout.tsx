@@ -26,11 +26,11 @@ export default function MainLayout() {
         <Stack.Screen name="trips/[id]/index" options={{ title: 'Chuyến đi' }} />
         <Stack.Screen
           name="trips/[id]/expenses/new"
-          options={{ title: 'Thêm khoản chi', animation: 'none' }}
+          options={{ title: 'Thêm khoản chi' }}
         />
         <Stack.Screen
           name="expenses/new"
-          options={{ title: 'Thêm khoản chi', animation: 'none' }}
+          options={{ title: 'Thêm khoản chi' }}
         />
       </Stack>
     </View>

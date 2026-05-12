@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Info } from 'lucide-react-native';
+import { CircleCheck, Info } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -20,7 +20,6 @@ import { SettlementTab } from '../../../../components/trip/SettlementTab';
 import { TripManagementTab } from '../../../../components/trip/TripManagementTab';
 import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../../components/ui';
 import { useAppTheme } from '../../../../hooks/useAppTheme';
-import { type AuditLog, fetchAuditLogs } from '../../../../services/audit.service';
 import { useAuthStore } from '../../../../stores/auth.store';
 import { useGroupStore } from '../../../../stores/group.store';
 import { useTripStore } from '../../../../stores/trip.store';
@@ -51,11 +50,11 @@ export default function TripDetailScreen() {
   const { width: W } = useWindowDimensions();
 
   const {
-    trips, currentExpenses, currentPayments, balances, settlements,
-    isLoading,
-    loadExpenses, removeExpense,
-    loadPayments, addPayment, removePayment,
-    loadBalances,
+    trips, currentExpenses, currentPayments, balances, settlements, auditLogs,
+    isLoadingExpenses,
+    removeExpense,
+    addPayment, removePayment,
+    loadBalances, loadAuditLogs,
   } = useTripStore();
   const { currentGroupMembers, loadMembers } = useGroupStore();
   const groups = useGroupStore((s) => s.groups);
@@ -63,7 +62,6 @@ export default function TripDetailScreen() {
   const tripExportRequestSeq = useUIStore((s) => s.tripExportRequestSeq);
 
   const [tab, setTab] = useState<Tab>('expenses');
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [explainOpen, setExplainOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -199,12 +197,10 @@ export default function TripDetailScreen() {
 
   useEffect(() => {
     if (!tripId) return;
-    loadExpenses(tripId);
-    loadPayments(tripId);
+    // loadBalances populate expenses + payments + members + balances + settlements
+    // trong 1 lượt → không gọi loadExpenses/loadPayments riêng (race + flicker).
     loadBalances(tripId);
-    fetchAuditLogs(tripId).then(setAuditLogs).catch((e) => {
-      if (__DEV__) console.warn('[AuditLogs] Fetch failed:', e);
-    });
+    loadAuditLogs(tripId);
   }, [tripId]);
 
   useEffect(() => {
@@ -231,6 +227,14 @@ export default function TripDetailScreen() {
         style={styles.heroWrap}
       >
         <View style={styles.heroInner}>
+          {trip?.status === 'closed' ? (
+            <View style={[styles.statusPill, { backgroundColor: c.success + '18', borderColor: c.success }]}>
+              <CircleCheck size={12} color={c.success} strokeWidth={2.2} />
+              <AppText variant="meta" weight="semibold" style={{ color: c.success }}>
+                Đã hoàn thành
+              </AppText>
+            </View>
+          ) : null}
           <AppText variant="label" tone="muted">TỔNG CHI</AppText>
           <Money value={totalExpenses} variant="hero" tone="primary" animate />
           <AppText variant="meta" tone="muted" style={styles.heroMeta}>
@@ -281,7 +285,7 @@ export default function TripDetailScreen() {
                 tripStatus={trip?.status || 'open'}
                 expenses={currentExpenses}
                 members={currentGroupMembers}
-                isLoading={isLoading}
+                isLoading={isLoadingExpenses}
                 onDeleteExpense={removeExpense}
               />
             </View>
@@ -295,6 +299,7 @@ export default function TripDetailScreen() {
             <View style={{ width: W }}>
               <SettlementTab
                 tripId={tripId}
+                tripStatus={trip?.status || 'open'}
                 groupId={trip?.group_id || ''}
                 settlements={settlements}
                 payments={currentPayments}
@@ -357,4 +362,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   infoBtn: { padding: 4, borderRadius: 12 },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
 });

@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 
+import { type AuditLog, fetchAuditLogs } from '../services/audit.service';
 import {
-  calculateBalances,
+  computeTripBalances,
   createExpense,
   deleteExpense,
   type ExpenseWithSplits,
   fetchExpenses,
+  fetchTripBalanceData,
+  type TripBalanceMember,
 } from '../services/expense.service';
 import {
   calculateSettlements,
@@ -44,9 +47,16 @@ interface TripState {
   trips: Trip[];
   currentExpenses: ExpenseWithSplits[];
   currentPayments: Payment[];
+  /**
+   * Cache TẤT CẢ members của group hiện tại (kể cả đã rời) — cho recomputeBalances
+   * pure không phải re-fetch sau mỗi mutation. Populate qua loadBalances.
+   */
+  currentAllMembers: TripBalanceMember[];
   balances: BalanceEntry[];
   settlements: SettlementEntry[];
-  isLoading: boolean;
+  auditLogs: AuditLog[];
+  isLoadingTrips: boolean;
+  isLoadingExpenses: boolean;
 
   loadTrips: (groupId: string) => Promise<void>;
   addTrip: (groupId: string, name: string, type?: Trip['type']) => Promise<void>;
@@ -83,6 +93,8 @@ interface TripState {
   removePayment: (paymentId: string, tripId: string) => Promise<void>;
 
   loadBalances: (tripId: string) => Promise<void>;
+  loadAuditLogs: (tripId: string) => Promise<void>;
+  recomputeBalances: () => void;
   reset: () => void;
 }
 
@@ -90,17 +102,20 @@ export const useTripStore = create<TripState>((set, get) => ({
   trips: [],
   currentExpenses: [],
   currentPayments: [],
+  currentAllMembers: [],
   balances: [],
   settlements: [],
-  isLoading: false,
+  auditLogs: [],
+  isLoadingTrips: false,
+  isLoadingExpenses: false,
 
   loadTrips: async (groupId) => {
-    set({ isLoading: true });
+    set({ isLoadingTrips: true });
     try {
       const trips = await fetchTrips(groupId);
       set({ trips });
     } finally {
-      set({ isLoading: false });
+      set({ isLoadingTrips: false });
     }
   },
 
@@ -115,22 +130,29 @@ export const useTripStore = create<TripState>((set, get) => ({
     } else {
       await reopenTrip(trip.id);
     }
-    await get().loadTrips(trip.group_id);
+    await Promise.all([
+      get().loadTrips(trip.group_id),
+      get().loadAuditLogs(trip.id),
+    ]);
   },
 
   renameTrip: async (tripId, name) => {
     await updateTripName(tripId, name);
     const trip = get().trips.find((t) => t.id === tripId);
-    if (trip) await get().loadTrips(trip.group_id);
+    await Promise.all([
+      trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
+      get().loadAuditLogs(tripId),
+    ]);
   },
 
   clearCurrentTrip: async (tripId) => {
     await clearTrip(tripId);
     const trip = get().trips.find((t) => t.id === tripId);
+    // Sau RPC mass-soft-delete: cache cũ stale → loadBalances full fetch
+    // (populate cả expenses + payments + members lại).
     await Promise.all([
-      get().loadExpenses(tripId),
-      get().loadPayments(tripId),
       get().loadBalances(tripId),
+      get().loadAuditLogs(tripId),
       trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
     ]);
   },
@@ -141,12 +163,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   loadExpenses: async (tripId) => {
-    set({ isLoading: true });
+    set({ isLoadingExpenses: true });
     try {
       const expenses = await fetchExpenses(tripId);
       set({ currentExpenses: expenses });
     } finally {
-      set({ isLoading: false });
+      set({ isLoadingExpenses: false });
     }
   },
 
@@ -165,14 +187,20 @@ export const useTripStore = create<TripState>((set, get) => ({
       note: params.note,
       imageUrl: params.imageUrl,
     });
-    await get().loadExpenses(params.tripId);
-    await get().loadBalances(params.tripId);
+    await Promise.all([
+      get().loadExpenses(params.tripId),
+      get().loadAuditLogs(params.tripId),
+    ]);
+    get().recomputeBalances();
   },
 
   removeExpense: async (expenseId, tripId) => {
     await deleteExpense(expenseId);
-    await get().loadExpenses(tripId);
-    await get().loadBalances(tripId);
+    await Promise.all([
+      get().loadExpenses(tripId),
+      get().loadAuditLogs(tripId),
+    ]);
+    get().recomputeBalances();
   },
 
   loadPayments: async (tripId) => {
@@ -182,18 +210,71 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   addPayment: async (params) => {
     await createPayment(params);
-    await get().loadPayments(params.tripId);
-    await get().loadBalances(params.tripId);
+    await Promise.all([
+      get().loadPayments(params.tripId),
+      get().loadAuditLogs(params.tripId),
+    ]);
+    get().recomputeBalances();
   },
 
   removePayment: async (paymentId, tripId) => {
     await deletePayment(paymentId);
-    await get().loadPayments(tripId);
-    await get().loadBalances(tripId);
+    await Promise.all([
+      get().loadPayments(tripId),
+      get().loadAuditLogs(tripId),
+    ]);
+    get().recomputeBalances();
   },
 
   loadBalances: async (tripId) => {
-    const balances = await calculateBalances(tripId);
+    // Initial fetch (mount trip detail) hoặc post-RPC mass-delete: populate cache đầy đủ.
+    // Toggle isLoadingExpenses để ExpensesTab hiện skeleton — tránh phải gọi
+    // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
+    set({ isLoadingExpenses: true });
+    try {
+      const data = await fetchTripBalanceData(tripId);
+      if (!data) {
+        set({ currentExpenses: [], currentPayments: [], currentAllMembers: [], balances: [], settlements: [] });
+        return;
+      }
+      const balances = computeTripBalances(data.members, data.expenses, data.payments);
+      const settlements = calculateSettlements(balances);
+      set({
+        currentExpenses: data.expenses,
+        currentPayments: data.payments,
+        currentAllMembers: data.members,
+        balances,
+        settlements,
+      });
+    } finally {
+      set({ isLoadingExpenses: false });
+    }
+  },
+
+  loadAuditLogs: async (tripId) => {
+    try {
+      const logs = await fetchAuditLogs(tripId);
+      set({ auditLogs: logs });
+    } catch (e) {
+      if (__DEV__) console.warn('[AuditLogs] Fetch failed:', e);
+    }
+  },
+
+  recomputeBalances: () => {
+    // Pure compute từ cache — gọi sau mutation đã refresh expenses/payments riêng lẻ.
+    const { currentExpenses, currentPayments, currentAllMembers } = get();
+    if (currentAllMembers.length === 0) return; // cache chưa populate; bỏ qua
+    const expensesForCompute = currentExpenses.map((e) => ({
+      paid_by: e.paid_by,
+      amount: e.amount,
+      expense_splits: e.expense_splits.map((s) => ({ member_id: s.member_id, amount: s.amount })),
+    }));
+    const paymentsForCompute = currentPayments.map((p) => ({
+      from_member_id: p.from_member_id,
+      to_member_id: p.to_member_id,
+      amount: p.amount,
+    }));
+    const balances = computeTripBalances(currentAllMembers, expensesForCompute, paymentsForCompute);
     const settlements = calculateSettlements(balances);
     set({ balances, settlements });
   },
@@ -203,8 +284,11 @@ export const useTripStore = create<TripState>((set, get) => ({
       trips: [],
       currentExpenses: [],
       currentPayments: [],
+      currentAllMembers: [],
       balances: [],
       settlements: [],
-      isLoading: false,
+      auditLogs: [],
+      isLoadingTrips: false,
+      isLoadingExpenses: false,
     }),
 }));

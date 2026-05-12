@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 import { supabase } from '../config/supabase';
 import { getAuthUserId } from './auth.helper';

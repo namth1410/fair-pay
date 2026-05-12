@@ -55,9 +55,13 @@ export function MoneyChipsDock({ visible, amountStr, onPick }: MoneyChipsDockPro
               onPress={() => onPick(amount)}
               accessibilityRole="button"
               accessibilityLabel={`Chọn ${formatThousands(amount)} đồng`}
-              style={[
+              style={({ pressed }) => [
                 styles.chip,
-                { backgroundColor: c.accentSoft, borderColor: c.divider },
+                {
+                  backgroundColor: c.surface,
+                  borderColor: c.divider,
+                  opacity: pressed ? 0.7 : 1,
+                },
               ]}
             >
               <AppText
@@ -94,9 +98,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
   },
 });

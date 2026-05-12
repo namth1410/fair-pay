@@ -34,6 +34,7 @@ const ERROR_MAP: Record<string, string> = {
   trip_not_found: 'Chuyến đi không tồn tại',
   trip_not_in_group: 'Chuyến không thuộc nhóm này',
   trip_closed: 'Chuyến đã đóng, không thể thêm khoản chi',
+  cannot_modify_closed_trip: 'Chuyến đã đóng — mở lại chuyến đi để chỉnh sửa.',
   payer_not_in_group: 'Người trả không thuộc nhóm này',
   invalid_title: 'Tên không hợp lệ',
   invalid_amount: 'Số tiền không hợp lệ',

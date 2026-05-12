@@ -1,481 +1,599 @@
-# Code Review — Fair Pay
+# CODE REVIEW — Fair Pay (trước Closed Test Play Store)
 
-> Báo cáo review toàn bộ repository ngày 2026-05-07.
-> Phạm vi: `src/` (~23.000 LOC, 149 file TS/TSX) + config + db schema + supabase migrations.
-> Phương pháp: 5 agent chuyên trách review song song theo layer (services / stores / utils & tests / components & screens / config & db).
->
-> **Cập nhật 2026-05-07:** Đã fix 9/10 finding `[blocking]` (3.1–3.9) + 4 finding `[important]` (4.1, 4.9, 4.10, 4.12). Còn lại 1 `[blocking]` (`splitByRatio` clamp) và 16 `[important]` + 22 `[nit]`.
+> **Ngày review:** 2026-05-12
+> **Scope:** Toàn bộ dự án, ưu tiên **bảo mật** và **kịch bản user phá hoại**
+> **Đối tượng publish:** Google Play Console — Closed Test
+> **Stack:** Expo 55 + React Native 0.83 + Supabase + Cloudflare R2 + Zustand
 
 ---
 
 ## 1. Tổng quan
 
-Codebase Fair Pay được tổ chức **rất tốt**, tuân thủ phần lớn quy ước trong `CLAUDE.md`:
+Fair Pay là app chia tiền nhóm với kiến trúc tốt: RLS bật cho **15/15 bảng**, 7 RPC `SECURITY DEFINER` + `SET search_path` đúng pattern, audit log + notification có dedup, validation client-side với regex chống control char/zero-width, deep link reset password có timeout + cooldown. Test suite 85+ tests (utils thuần).
 
-- Pattern uncontrolled-ref + delayed mount cho `BottomSheetTextInput` áp dụng nhất quán (không lặp bug IME tiếng Việt).
-- Auth helper `getAuthUserId()` 30s-cache + `clearAuthCache()` được dùng đúng trong service layer.
-- Validate input (`validateAmount`, `validateName`) ở boundary, có `assertRole` ở các mutation `group.service.ts`.
-- TypeScript strict, `no-explicit-any` ở ESLint, không tìm thấy `: any` trong service.
-- Edge Function có error wrapper, R2 helper defensive.
-- Notification dedup logic tách riêng utils, có unit test pure.
-- Test coverage tốt cho utils (split, settlement, balance, validate, format, notification).
+Tuy vậy, **chưa sẵn sàng publish closed test**. Có **6 lỗ hổng BLOCKING** ở tầng RLS/Edge Function cho phép leo quyền hoặc phá hoại dữ liệu. Tổng cộng review tìm thấy **~30 finding** chia theo severity dưới đây.
 
-Sau đợt fix 2026-05-07, mọi mutation expense/payment/trip đã có `assertRole` + audit log + notify ở service layer, schema SQLite đồng bộ với types, signOut reset cross-store, conditional hook violation đã được sửa.
+**Khuyến nghị tổng:** ⛔ **KHÔNG publish** cho đến khi fix toàn bộ `[blocking]` (mục §4). Ước tính ~6–10h dev để khoá toàn bộ.
 
 ---
 
-## 2. Bảng đánh giá theo module
+## 2. Bảng điểm theo module
 
-| Module | Điểm | Mức độ rủi ro | Ghi chú |
+| Module | Điểm | Severity cao nhất | Ghi chú |
 |---|---|---|---|
-| `src/services/` | 9/10 | Thấp | Đã thêm `assertRole` + audit/notify cho expense/payment/trip + filter `group_id` join_requests. Còn race dedup notification (4.2) |
-| `src/stores/` | 8/10 | Thấp | Đã reset cross-store khi logout + idempotent listener. Còn race trong loadXxx |
-| `src/utils/` | 8/10 | Trung bình | `splitByRatio` clamp gây sum < total **(còn `[blocking]`)**. Đã fix `validateSplits` integer guard + `validateName` filter ký tự ẩn |
-| `src/__tests__/` | 8/10 | Thấp | Coverage tốt cho happy path. Đã thêm test cho control-char/zero-width name. Thiếu edge case orphan / NaN |
-| `src/components/` & `src/app/` | 8/10 | Thấp | Đã fix conditional hook + selector pattern ở `groups/[id].tsx`. Còn setTimeout không cleanup trong context transitions |
-| `src/config/` & `src/db/` | 8/10 | Thấp | Đã bump SCHEMA_VERSION 2, thêm `updated_at` + trigger, fix settings JSON default. Còn schema mismatch nhiều bảng + RLS không track |
-| Tooling (`tsconfig`, `eslint`, `package.json`) | 8/10 | Thấp | Thiếu `eslint-plugin-react-hooks`, dep version pinning chưa nhất quán |
-| **Tổng** | **8.3/10** | **Thấp–Trung bình** | Sau fix đợt 1+2, code đã sẵn sàng cho production. Còn 1 `[blocking]` về tính đúng của split + 16 `[important]` cần xử lý |
+| Supabase RLS (policies) | **4/10** | `[blocking]` | 3 lỗ hổng leo quyền/spoofing đang LIVE trên DB |
+| Supabase RPC (SECURITY DEFINER) | **8/10** | `[important]` | Pattern tốt, nhưng `create_notifications_batch` thiếu check group |
+| Edge Functions (R2) | **5/10** | `[blocking]` | `group-avatar-cleanup` không auth; presign IDOR |
+| Service layer (TypeScript) | **6/10** | `[important]` | Defense-in-depth yếu: 3 service không gọi `assertRole()` ở TS |
+| Auth flow | **6/10** | `[important]` | OAuth + reset password ổn nhưng cooldown chỉ client-side |
+| Input validation | **7/10** | `[important]` | `validateName` tốt; thiếu length check trên `note`, `body` SQL CHECK |
+| Build config & manifest | **5/10** | `[important]` | Quyền dư thừa, `SYSTEM_ALERT_WINDOW` Play Store flag |
+| Secrets management | **6/10** | `[important]` | `.env.local` ở `.gitignore`, nhưng R2 secret nằm cùng file dev |
+| Testing | **7/10** | `[suggestion]` | Tốt cho utils; thiếu integration test RLS/RPC |
+| Code quality / TS | **8/10** | `[nit]` | TS strict, services tách lớp tốt |
+| **Trung bình** | **6.2/10** | | **Phải fix blocking trước khi closed test** |
 
 ---
 
-## 3. Findings ưu tiên cao — phải fix trước
+## 3. TL;DR — 6 vector phá hoại nguy hiểm nhất
 
-> Các finding `[blocking]` dưới đây ảnh hưởng **bảo mật, tính đúng đắn dữ liệu, hoặc rules-of-hooks**. Cần xử lý trước khi release tiếp theo.
->
-> 9 finding `[blocking]` đã fix trong commit 2026-05-07 (createExpense/createPayment assertRole, audit+notify wiring cho expense/payment/trip, user.service dùng getAuthUserId, signOut reset cross-store, onAuthStateChange unsubscribe, conditional hook ở trips/[id], expense_presets.updated_at + trigger, settings JSON default keys mới + migration v2).
-
-### `[blocking]` 3.1 — `splitByRatio` clamp khiến tổng < `total` (vi phạm BR-02)
-
-**File:** [src/utils/split.ts:200-209](src/utils/split.ts)
-
-Khi nhiều người round-up làm `remaining < 0`, người cuối nhận `Math.max(0, remaining)` → tổng splits **thiếu so với `total`**. Test chính thừa nhận điều này (`split.test.ts:455` — `expect(sum).toBeLessThanOrEqual(10000)`). Nếu UI gọi `validateSplits` ngay sau, sẽ báo "Tổng chia khác tổng khoản chi" → block user. Balance cũng lệch.
-
-**Fix:** Khi `remaining < 0`, "rút" 1.000đ từ các người round-up nhiều nhất (largest remainder method) cho đến khi cân; hoặc scale lại tỷ lệ rounding cho `n-1` người đầu.
+1. **Leo quyền lên admin của BẤT KỲ nhóm nào** — chỉ cần biết UUID group (qua leak/screenshot/MITM): policy `Admins can insert members` không filter role → user tự INSERT mình với `role='admin'`. **CRITICAL — explit ngắn 1 dòng SQL.**
+2. **Giả mạo thông báo** — policy `notif_insert_auth` cho phép bất kỳ user nào INSERT notification với `user_id=victim`, `actor_id=anyone`, `deep_link=https://phishing.com`. Phishing in-app dễ dàng.
+3. **Giả mạo audit log** — policy `System can insert audit logs` cho phép user INSERT row giả vào `audit_logs` (ai làm gì cũng đè được). Tampering với forensic trail.
+4. **Edge Function `group-avatar-cleanup` public** — không kiểm JWT/service-role. Bất kỳ ai cũng có thể POST endpoint → quét xoá file R2.
+5. **IDOR upload ảnh expense** — `expense-image-presign` không kiểm group ownership của `expenseId` → user A presign ảnh đè/chèn vào expense của group B.
+6. **Member thường tạo payment giữa 2 user khác** — `payment.service.ts:61` `assertRole(['admin','member'])` + RLS `is_member` đủ để member B trong group X tạo payment "A trả C 5tr" → bóp méo settlement của người khác, chỉ admin xoá được.
 
 ---
 
-## 4. Findings quan trọng — nên fix sớm
+## 4. Findings — phân theo severity
 
-### ~~`[important]` 4.1 — `rejectJoinRequest` thiếu filter `groupId` (cross-tenant)~~ ✅ Đã fix 2026-05-07
+### 4.1 🔴 `[blocking]` — PHẢI FIX TRƯỚC CLOSED TEST
 
-Đã thêm `.eq('group_id', groupId)` vào fetch + update của cả `approveJoinRequest` và `rejectJoinRequest` ([src/services/group.service.ts](src/services/group.service.ts)). Chặn cross-tenant spoof khi admin nhóm A truyền `requestId` của nhóm B.
+#### B1. RLS leo quyền lên admin bất kỳ group nào
+**File:** Supabase policy `group_members.Admins can insert members`
+**Vấn đề:** WITH CHECK hiện tại: `(is_admin(group_id) OR (user_id = auth_user_id()))`. Vế phải cho phép user tự INSERT mình với role tuỳ chọn, **không filter `role = 'member'`**. CHECK constraint `role IN ('admin','member')` để hợp lệ giá trị, nhưng KHÔNG ép phải `'member'`.
 
-### `[important]` 4.2 — `createNotifications` race condition trong dedup
-
-**File:** [src/services/notification.service.ts:122-211](src/services/notification.service.ts)
-
-Dedup logic: SELECT → tách update/insert → execute. Hai event cùng `(group, type, actor, user)` chạy concurrent đều SELECT empty → cả hai INSERT → có 2 row chưa đọc cùng dedup key → bypass dedup window 10 phút. User thấy 2 notif "đã thêm 1 khoản chi" thay vì 1 notif "đã thêm 2".
-
-**Fix:** Tạo UNIQUE INDEX partial trên `(user_id, group_id, type, actor_id) WHERE read_at IS NULL` + dùng `ON CONFLICT DO UPDATE` để gộp atomic. Hoặc move dedup vào server-side RPC.
-
-### `[important]` 4.3 — Mutation không check `groups.deleted_at IS NULL`
-
-**File:** [src/services/group.service.ts:356](src/services/group.service.ts) và các mutation khác (`createTrip`, `updateGroup`, `addVirtualMember`)
-
-`assertRole` chỉ check membership active, không check group active. Admin có thể (do bug UI hoặc malicious) thao tác trên nhóm đã xóa.
-
-**Fix:** Thêm helper `assertGroupActive(groupId)` hoặc join `groups` trong `assertRole` để check `deleted_at IS NULL`.
-
-### `[important]` 4.4 — Race condition trong `loadExpenses`/`loadTrips` dùng chung `isLoading`
-
-**File:** [src/stores/trip.store.ts:97-105](src/stores/trip.store.ts)
-
-Cùng flag `isLoading` chia sẻ giữa `loadTrips`/`loadExpenses`. Action xong trước reset flag → spinner UI biến mất sớm. Đồng thời "stale-response overwrite": nếu user navigate trip khác trong khi load đang chạy, response cũ về sau ghi đè state hiện tại.
-
-**Fix:** Track request ID hoặc tách `isLoadingTrips`/`isLoadingExpenses` riêng:
-```ts
-let currentReq = 0;
-loadExpenses: async (tripId) => {
-  const reqId = ++currentReq;
-  const expenses = await fetchExpenses(tripId);
-  if (reqId !== currentReq) return; // bị superseded
-  set({ currentExpenses: expenses });
-}
+**Exploit POC (1 dòng SQL từ authenticated client):**
+```sql
+INSERT INTO group_members (group_id, user_id, role)
+VALUES ('<bất kỳ group UUID nào>', auth_user_id_local, 'admin');
+-- RLS WITH CHECK: user_id=self → pass. INSERT thành công.
+-- Giờ user đã là admin → toàn quyền sửa/xoá trips, expenses, members.
 ```
 
-### `[important]` 4.5 — `loadBalances` luôn fetch lại expenses+payments → N+1 round-trip
-
-**File:** [src/stores/trip.store.ts:176](src/stores/trip.store.ts)
-
-Sau mỗi `addExpense`/`removeExpense`/`addPayment`/`removePayment`:
-```ts
-await get().loadExpenses(tripId);
-await get().loadBalances(tripId);  // calculateBalances cũng fetch expenses+payments
-```
-→ 3-5 round-trip Supabase tuần tự. Nên `Promise.all` hoặc compute balance từ state hiện có.
-
-### `[important]` 4.6 — Optimistic update notification không rollback khi API fail
-
-**File:** [src/stores/notification.store.ts:99](src/stores/notification.store.ts)
-
-`markAsRead`, `markAllAsRead`, `remove` set optimistic rồi swallow error trong `catch {}`. UI hiển thị đã đọc/đã xóa nhưng server vẫn unread → lần `refresh` kế tiếp item nhảy lại → flicker. `remove()` còn nguy hiểm hơn — user nghĩ đã xóa nhưng vẫn còn.
-
-**Fix:** Snapshot trước khi set rồi rollback trong catch, hoặc trigger `get().refresh()` trong catch.
-
-### `[important]` 4.7 — `setTimeout` trong context transitions không cleanup
-
-**Files:**
-- [src/contexts/BlackHoleTransition.tsx:595-637](src/contexts/BlackHoleTransition.tsx) — 4 timeouts (80ms, 1300ms, 1450ms, 600ms)
-- [src/contexts/MorphTransition.tsx:264](src/contexts/MorphTransition.tsx)
-
-Khi provider unmount giữa transition (vd logout while animating), callback chạy gọi `setIsSucking`, `setPieces`, `o.onCovered()` → React warning "Can't perform state update on unmounted". `o.onCovered()` thường gọi `router.push` → navigate trên router đã unmount.
-
-**Fix:** Lưu IDs vào `useRef<number[]>([])`, push tất cả timeouts, clear trong cleanup. Dùng `cancelAnimation()` cho Reanimated shared values.
-
-### `[important]` 4.8 — `balance.ts` bỏ qua orphan member im lặng → tổng ≠ 0
-
-**File:** [src/utils/balance.ts:53-62](src/utils/balance.ts)
-
-`if (split.memberId in balanceMap)` → nếu split trỏ tới member đã rời nhóm/bị xóa khỏi `members` mảng truyền vào, code bỏ qua. Hệ quả: payer được +amount đầy đủ, splits bị mất → total ≠ 0 (vi phạm TC-05). Tương tự với `paidBy` không có trong members.
-
-**Fix:** Hoặc throw lỗi rõ ràng, hoặc luôn include "ghost" member để cân bằng. Tối thiểu log warning.
-
-### ~~`[important]` 4.9 — `validateSplits` không check `Number.isInteger`~~ ✅ Đã fix 2026-05-07
-
-Đã thêm guard `Number.isFinite + Number.isInteger` ở đầu `validateSplits` ([src/utils/split.ts](src/utils/split.ts)) trước khi check sum, để chặn float/NaN/Infinity.
-
-### ~~`[important]` 4.10 — `validateName` không filter control char / zero-width~~ ✅ Đã fix 2026-05-07
-
-Đã thêm 2 regex `CONTROL_CHAR_RE` (C0 + DEL/C1) và `ZERO_WIDTH_RE` (ZWSP/ZWNJ/ZWJ + BOM) trong [src/utils/validate.ts](src/utils/validate.ts), kèm 2 test case mới trong [src/__tests__/validate.test.ts](src/__tests__/validate.test.ts).
-
-### `[important]` 4.11 — SQLite migrations không atomic
-
-**File:** [src/db/migrations.ts:11-25](src/db/migrations.ts)
-
-`runMigrations` chạy `migration.up()` và INSERT version trong 2 statement riêng — không bọc transaction. Nếu app crash giữa 2 bước, version không ghi nhưng `up()` đã chạy → lần boot sau chạy lại migration gây lỗi.
-
-**Fix:** `db.withTransactionAsync(async () => { await up(db); await runAsync(...) })`.
-
-### ~~`[important]` 4.12 — `useGroupStore()` không selector → re-render mọi field~~ ✅ Đã fix 2026-05-07
-
-Đã refactor [src/app/(main)/groups/[id].tsx](src/app/(main)/groups/[id].tsx) sang `useShallow` (zustand v5 built-in `zustand/react/shallow`) cho cả `useGroupStore` + `useTripStore`, và selector trực tiếp cho `useAuthStore.user`. Component chỉ re-render khi shape của object subscribe đổi, không còn react theo `balanceSummary`/`isLoading` không liên quan.
-
-### `[important]` 4.13 — ErrorBoundary không có `componentDidCatch`
-
-**File:** [src/components/common/ErrorBoundary.tsx:87-106](src/components/common/ErrorBoundary.tsx)
-
-Chỉ có `getDerivedStateFromError`, không log/report. Crash production không được capture → dev không biết user gặp gì.
+**Cách lấy UUID group:** invite_code dễ enumerate (8 ký tự alphanum, 36^8 ≈ 2.8T tổ hợp, nhưng không có rate limit ở `joinGroupByCode`), screenshot, leak khi user share, hoặc reverse-engineer client log. UUID hiện trong response của `groups.SELECT` khi join.
 
 **Fix:**
-```ts
-componentDidCatch(error, info) {
-  console.error('[ErrorBoundary]', error, info.componentStack);
-  // Hoặc tích hợp Sentry/Crashlytics nếu có
+```sql
+DROP POLICY "Admins can insert members" ON group_members;
+CREATE POLICY "Admins manage members" ON group_members
+  FOR INSERT WITH CHECK (is_admin(group_id));
+-- Self-join phải đi qua RPC approve_join_request (SECURITY DEFINER) — đã có.
+```
+
+---
+
+#### B2. Spoofing notification (phishing in-app)
+**File:** Supabase policy `notifications.notif_insert_auth`
+**Vấn đề:** WITH CHECK chỉ `auth.uid() IS NOT NULL`. Client trực tiếp INSERT row với `user_id=<bất kỳ ai>`, `actor_id=<bất kỳ ai>`, `title="Admin yêu cầu xác minh"`, `deep_link="https://phishing.example/login"`.
+
+CLAUDE.md có comment "Phase 4 sẽ chuyển sang Edge Function service-role" — nhưng đang ở V1 → chưa fix.
+
+**Fix tạm (ngay):**
+```sql
+DROP POLICY notif_insert_auth ON notifications;
+CREATE POLICY notif_insert_service ON notifications
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
+```
+Toàn bộ TS code đã đi qua RPC `create_notifications_batch` (SECURITY DEFINER) → chuyển RLS này sang service-role không làm vỡ flow hiện tại.
+
+**Hoặc:** Thêm BEFORE INSERT trigger ép `NEW.actor_id = auth_user_id()`. Nhưng `user_id` vẫn cần force theo recipient list → khó qua trigger; ưu tiên đóng INSERT policy.
+
+---
+
+#### B3. Spoofing audit_logs
+**File:** Supabase policy `audit_logs.System can insert audit logs`
+**Vấn đề:** WITH CHECK chỉ `auth.uid() IS NOT NULL`. User INSERT row giả: `actor_id=<X>`, `group_id=<Y>`, `action='expense.delete'`, `before_data='{...}'`. Audit log mất tính khách quan.
+
+**Fix:** Cùng kiểu B2.
+```sql
+DROP POLICY "System can insert audit logs" ON audit_logs;
+CREATE POLICY audit_insert_service ON audit_logs
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
+```
+Toàn bộ insert audit đã đi qua `_log_action()` (SECURITY DEFINER, gọi từ RPC) → an toàn.
+
+---
+
+#### B4. Edge Function `group-avatar-cleanup` — endpoint public không auth
+**File:** [supabase/functions/group-avatar-cleanup/index.ts](supabase/functions/group-avatar-cleanup/index.ts)
+**Vấn đề:** `Deno.serve` không gọi `getAppUserId()` hay check `Authorization: Bearer <SERVICE_ROLE_KEY>`. Bất kỳ ai có URL function (đoán được từ project URL) gửi POST → cleanup chạy.
+
+**Exploit:**
+```bash
+curl -X POST https://<project>.supabase.co/functions/v1/group-avatar-cleanup \
+  -H "apikey: <ANON_KEY công khai trong app>"
+```
+→ Xoá hàng loạt object R2 đang được reference nhưng vừa qua window 24h.
+
+**Fix:**
+```typescript
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+Deno.serve(withErrorHandling(async (req: Request) => {
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token || token !== SERVICE_ROLE_KEY) {
+    throw new HttpError(401, 'Unauthorized');
+  }
+  // ... rest
+}));
+```
+Sau đó schedule qua `pg_cron` + `pg_net.http_post` với header service_role.
+
+---
+
+#### B5. IDOR ở `expense-image-presign`
+**File:** [supabase/functions/expense-image-presign/index.ts](supabase/functions/expense-image-presign/index.ts)
+**Vấn đề:** Endpoint nhận `expenseId` + `tripId` từ body. Không cross-validate `expense.group_id == trip.group_id == <group caller thuộc về>`. User A (member group G1) presign ảnh cho `expenseId` thuộc group G2 (nếu lấy được ID).
+
+**Fix:** Trước khi presign:
+```typescript
+// Edit flow: expenseId tồn tại → check group
+const { data: expense } = await supabaseAdmin
+  .from('expenses')
+  .select('group_id')
+  .eq('id', expenseId)
+  .is('deleted_at', null)
+  .maybeSingle();
+
+if (expense) {
+  const isMember = await supabaseAdmin
+    .from('group_members')
+    .select('id')
+    .eq('group_id', expense.group_id)
+    .eq('user_id', userId)
+    .is('left_at', null)
+    .maybeSingle();
+  if (!isMember.data) throw new HttpError(403, 'Không thuộc nhóm này');
+}
+// Create flow: chỉ check trip → group → caller
+```
+
+---
+
+#### B6. R2 Access Key/Secret trong `.env.local`
+**File:** [.env.local](.env.local) (không tracked)
+**Vấn đề:** File chứa cả `Access Key ID` và `Secret Access Key` của Cloudflare R2 plaintext (line 9–10 + line 13–14). Mặc dù `.gitignore` loại trừ `.env.local`, nhưng file vẫn ở disk dev → backup OneDrive, screen-share, accidental commit (file `.env` không phải `.local` không bị loại trừ — kiểm tra `.gitignore` line 28–29: chỉ `.env.local` và `.env.*.local` — file `.env` thường vẫn track).
+
+**Hành động:**
+1. **Rotate R2 keys ngay** sau review — coi như đã leak (file để mở trên máy dev có truy cập web).
+2. **Why:** Closed test = mở internet → tokens cũ có thể bị quét.
+3. **How to apply:** Cloudflare Dashboard → R2 → Manage API Tokens → Roll secret. Re-set bằng `supabase secrets set R2_*`. Cập nhật `.env.local` mới (KHÔNG paste API token plaintext vào hover-readable file — dùng password manager / 1Password CLI).
+4. Thêm vào `.gitignore`: `.env` (không có suffix) — chống commit nhầm.
+
+---
+
+### 4.2 🟡 `[important]` — fix trước v1.0 release (sau closed test cũng OK)
+
+#### I1. UPDATE policies thiếu `WITH CHECK` → cross-tenant tampering
+**Files:** policies trên `expenses`, `expense_splits`, `trips`, `payments`, `group_members`
+**Vấn đề:** Mọi UPDATE policy hiện chỉ có `USING (...)`, không có `WITH CHECK (...)`. Postgres mặc định lấy `USING` làm cả CHECK, nhưng KHÔNG bảo vệ giá trị **sau** update.
+
+Ví dụ: user là creator của expense ở group G1, UPDATE `SET group_id='G2', created_by='<victim>'` — USING pass (pre-row OK), không có WITH CHECK → row chuyển sang group G2 với "creator" mới.
+
+**Fix:** Thêm `WITH CHECK` mirror `USING`:
+```sql
+ALTER POLICY "Creator or admin can update expenses" ON expenses
+  USING (created_by = auth_user_id() OR is_admin(group_id))
+  WITH CHECK (created_by = auth_user_id() OR is_admin(group_id));
+```
+Áp dụng cho 5 bảng nêu trên.
+
+---
+
+#### I2. `payments.INSERT` cho member thường + flip from/to
+**File:** [src/services/payment.service.ts:61](src/services/payment.service.ts#L61) + RLS `payments.Members can create payments`
+**Vấn đề:** Member tạo payment giữa 2 user khác (`from_member_id = userX, to_member_id = userY`, cả 2 không phải caller). Settlement bị bóp méo, chỉ admin xoá được — admin overhead.
+
+**Fix:** Hai lựa chọn:
+- **A (chặt):** RLS chỉ admin tạo payment: WITH CHECK `is_admin(group_id)`. TS `assertRole(['admin'])`.
+- **B (vừa):** Member chỉ tạo payment mà `from_member_id` hoặc `to_member_id` là chính họ (tự ghi nhận đã trả/đã nhận). WITH CHECK:
+  ```sql
+  is_member(group_id) AND (
+    (SELECT user_id FROM group_members WHERE id = from_member_id) = auth_user_id()
+    OR (SELECT user_id FROM group_members WHERE id = to_member_id) = auth_user_id()
+    OR is_admin(group_id)
+  )
+  ```
+Khuyến nghị B (BR cho phép member ghi "tôi trả bạn X" tự do).
+
+---
+
+#### I3. `create_notifications_batch` không check recipient có thuộc group
+**File:** [supabase/migrations/20260511160300_create_notifications_batch_rpc.sql](supabase/migrations/20260511160300_create_notifications_batch_rpc.sql)
+**Vấn đề:** RPC nhận `p_recipients uuid[]` từ client. RPC force `actor_id = auth_user_id()` (chống spoof actor) — OK. Nhưng KHÔNG validate `recipients` đều thuộc `p_group_id`. Client malicious gọi RPC với recipient là user lạ → notification spam.
+
+**Fix:** Trong RPC body:
+```sql
+IF p_group_id IS NOT NULL THEN
+  PERFORM 1 FROM unnest(p_recipients) r(user_id)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM group_members
+      WHERE group_id = p_group_id AND user_id = r.user_id AND left_at IS NULL
+    );
+  IF FOUND THEN
+    RAISE EXCEPTION 'recipient_not_in_group' USING ERRCODE = 'P0001';
+  END IF;
+END IF;
+```
+
+---
+
+#### I4. Service TS không gọi `assertRole()` cho `approveJoinRequest`, `createExpense`
+**Files:**
+- [src/services/group.service.ts:225-243](src/services/group.service.ts#L225)
+- [src/services/expense.service.ts:63-129](src/services/expense.service.ts#L63)
+**Vấn đề:** Defense-in-depth yếu. RPC có check `is_admin/is_member` bên DB, nhưng nếu RPC bị sửa nhầm hoặc client gọi raw SQL → không có lớp chặn TS. Inconsistent với `rejectJoinRequest`, `deleteExpense` (đều có `assertRole`).
+
+**Fix:** Thêm 1 dòng ở đầu mỗi hàm:
+```typescript
+// approveJoinRequest
+await assertRole(groupId, ['admin']);
+// createExpense
+await assertRole(params.groupId, ['admin', 'member']);
+```
+
+---
+
+#### I5. Thiếu CHECK length trên text columns → DoS payload
+**Bảng:** `groups.name`, `trips.name`, `expenses.title`, `expenses.note`, `users.display_name`, `payments.note`, `group_members.display_name`, `expense_presets.title`, `notifications.title`, `notifications.body`
+**Vấn đề:** Không có `CHECK (length(...) <= N)` ở SQL. Client có validate, nhưng client malicious gửi 10MB title → INSERT thành công → DB bloat, query chậm, notification render vỡ UI.
+
+**Fix:** Bulk migration:
+```sql
+ALTER TABLE groups ADD CONSTRAINT groups_name_len CHECK (length(name) <= 100);
+ALTER TABLE trips ADD CONSTRAINT trips_name_len CHECK (length(name) <= 100);
+ALTER TABLE expenses ADD CONSTRAINT expenses_title_len CHECK (length(title) <= 200);
+ALTER TABLE expenses ADD CONSTRAINT expenses_note_len CHECK (note IS NULL OR length(note) <= 1000);
+ALTER TABLE users ADD CONSTRAINT users_display_name_len CHECK (length(display_name) <= 30);
+ALTER TABLE payments ADD CONSTRAINT payments_note_len CHECK (note IS NULL OR length(note) <= 200);
+ALTER TABLE group_members ADD CONSTRAINT gm_display_name_len CHECK (length(display_name) <= 50);
+ALTER TABLE expense_presets ADD CONSTRAINT preset_title_len CHECK (length(title) <= 100);
+ALTER TABLE notifications ADD CONSTRAINT notif_title_len CHECK (length(title) <= 200);
+ALTER TABLE notifications ADD CONSTRAINT notif_body_len CHECK (body IS NULL OR length(body) <= 1000);
+```
+
+---
+
+#### I6. Virtual member spam
+**File:** [src/services/group.service.ts](src/services/group.service.ts) — `addVirtualMember`
+**Vấn đề:** Không giới hạn số virtual member trong 1 group. Admin spam 10.000 virtual member → settlement O(n²) lag, balance API trả 10k row. Có thể là vector phá hoại nội bộ (admin nhóm khó tính, hoặc admin lén nhường account cho người ngoài).
+
+**Fix:** Service-side counter:
+```typescript
+const { count } = await supabase
+  .from('group_members')
+  .select('id', { count: 'exact', head: true })
+  .eq('group_id', groupId)
+  .eq('is_virtual', true)
+  .is('left_at', null);
+if ((count ?? 0) >= 50) throw new Error('Tối đa 50 thành viên ảo / nhóm');
+```
+Hoặc tốt hơn — DB trigger BEFORE INSERT.
+
+---
+
+#### I7. Join request không pre-check pending → spam admin
+**File:** [src/services/group.service.ts:177-204](src/services/group.service.ts#L177)
+**Vấn đề:** `joinGroupByCode` dùng `upsert` với `onConflict: 'group_id,user_id'` — mỗi lần user click "Join" lại trigger UPSERT + `notifyJoinRequested()`. Spam click 100 lần → admin nhận 100 notification (có dedup 10 phút nhưng vẫn nhiễu).
+
+**Fix:** Trước upsert, query pending:
+```typescript
+const { data: pending } = await supabase
+  .from('join_requests')
+  .select('id')
+  .eq('group_id', group.id)
+  .eq('user_id', userId)
+  .eq('status', 'pending')
+  .maybeSingle();
+if (pending) {
+  return { type: 'pending', group, requestId: pending.id };
 }
 ```
 
-### `[important]` 4.14 — Schema mismatch nhiều bảng SQLite vs Postgres types
+---
 
-**File:** [src/db/schema.ts](src/db/schema.ts) vs [src/types/database.types.ts:118-167](src/types/database.types.ts)
+#### I8. AndroidManifest — permissions dư thừa & deprecated flags
+**File:** [android/app/src/main/AndroidManifest.xml](android/app/src/main/AndroidManifest.xml)
+**Vấn đề:**
+- `READ_MEDIA_AUDIO`, `READ_MEDIA_VIDEO` — app chỉ dùng ảnh (avatar, hoá đơn) → KHÔNG cần audio/video. Play Console Data Safety sẽ flag overpermission.
+- `SYSTEM_ALERT_WINDOW` — quyền nguy hiểm (overlay). Play Store yêu cầu justification riêng, thường refuse hoặc audit.
+- `requestLegacyExternalStorage="true"` — deprecated từ SDK 30. App Bundle target SDK 33+ → ignore on Android 11+. Bỏ.
+- `allowBackup="true"` — Android backup user data lên Google Drive. Token Supabase nếu nằm trong backup → leak nếu account Google compromise. Cân nhắc `allowBackup="false"` cho v1.0.
 
-`NotificationRow`, `FeedbackRow`, `GroupAvatarUploadRow`, `ExpenseImageUploadRow` được khai báo TypeScript nhưng KHÔNG có CREATE TABLE trong SQLite. Nếu code có local query đến các bảng này (cache offline) sẽ fail. `_schema_version` định nghĩa `version PRIMARY KEY` → INSERT lần 2 cùng version sẽ unique constraint fail.
-
-**Fix:** Xác định rõ bảng nào local-only, bảng nào server-only. Bảng server-only thì tách type sang `database.server.types.ts`. Đổi `_schema_version` thành `INSERT OR IGNORE`.
-
-### `[important]` 4.15 — `is_virtual` type lệch giữa Postgres (bool) và SQLite (0/1)
-
-**File:** [src/types/database.types.ts:31](src/types/database.types.ts)
-
-Type chỉ khai báo `is_virtual: number`. Data Supabase trả `boolean`, SQLite raw trả `0|1`. CLAUDE.md cảnh báo nhưng type vẫn chưa phản ánh union.
-
-**Fix:** Đổi thành `is_virtual: boolean | number` hoặc tách `GroupMemberRowSqlite` vs `GroupMemberRowPg`.
-
-### `[important]` 4.16 — Race trong `reset-password.tsx` giữa parser & timeout
-
-**File:** [src/app/(auth)/reset-password.tsx:128-133](src/app/(auth)/reset-password.tsx)
-
-Timeout 3s set state `invalid` nếu chưa `handledRef.current=true`. Nếu link chậm về (>3s), user thấy `invalid` thoáng qua rồi `handle` resolve `ok` cũng không update do `handledRef.current=true` set sau khi state đã invalid.
-
-**Phụ:** dòng 107 `if (session) await supabase.auth.signOut();` — log out user dù URL không hợp lệ, gây bất tiện.
-
-**Fix:** Trong `handle()` khi `result.ok`, kiểm tra `if (!cancelled)` rồi set ref + state. Đặt `signOut` SAU khi token được verify hợp lệ.
-
-### `[important]` 4.17 — `approveJoinRequest` race khi 2 admin cùng duyệt
-
-**File:** [src/services/group.service.ts:224-299](src/services/group.service.ts)
-
-Logic: fetch `status='pending'` → check oldMember → update OR insert → update `status='approved'`. Hai admin cùng chạy có thể double-fire `logAction` + `notifyJoinResolved` (spam notification kép).
-
-**Fix:** Update cuối thêm `.eq('status', 'pending')`, kiểm tra `count > 0` trước khi log/notify. Lý tưởng nhất chuyển vào RPC/transaction.
-
-### `[important]` 4.18 — `themeTransition.ts` import Uniwind ở module level
-
-**File:** [src/utils/themeTransition.ts:2](src/utils/themeTransition.ts)
-
-Không có guard cho web/test. Component test transitive import file này sẽ fail vì uniwind không setup ở jest.
-
-**Fix:** Lazy import hoặc mock Uniwind ở `jest.setup`.
-
-### `[important]` 4.19 — RLS policies không có trong code
-
-**File:** [supabase/migrations/](supabase/migrations/)
-
-Chỉ có 1 migration SQL (`20260501_add_expense_image.sql`) — chỉ ENABLE RLS không CREATE POLICY. Các bảng quan trọng khác (`groups`, `expenses`, `payments`, `notifications`, `users`, `expense_presets`) — RLS được set thủ công trên Dashboard, không track trong code → nguy cơ lệch giữa môi trường, không có audit/diff được.
-
-**Fix:** `supabase db dump --schema public > supabase/migrations/0001_initial.sql` để có baseline.
-
-### `[important]` 4.20 — `SecureStore` adapter không xử lý platform web
-
-**File:** [src/config/supabase.ts:6-16](src/config/supabase.ts)
-
-`expo-secure-store` không support web → build web (script `expo start --web` có trong package.json) sẽ crash khi `getItemAsync`.
-
-**Fix:** Detect `Platform.OS === 'web'` → fallback `localStorage` adapter, hoặc bỏ web script.
+**Fix:** Loại bỏ `READ_MEDIA_AUDIO`, `READ_MEDIA_VIDEO`, `SYSTEM_ALERT_WINDOW`, `requestLegacyExternalStorage`. Cấu hình `app.json` `android.permissions: [...]` minimal whitelist.
 
 ---
 
-## 5. Findings nhỏ — fix sau
+#### I9. Deep link không filter path
+**File:** [android/app/src/main/AndroidManifest.xml:27-33](android/app/src/main/AndroidManifest.xml#L27)
+**Vấn đề:** `<data android:scheme="fairpay"/>` không có `android:host` hoặc `android:pathPrefix`. App nhận MỌI `fairpay://*` URI. Malicious app có thể trigger app open với payload tuỳ ý → tăng surface tấn công deep-link parsing.
 
-### `[nit]` 5.1 — Memo & re-render
-
-- [src/components/trip/ExpensesTab.tsx:84-93](src/components/trip/ExpensesTab.tsx) — `renderItem` inline, `getMemberName` không memo. Pre-index `members` thành Map qua `useMemo`, tách `renderExpense = useCallback(...)`.
-- [src/components/trip/SettlementTab.tsx:62-63](src/components/trip/SettlementTab.tsx) — `members.map(...)` không memo → ChipPicker re-render thừa.
-- [src/components/trip/BalancesTab.tsx:30](src/components/trip/BalancesTab.tsx) — `handleExport` không memo (trivial).
-- [src/app/(main)/(tabs)/index.tsx:140-146](src/app/(main)/(tabs)/index.tsx) — inline closure `onPress={() => blackHole.suck(...)}` trong `.map()` → bypass memo nếu list lớn.
-
-### `[nit]` 5.2 — `splitEqualWithExplanation`: text "trừ bớt" / "cộng thêm" sai dấu
-
-**File:** [src/utils/split.ts:120-126](src/utils/split.ts)
-
-So sánh `total - rounded*n` thay vì `lastAmount - roundedPerPerson` → text hiển thị ngược nghĩa với hành vi thực khi `lastAmount > roundedPerPerson`.
-
-### `[nit]` 5.3 — Settlement adjust last có thể tạo amount không bội 1.000đ
-
-**File:** [src/utils/settlement.ts:66-78](src/utils/settlement.ts)
-
-Edge case: input balance không bội 1000 (`333333, -166666, -166667`). Nên `Math.round((totalDebt - totalSettlement) / 1000) * 1000` để đảm bảo `diff % 1000 === 0`.
-
-Đồng thời: `adjusted` có thể về `0` → bỏ qua không cập nhật → giao dịch cuối còn 1000đ trong khi tổng debt = 0 → over-pay.
-
-### `[nit]` 5.4 — `explainBalance.ts` dùng `find` thay vì cộng dồn duplicate splits
-
-**File:** [src/utils/explainBalance.ts:72](src/utils/explainBalance.ts)
-
-`splits.find(...)` chỉ lấy entry đầu tiên. Nếu data có 2 entry cùng member (data corruption), `myShare` sai. `computeBalances` thì cộng cả 2 → lệch giữa hai hàm.
-
-**Fix:** `splits.filter(...).reduce(...)`.
-
-### `[nit]` 5.5 — `formatVND(-150_000)` ra `"-150.000đ"` không cảnh báo
-
-**File:** [src/utils/format.ts:6-8](src/utils/format.ts)
-
-Spec amount luôn dương, nên có thể `Math.abs()` hoặc throw để bắt bug sớm.
-
-### `[nit]` 5.6 — `r2.ts` không strip query string / fragment
-
-**File:** [src/utils/r2.ts:12-13](src/utils/r2.ts)
-
-Nếu publicUrl có `?v=abc` (cache buster), key extract chứa cả query string → backend delete fail.
-
-### `[nit]` 5.7 — `forgot-password.tsx` cooldown effect deps khó đọc
-
-**File:** [src/app/(auth)/forgot-password.tsx:53](src/app/(auth)/forgot-password.tsx)
-
-`useEffect(..., [cooldown > 0])` boolean expression làm dep — confuse, khó audit. Đổi sang `[cooldown]` với `useRef` cho interval ID.
-
-### `[nit]` 5.8 — `register.tsx` không dùng `validateName` từ utils
-
-**File:** [src/app/(auth)/register.tsx:33-54](src/app/(auth)/register.tsx)
-
-Tự check inline 2-50 chars thay vì gọi shared `validateName`. Reuse để nhất quán, đồng thời nhận lợi ích từ filter control-char (sau khi fix 4.10).
-
-### `[nit]` 5.9 — `audit.service.ts` thiếu nhiều `ACTION_LABELS`
-
-**File:** [src/services/audit.service.ts:17-27](src/services/audit.service.ts)
-
-Thiếu key `'group.delete'`, `'group.update'`, `'trip.create'`, `'trip.close'`, `'member.remove'`. Sau khi fix 3.3, cần đồng bộ.
-
-### `[nit]` 5.10 — `MembersTab.tsx` nối hex alpha thủ công
-
-**File:** [src/components/group/MembersTab.tsx:20,30](src/components/group/MembersTab.tsx)
-
-`backgroundColor: color + '22'` — vỡ nếu `color` là `rgb(...)` hoặc `oklch(...)`. Dùng theme token `c.surfaceAlt`/`c.primarySoft`.
-
-### `[nit]` 5.11 — Supabase URL/anon key chỉ throw trong `__DEV__`
-
-**File:** [src/config/constants.ts:6-13](src/config/constants.ts)
-
-Production build không throw nếu `EXPO_PUBLIC_*` thiếu. Nên throw cả prod để debug nhanh.
-
-### `[nit]` 5.12 — Edge Function CORS `*` quá lỏng
-
-**File:** [supabase/functions/_shared/auth.ts:53](supabase/functions/_shared/auth.ts)
-
-Whitelist origin theo `EXPO_PUBLIC_APP_URL` hoặc `http://localhost` cho dev (defense-in-depth khi đã có Bearer JWT).
-
-### `[nit]` 5.13 — `app.json` thiếu `runtimeVersion`
-
-**File:** [app.json](app.json)
-
-OTA updates có thể crash khi native module thay đổi. Thêm `"runtimeVersion": { "policy": "sdkVersion" }`.
-
-### `[nit]` 5.14 — `package.json` deps version pinning không nhất quán
-
-**File:** [package.json:14-64](package.json)
-
-Mix `^`, `~`, pin chính xác. `lucide-react-native: ^1.8.0` (mới release 1.x) và `heroui-native: ^...` có thể minor breaking giữa máy dev. Pin chính xác hoặc dựa vào `package-lock.json` + CI dùng `npm ci`.
-
-### `[nit]` 5.15 — Thiếu `eslint-plugin-react-hooks`
-
-**File:** [eslint.config.mjs](eslint.config.mjs)
-
-Thiếu `react-hooks/exhaustive-deps`, `react-hooks/rules-of-hooks` → bug như 3.7 không bị catch.
-
-### `[nit]` 5.16 — `notification.service.ts:197-201` spread `params.data` SAU `count`/`target_ids`
-
-**File:** [src/services/notification.service.ts:197-201](src/services/notification.service.ts)
-
-```ts
-data: { count: 1, target_ids: [...], ...(params.data ?? {}) }
+**Fix:** Whitelist path:
+```xml
+<data android:scheme="fairpay" android:host="reset-password"/>
+<data android:scheme="fairpay" android:host="oauth-callback"/>
 ```
-Caller truyền `count`/`target_ids` trong `data` sẽ ghi đè. Spread `...params.data` TRƯỚC mới đúng intent.
-
-### `[nit]` 5.17 — `groups/[id].tsx` `findMyRole` async không cancellation guard
-
-**File:** [src/app/(main)/groups/[id].tsx:67-83](src/app/(main)/groups/[id].tsx)
-
-Effect async không có `cancelled` flag — `currentGroupMembers` đổi nhanh có thể flicker role.
-
-### `[nit]` 5.18 — `useDominantColor` có 2 cơ chế cancel chồng chéo
-
-**File:** [src/hooks/useDominantColor.ts:25-44](src/hooks/useDominantColor.ts)
-
-Đã có `cancelled` flag ở effect 2 nhưng vẫn giữ `isMounted` ref ở effect 1 → dư thừa, gây hoang mang.
-
-### `[nit]` 5.19 — `joinGroupByCode` không cooldown spam request
-
-**File:** [src/services/group.service.ts:142-204](src/services/group.service.ts)
-
-User reject rồi re-request liên tục → admin bị spam pending. Thêm cooldown 24h hoặc check `last reviewed_at < N giờ thì throw`.
-
-### `[nit]` 5.20 — `notifications.tsx:295` Pressable hitSlop=6 quá nhỏ
-
-**File:** [src/app/(main)/(tabs)/notifications.tsx:295-304](src/app/(main)/(tabs)/notifications.tsx)
-
-Tăng lên `{top:8,bottom:8,left:8,right:8}` để đạt 44pt iOS HIG.
-
-### `[nit]` 5.21 — `EXPENSE_CATEGORIES` lặp trong CHECK constraint SQL
-
-**File:** [src/db/schema.ts:60](src/db/schema.ts)
-
-Hardcode danh sách category ở 2 chỗ SQL. Khi thêm category mới phải sửa 4 chỗ. Generate SQL từ TS const hoặc accept duplication có comment.
-
-### `[nit]` 5.22 — `(tabs)/_layout.tsx` dùng `as any`
-
-**File:** [src/app/(main)/(tabs)/_layout.tsx:23](src/app/(main)/(tabs)/_layout.tsx)
-
-Vi phạm rule "không dùng `: any`" trong CLAUDE.md (dù là TS rule cho service layer). Cân nhắc tạo type union/adapter.
+Đồng bộ với `app.json` scheme + custom Linking config.
 
 ---
 
-## 6. Test còn thiếu — đề xuất
+#### I10. Cooldown reset password chỉ client-side
+**File:** [src/services/auth.helper.ts](src/services/auth.helper.ts), [src/stores/auth.store.ts:144-163](src/stores/auth.store.ts#L144)
+**Vấn đề:** Cooldown 60s lưu ở SecureStore — clear app data, debugger bypass dễ. Supabase quota mặc định ~4 email/h/user, nhưng attacker dùng nhiều account → spam email cho 1 victim (vẫn qua Supabase quota per-target-email, nhưng UX tệ + quota mòn).
 
-1. **`balance.test.ts`**: orphan member trong splits, virtual member là payer.
-2. **`split.test.ts`**: `validateSplits` với amount float, `splitByRatio` với `total < n*1000`, ratio âm/NaN, `splitEqualWithExplanation` case `lastAmount > roundedPerPerson`.
-3. **`settlement.test.ts`**: input không bội 1000 (e.g. `2500, -2500`), creditor/debtor sát TOLERANCE, 100+ members chống infinite loop, `adjusted = 0` và `< 0`.
-4. **`validate.test.ts`**: control char / zero-width / emoji-only name, email > 254, amount = `Infinity` / `NaN` / `MAX_SAFE_INTEGER + 1`.
-5. **`notification.test.ts`**: missing `fromName`/`toName`/`amount` cho payment.received → không trailing space, fake type → fallback string.
-6. **`format.test.ts`** (mới): `formatVND(0)`, `formatVND(-1)`, `formatBalance(0)`.
-7. **`explainBalance.test.ts`**: duplicate split entries cùng member, date timezone khác.
-8. **`r2.test.ts`**: URL có query string / fragment, encoded chars (`%20`).
+**Fix:**
+- Thêm DB-side rate limit: `password_reset_attempts` table với `(email, last_sent_at)` — RPC check trước khi gọi `resetPasswordForEmail`.
+- Hoặc dùng Cloudflare Turnstile / hCaptcha trước nút "Gửi email reset".
 
 ---
 
-## 7. Điểm tốt — `[praise]`
+#### I11. Email enumeration ở register
+**File:** [src/utils/error.ts:10](src/utils/error.ts#L10), [src/stores/auth.store.ts:85-98](src/stores/auth.store.ts#L85)
+**Vấn đề:** `signUp` throw "User already registered" → map → "Email này đã được đăng ký". Attacker enumerate ai có account.
 
-- **`auth.helper.ts` cache 30s + `clearAuthCache()`**: thiết kế gọn, comment rõ mục đích, ngăn N round-trips trong burst sequence (createExpense + logAction + notifyXxx). Được gọi đúng trong `signOut` ([src/stores/auth.store.ts:171](src/stores/auth.store.ts)).
-- **Expense rollback** ([src/services/expense.service.ts:116-120](src/services/expense.service.ts)): tự xóa expense khi splits insert fail — đúng pattern transaction giả lập trên client.
-- **`getGroupRecipients` filter ảo + setting + actor + left_at trong 1 hàm** — DRY, đúng spec virtual member không bị notify.
-- **`fetchUserBalanceSummary` Promise.all + Map pre-index** ([src/services/group.service.ts:596-654](src/services/group.service.ts)): tránh N+1 đẹp, comment "Pre-index by trip_id / group_id for O(1) lookup" rất rõ.
-- **Edge Function error parsing**: wrap `retryAfter`, parse `context.json()`, fallback message — UX tốt cho rate-limit case.
-- **`feedback.service.ts` sanitize input**: regex strip control chars + cap newlines — chống null-byte injection và DoS spam.
-- **TypeScript discipline trong service**: không có `: any` trong service layer (đúng rule). Cast `as Type` được dùng đúng pattern.
-- **Comment giải thích "vì sao"** (chứ không chỉ "what"): vd "Lấy TẤT CẢ members (kể cả đã rời) vì expense/payment của họ vẫn ảnh hưởng đến balance" — tránh người sau xóa nhầm filter.
-- **`updateMemberRole` được mark `@deprecated` với context dài** giải thích invariant 1-admin và lý do giữ signature — tốt cho maintainer tương lai.
-- **Pattern try/finally cho `isLoading`**: khi fetch fail, `isLoading` luôn được reset → không lock-out UI. Áp dụng nhất quán ở mọi store.
-- **Empty constant `EMPTY_SUMMARY`** ([src/stores/group.store.ts:48](src/stores/group.store.ts)): giữ referential equality, tốt cho selector.
-- **`split.ts` pattern "người cuối nhận remainder"**: đúng spec, có clamp `Math.max(0, ...)` ngừa âm. Có 2 nhánh (`total >= n*1000` round 1000đ, fallback nhỏ chia 1đ) — fair.
-- **`balance.ts`**: pure function, dùng số nguyên 100%, không float drift.
-- **`format.ts` tách `formatThousands`** cho UI thread (Reanimated worklet không gọi `toLocaleString`) — kiến trúc tốt.
-- **`seedGradient.ts`**: dùng `>>>` (unsigned shift) tránh negative modulo — comment giải thích rõ. Deterministic.
-- **`r2.ts` defensive**: reject URL không match base, tránh delete arbitrary keys.
-- **Test coverage**: 11 file test, integration test full-cycle (expense → balance → settlement → payment), nhiều edge case.
-- **Pattern uncontrolled-ref + delayed mount** áp dụng nhất quán ở mọi BottomSheet có TextInput tiếng Việt — không lặp lại bug IME.
-- **Snap points + keyboard config** đúng pattern ở mọi sheet (`enableDynamicSizing={false}` + `snapPoints` + `keyboardBehavior="extend"`).
-- **`useFocusEffect` polling on focus** cho unread badge — không setInterval, đúng quy ước CLAUDE.md.
-- **`(tabs)/_layout.tsx`** giữ screens mounted (Home/Notifications/Presets/Settings) — chuyển tab instant.
-- **Optimistic updates** ở settings (`handleToggleSetting`) với rollback khi service fail.
-- **Supabase client RN-correct**: `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`, dùng `SecureStore` adapter — pattern chuẩn cho Expo.
-- **Strict TypeScript**: bật đủ `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noUnusedLocals/Parameters`, `noFallthroughCasesInSwitch`, `forceConsistentCasingInFileNames`. Path alias `@/*` được config nhất quán cả tsconfig + jest.
-- **Không có hardcoded secrets**: SUPABASE_URL/ANON_KEY/R2_PUBLIC_BASE_URL đều từ `process.env.EXPO_PUBLIC_*`. Edge Functions dùng `Deno.env.get()` cho R2 keys + service role.
-- **SQLite pragmas đúng**: WAL mode + foreign keys ON ngay khi `openDatabaseAsync`.
-- **ESLint rules nghiêm**: `@typescript-eslint/no-explicit-any: error`, `eqeqeq: error`, `no-console: warn (allow warn/error)`, `no-throw-literal: error`, `simple-import-sort` — match yêu cầu CLAUDE.md.
-- **`newArchEnabled: true`** đã enable New Architecture cho Expo SDK 55.
-- **Expo build properties**: ABI filter `arm64-v8a, armeabi-v7a` + minify + shrink resources cho release Android — giảm APK size.
+**Fix:** Normalize lỗi đăng ký thành generic:
+```typescript
+if (error.message.includes('User already registered')) {
+  // Vẫn gửi confirmation email ở backend (Supabase auto handle nếu confirmations bật)
+  throw new Error('Nếu email hợp lệ, chúng tôi sẽ gửi xác thực.');
+}
+```
+Cần config Supabase Dashboard: Auth → Email Templates → "Confirm Signup" enabled + bật "Confirm email change".
 
 ---
 
-## 8. Danh sách hành động ưu tiên
+#### I12. Logout không clear SQLite cache + push token
+**File:** [src/stores/auth.store.ts:179-199](src/stores/auth.store.ts#L179)
+**Vấn đề:** Đã reset Zustand stores ✓. Nhưng:
+- SQLite `fairpay.db` không bị truncate → nếu user khác login trên cùng device, query cache cũ.
+- Push token (nếu sau này thêm FCM) không revoke.
+- SecureStore tokens supabase phụ thuộc SDK clear (thường OK, nhưng không guaranteed nếu SDK crash giữa chừng).
 
-> Theo thứ tự khuyến nghị fix.
-
-### ✅ Đã fix (2026-05-07)
-
-**Đợt 1 — `[blocking]`:**
-
-- Conditional hook ở `trips/[id]/index.tsx`.
-- `assertRole` + verify cross-trip/group membership cho `createExpense` + `createPayment`.
-- `logAction` + `notifyXxxEvent` cho mọi mutation expense/payment/trip (đặt ở service layer, xóa duplicate ở `trip.store`).
-- `user.service.ts` dùng `getAuthUserId()` shared.
-- `signOut` reset cross-store (group/trip/notification/preset).
-- `onAuthStateChange` lưu subscription module-scope, idempotent re-init.
-- Migration v2 SQLite: thêm `expense_presets.updated_at` + trigger, update default settings JSON, migrate row có key legacy (`notify_expense` → `notify_activity`).
-
-**Đợt 2 — `[important]`:**
-
-- 4.1: `approveJoinRequest` + `rejectJoinRequest` thêm filter `group_id` (chặn cross-tenant spoof).
-- 4.9: `validateSplits` thêm guard `Number.isFinite + Number.isInteger`.
-- 4.10: `validateName` thêm regex filter control-char + zero-width, kèm test cases mới.
-- 4.12: `groups/[id].tsx` chuyển sang `useShallow` selector (group + trip store) + selector trực tiếp cho `auth.user`.
-
-### Còn lại — `[blocking]` (correctness)
-
-1. **Fix `splitByRatio`** để tổng = total (3.1).
-
-### Tuần tiếp theo — `[important]` (data integrity & UX)
-
-2. Add UNIQUE INDEX partial cho dedup notification + `ON CONFLICT DO UPDATE` (4.2).
-3. Add `assertGroupActive` cho mutations (4.3).
-4. Tách `isLoading` riêng cho từng action + request-ID guard (4.4) + `Promise.all` cho `loadBalances` (4.5).
-5. Rollback optimistic update notification khi fail (4.6).
-6. Cleanup `setTimeout` trong `BlackHoleTransition` + `MorphTransition` (4.7).
-7. Handle orphan member trong `balance.ts` (4.8).
-8. Wrap migrations trong `withTransactionAsync` (4.11).
-9. Add `componentDidCatch` cho ErrorBoundary (4.13).
-10. Đồng bộ schema SQLite/Postgres types + `is_virtual` union type (4.14, 4.15).
-11. Race fix `reset-password.tsx` (4.16).
-12. Approve race + double-fire (4.17) — *Note: filter `group_id` đã thêm ở 4.1, nhưng UNIQUE INDEX cho status='pending' để chặn double-update vẫn cần.*
-13. Lazy import / mock Uniwind cho `themeTransition` (4.18).
-14. Dump RLS vào migration file (4.19).
-15. SecureStore web fallback (4.20).
-
-### Sau đó — `[nit]` & test
-
-- Bổ sung test theo §6.
-- Thêm `eslint-plugin-react-hooks`.
-- Memo các renderItem callback (5.1).
-- Pin dependencies, thêm `runtimeVersion`, whitelist CORS, throw env vars trong production.
+**Fix:** Thêm `resetDatabase()` trong `db/database.ts`:
+```typescript
+export async function resetDatabase(): Promise<void> {
+  if (!db) return;
+  const tables = ['expenses','expense_splits','trips','groups','group_members',
+                  'notifications','audit_logs','sync_queue'];
+  for (const t of tables) await db.execAsync(`DELETE FROM ${t}`);
+}
+```
+Gọi trong `signOut()`. Force `SecureStore.deleteItemAsync('supabase.auth.token')` thủ công.
 
 ---
 
-## 9. Phương pháp & phạm vi
+#### I13. Password min length 6 — quá yếu cho production
+**Files:** [src/app/(auth)/register.tsx:47](src/app/(auth)/register.tsx#L47), [src/app/(auth)/reset-password.tsx:142](src/app/(auth)/reset-password.tsx#L142)
+**Vấn đề:** 6 ký tự cho phép "123456", "password", "qwerty". Brute force online ~ms nếu rate limit yếu.
 
-- **Tool:** 5 agent chuyên trách, mỗi agent đọc đầy đủ source theo domain rồi tổng hợp finding.
-- **Phạm vi:** Toàn bộ `src/` (149 file, ~23K LOC), `supabase/` migrations + edge functions, root config (`package.json`, `tsconfig.json`, `app.json`, `eslint.config.mjs`, `babel.config.js`).
-- **Không nằm trong phạm vi:** `node_modules/`, generated build artifacts, `.expo/`, lock files. Không kiểm tra runtime behavior (không chạy `npx jest` hoặc `npx tsc`).
-- **Lưu ý chính xác:** Một số finding có đường dẫn file:dòng được agent quan sát ở thời điểm review — nếu file đã thay đổi sau, line number có thể lệch. Luôn dùng grep để xác minh trước khi fix.
+**Fix:**
+- Min 8 ký tự (NIST 800-63B), khuyến nghị 12.
+- Có thể check blacklist 100 passwords phổ biến: `if (COMMON_PASSWORDS.has(password)) throw ...`.
+- Đồng bộ ở Supabase Dashboard → Auth → Password requirements.
 
 ---
 
-*Báo cáo tự động sinh bởi `/code-review-excellence` — 2026-05-07.*
+#### I14. CHECK constraint thiếu trên `expense_splits.amount >= 0` — đã có ✓ nhưng `expenses.amount > 0` không hoàn toàn an toàn
+**Confirmed:** `expenses_amount_check CHECK ((amount > 0))` đã có ✓. `payments_amount_check CHECK ((amount > 0))` ✓. `expense_splits_amount_check CHECK ((amount >= 0))` ✓.
+
+**Tuy nhiên:** Không có **upper bound** trên amount. User tạo expense `amount = 9223372036854775807` (bigint max). Settlement calc dùng JS `number` (53-bit precision) → overflow → balance sai.
+
+**Fix:**
+```sql
+ALTER TABLE expenses ADD CONSTRAINT expenses_amount_max
+  CHECK (amount <= 999999999999); -- 999 tỷ VND, đủ thực tế
+ALTER TABLE payments ADD CONSTRAINT payments_amount_max
+  CHECK (amount <= 999999999999);
+```
+
+---
+
+#### I15. Số lượng split không giới hạn → DoS
+**File:** [src/services/expense.service.ts](src/services/expense.service.ts) → RPC `create_expense`
+**Vấn đề:** `p_splits jsonb` — không cap số phần tử. User tạo expense với 100.000 splits → RPC insert 100k row, blow DB và memory client.
+
+**Fix:** Trong RPC body:
+```sql
+IF jsonb_array_length(p_splits) > 200 THEN
+  RAISE EXCEPTION 'too_many_splits' USING ERRCODE = 'P0001';
+END IF;
+```
+(BR-NF: max 20 người/trip — nhưng UI không enforce ở server-side.)
+
+---
+
+### 4.3 🟢 `[nit]` / 💡 `[suggestion]`
+
+#### N1. Edge Function commit chấp nhận mọi `image/*`
+**File:** [supabase/functions/expense-image-commit/index.ts](supabase/functions/expense-image-commit/index.ts), tương tự `group-avatar-commit`
+**Vấn đề:** Sau khi HEAD object trên R2, chỉ check `content-type.startsWith('image/')`. Client có thể upload PNG/GIF/WebP/SVG dù presign config jpeg. SVG đặc biệt nguy hiểm: chứa `<script>` → XSS nếu render trong WebView/preview.
+
+**Fix:** Strict whitelist `['image/jpeg','image/png','image/webp']`. Block `image/svg+xml`.
+
+#### N2. CORS `*` trong Edge Function
+**File:** [supabase/functions/_shared/auth.ts:53](supabase/functions/_shared/auth.ts#L53)
+**Nhận xét:** Mobile-only OK. Nếu sau này có web client → tighten origin.
+
+#### N3. Helper SQL `is_member/is_admin` thiếu `SET search_path`
+**File:** `docs/technical-specification.md:1012-1029`
+**Nhận xét:** Best practice; không exploitable trong Supabase (RLS chỉ public schema). Thêm cho hygiene.
+
+#### N4. Thiếu index dedup notification
+**Vấn đề:** Query dedup `WHERE user_id=? AND type=? AND actor_id=? AND read_at IS NULL AND created_at >= ?` — index hiện chỉ `(user_id, created_at)` filtered. Khi user có nhiều unread notif (>100), dedup chậm.
+**Fix:** `CREATE INDEX idx_notif_dedup ON notifications(user_id, type, actor_id, created_at DESC) WHERE read_at IS NULL;`
+
+#### N5. `expense-image-commit` không strict TTL trên presign window
+**Nhận xét:** TTL 60s ở r2.ts:40 ✓. Nhưng commit phase không re-verify object age. Nếu attacker delay commit > 60s, presign URL hết hạn — nhưng object đã upload, vẫn commit. Acceptable.
+
+#### N6. Quota presign `group-avatar-presign` chỉ check khi commit → race
+**File:** [supabase/functions/group-avatar-presign/index.ts](supabase/functions/group-avatar-presign/index.ts)
+**Fix:** Insert quota row ngay khi presign, không chờ commit.
+
+#### N7. Test coverage cho RLS/RPC = 0
+**Nhận xét:** 85 test cases ở utils thuần — tốt. Nhưng RLS/RPC chưa có integration test. Trước GA nên thêm `supabase test db` với pgTAP.
+
+#### N8. React 19.2 + RN 0.83.4 + new arch — bleeding edge
+**Nhận xét:** Có thể có incompatibility chưa được audit (đặc biệt `react-native-reanimated 4.2.1` + new arch). Test kỹ trên Android 9 (lowest target).
+
+#### N9. `version: "1.0.0"` không phù hợp closed test
+**File:** [app.json:5](app.json#L5)
+**Fix:** Bump `"1.0.0-beta.1"` hoặc `"0.9.0"` để Play Console phân biệt internal vs production track.
+
+#### N10. SecureStore key `fair_pay_reset_last_sent`
+**Nhận xét:** Tên hợp lệ (alphanumeric + underscore) ✓ — đúng CLAUDE.md.
+
+#### N11. Wordlist check display_name (profanity)
+**Suggestion:** Đối với closed test thì OK (10–100 user thân). Trước public launch cần wordlist filter (display_name "Đụ con mẹ admin" sẽ là tiêu đề notification của tất cả thành viên khác).
+
+#### N12. Không có "Delete Account" flow
+**Play Store policy (từ 2024):** App yêu cầu account → BẮT BUỘC có in-app delete account + URL ngoài. Hiện chưa có.
+**Fix:** Thêm trong Settings → "Xoá tài khoản" → confirm → call RPC `delete_user_data()` (soft delete users, groups admin → cancel, audit log retained).
+
+#### N13. Data Safety Form Play Console
+**Cần khai báo:**
+- Email (collected, encrypted in transit, account management)
+- Display name (collected, encrypted in transit)
+- Financial info (group expense amounts — qualified as "Financial info" → đòi mã hoá in transit + tại rest, có public privacy policy)
+- Photos (avatar group, expense images — "Photos and videos")
+- App activity (audit logs)
+- Device or other IDs (auth.uid)
+
+**Yêu cầu:** Privacy Policy URL công khai (Notion/Github Pages OK).
+
+#### N14. HTML export `escapeHtml` đúng ✓
+**File:** [src/utils/exportHtml.ts:76-83](src/utils/exportHtml.ts#L76) — escape `&<>"'`. Đủ cho PDF render qua expo-print WebView. ✓
+
+#### N15. `extractParams` reset password parse fragment trước query
+**File:** [src/app/(auth)/reset-password.tsx:28-42](src/app/(auth)/reset-password.tsx#L28) — Robust, handle cả `?` và `#`. ✓ Praise.
+
+#### N16. `validateName` regex cover control + zero-width
+**File:** [src/utils/validate.ts:9-10](src/utils/validate.ts#L9) — 🎉 `[praise]` Tốt, chống name spoofing (ZWSP).
+
+---
+
+## 5. Đánh giá tích cực (`[praise]`)
+
+- **🎉 RLS bật toàn bộ 15/15 bảng** — đa số dự án junior không bật → đã làm đúng default.
+- **🎉 RPC pattern chuẩn:** `SECURITY DEFINER` + `SET search_path = public, pg_temp` + REVOKE PUBLIC + GRANT authenticated + `COMMENT ON FUNCTION` ghi errcode → đây là pattern industry standard, hiếm dự án solo dev làm chỉn chu vậy.
+- **🎉 Actor luôn `auth.uid()` ở RPC** — không nhận `p_actor_id` từ client → chống spoofing actor.
+- **🎉 Atomic mutations qua RPC** thay vì Promise.all client-side — đúng tinh thần ACID.
+- **🎉 Notification dedup 10 phút** + setting opt-in per-type — UX cao cấp.
+- **🎉 Cron cleanup notifications scheduled qua pg_cron** — không phụ thuộc client.
+- **🎉 `validateName` cover zero-width + control char** — tinh tế.
+- **🎉 `escapeHtml` ở exportHtml** — XSS-aware export.
+- **🎉 `getAuthUserId()` cache 30s + clear khi logout** — perf + correctness.
+- **🎉 Migration set có header comment + describes intent** — maintainable.
+- **🎉 IME tiếng Việt fix trong BottomSheet (CLAUDE.md note)** — đầu tư UX chi tiết.
+- **🎉 Test suite 85+ pure-function tests** — đủ cover utils thuần.
+
+---
+
+## 6. Hành động ưu tiên (sắp xếp theo P0/P1/P2)
+
+### P0 — bắt buộc fix trước upload bundle lên Play Console
+1. **B1** — Đóng policy `Admins can insert members` (DROP + recreate). [SQL migration mới, 5 phút.]
+2. **B2** — Đóng policy `notif_insert_auth`. [Migration, 2 phút.]
+3. **B3** — Đóng policy `System can insert audit logs`. [Migration, 2 phút.]
+4. **B4** — Thêm auth check `SUPABASE_SERVICE_ROLE_KEY` cho `group-avatar-cleanup`. [Edge function deploy, 10 phút.]
+5. **B5** — IDOR fix cho `expense-image-presign`. [Edge function deploy, 20 phút.]
+6. **B6** — Rotate R2 keys + cập nhật `supabase secrets set`. [Cloudflare + CLI, 15 phút.]
+
+**Tổng:** ~1h dev. Test lại flow upload + approve join + create expense sau khi fix.
+
+### P1 — fix trong tuần đầu closed test
+7. **I1** — Thêm `WITH CHECK` cho 5 UPDATE policies.
+8. **I2** — Tighten `payments.INSERT` (self-only hoặc admin-only).
+9. **I3** — `create_notifications_batch` validate recipient ∈ group.
+10. **I4** — Thêm `assertRole()` ở `approveJoinRequest`, `createExpense`.
+11. **I5** — Migration length CHECK cho 10 text columns.
+12. **I8** — Bỏ permissions dư + `SYSTEM_ALERT_WINDOW`.
+13. **N12** — Thêm "Delete Account" trong Settings (Play Store policy).
+14. **N13** — Publish Privacy Policy URL + fill Data Safety form.
+
+**Tổng:** ~6h dev.
+
+### P2 — trước GA (v1.0 public)
+15. I6, I7, I9, I10, I11, I12, I13, I14, I15
+16. Wordlist profanity filter
+17. Add pgTAP integration tests cho RLS/RPC
+18. Bump password min → 8/12
+19. Strict image MIME whitelist
+
+---
+
+## 7. Test cases bắt buộc sau fix
+
+```bash
+# 1. RLS leo quyền
+# (User B, không phải admin/member group G1)
+INSERT INTO group_members (group_id, user_id, role) VALUES ('<G1>', '<B>', 'admin');
+# EXPECTED: ERROR — policy violation.
+
+# 2. Notification spoof
+INSERT INTO notifications (user_id, actor_id, type, group_id, title)
+VALUES ('<victim>', '<fake>', 'expense.created', '<G>', 'phishing');
+# EXPECTED: ERROR — RLS violation.
+
+# 3. Audit spoof
+INSERT INTO audit_logs (group_id, actor_id, action) VALUES ('<G>', '<X>', 'fake');
+# EXPECTED: ERROR.
+
+# 4. Group avatar cleanup auth
+curl -X POST $FN_URL/group-avatar-cleanup -H "apikey: <ANON>"
+# EXPECTED: 401.
+
+# 5. Expense image IDOR
+# (User A in G1 presign cho expenseId thuộc G2)
+POST /expense-image-presign { expenseId: '<G2 expense>', tripId: '<G2 trip>' }
+# EXPECTED: 403.
+
+# 6. Payment manipulation
+# (Member B tạo payment from C to D, all in group G — B không phải C/D)
+INSERT INTO payments (group_id, from_member_id, to_member_id, amount) VALUES (...);
+# EXPECTED (sau fix I2): ERROR.
+
+npx jest        # 85 tests phải pass
+npx tsc --noEmit  # zero TS error
+```
+
+---
+
+## 8. Checklist Play Console — Closed Test submission
+
+- [ ] **P0 fixes** hoàn tất (B1–B6)
+- [ ] Bump version → `1.0.0-beta.1`
+- [ ] Bỏ `SYSTEM_ALERT_WINDOW`, `READ_MEDIA_AUDIO/VIDEO` khỏi manifest
+- [ ] Whitelist `fairpay://reset-password`, `fairpay://oauth-callback` ở Supabase Dashboard → Auth → URL Configuration
+- [ ] Tạo Privacy Policy URL (Notion/Github Pages, public)
+- [ ] Điền Data Safety form (email, display name, financial info, photos, app activity, device ID)
+- [ ] Thêm "Delete Account" flow trong Settings + URL ngoài (Play Console policy 2024)
+- [ ] Test trên thiết bị thật (min Android 9, target Android 14)
+- [ ] Test flow reset password thật end-to-end (gửi email → click link trên cùng phone → đổi password → login lại)
+- [ ] Test logout → login user khác — kiểm tra không leak data cũ qua SQLite
+- [ ] Smoke test toàn bộ Play Store internal track (10 phút manual QA)
+- [ ] Tạo app icon hi-res 512×512 cho Play Console listing
+- [ ] Screenshots 4–8 ảnh phone + 2 ảnh tablet
+
+---
+
+## 9. Kết luận
+
+Fair Pay là dự án **kỹ thuật chỉn chu**, kiến trúc RLS + RPC pattern đúng tinh thần production. Tuy vậy có **3 lỗ hổng RLS LIVE trên DB** và **2 Edge Function bug** đủ nghiêm trọng để chặn closed test. Toàn bộ P0 fix được trong ~1h — sau đó app đủ an toàn cho 10–100 closed tester.
+
+**Phán quyết:** 🔄 **Request Changes** — fix toàn bộ §4.1 trước khi upload bundle. Mời ping lại khi hoàn tất, sẽ verify lại policies trên Supabase.
+
+---
+
+> Báo cáo này được sinh bởi `/code-review-excellence`. Tham chiếu chi tiết: xem CLAUDE.md, `docs/technical-specification.md`, và `supabase/migrations/`.
