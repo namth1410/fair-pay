@@ -18,7 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#D1FAE5"
       },
-      "package": "com.fairpay.app"
+      "package": "com.throneware.fairpay"
     },
     "plugins": [
       [
@@ -90,7 +90,7 @@
     },
     "owner": "namth1410",
     "ios": {
-      "bundleIdentifier": "com.fairpay.app"
+      "bundleIdentifier": "com.throneware.fairpay"
     }
   }
 }

@@ -1,0 +1,1 @@
+https://namth1410.github.io/fairpay-privacy/delete-account.html
