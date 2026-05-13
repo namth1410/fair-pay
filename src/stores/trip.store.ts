@@ -59,7 +59,7 @@ interface TripState {
   isLoadingExpenses: boolean;
 
   loadTrips: (groupId: string) => Promise<void>;
-  addTrip: (groupId: string, name: string, type?: Trip['type']) => Promise<void>;
+  addTrip: (groupId: string, name: string) => Promise<void>;
   toggleTripStatus: (trip: Trip) => Promise<void>;
   renameTrip: (tripId: string, name: string) => Promise<void>;
   clearCurrentTrip: (tripId: string) => Promise<void>;
@@ -77,6 +77,7 @@ interface TripState {
     splits: SplitResult[];
     note?: string;
     imageUrl?: string | null;
+    date?: string;
   }) => Promise<void>;
   removeExpense: (expenseId: string, tripId: string) => Promise<void>;
 
@@ -118,8 +119,8 @@ export const useTripStore = create<TripState>((set, get) => ({
     }
   },
 
-  addTrip: async (groupId, name, type) => {
-    await createTrip(groupId, name, type);
+  addTrip: async (groupId, name) => {
+    await createTrip(groupId, name);
     await get().loadTrips(groupId);
   },
 
@@ -184,6 +185,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       splits: params.splits,
       note: params.note,
       imageUrl: params.imageUrl,
+      date: params.date,
     });
     await Promise.all([
       get().loadExpenses(params.tripId),

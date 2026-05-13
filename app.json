@@ -16,7 +16,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F7F7F7"
+        "backgroundColor": "#D1FAE5"
       },
       "package": "com.fairpay.app"
     },
@@ -29,7 +29,6 @@
       ],
       "expo-secure-store",
       "expo-sqlite",
-      "expo-web-browser",
       "expo-font",
       [
         "expo-image-picker",
@@ -70,7 +69,9 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-google-signin/google-signin",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {

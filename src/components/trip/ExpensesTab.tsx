@@ -2,12 +2,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Button, ScrollShadow } from 'heroui-native';
 import { Receipt } from 'lucide-react-native';
-import React, { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { SectionList, StyleSheet, View } from 'react-native';
 
+import { useAppTheme } from '../../hooks/useAppTheme';
 import type { ExpenseWithSplits } from '../../services/expense.service';
 import type { GroupMember } from '../../services/group.service';
+import { groupExpensesByDay } from '../../utils/expenseGrouping';
 import {
+  AppText,
   ConfirmDialog,
   EmptyState,
   ListSkeleton,
@@ -28,6 +31,7 @@ export const ExpensesTab = React.memo(function ExpensesTab({
   tripId, tripStatus, expenses, members, isLoading,
   onDeleteExpense,
 }: ExpensesTabProps) {
+  const c = useAppTheme();
   const [deleteTarget, setDeleteTarget] = useState<ExpenseWithSplits | null>(null);
   const isOpen = tripStatus === 'open';
 
@@ -40,6 +44,8 @@ export const ExpensesTab = React.memo(function ExpensesTab({
   const handleAddExpense = useCallback(() => {
     router.push(`/trips/${tripId}/expenses/new`);
   }, [tripId]);
+
+  const sections = useMemo(() => groupExpensesByDay(expenses), [expenses]);
 
   return (
     <View style={styles.tabContent}>
@@ -57,8 +63,8 @@ export const ExpensesTab = React.memo(function ExpensesTab({
         <ListSkeleton count={3} />
       ) : (
         <ScrollShadow LinearGradientComponent={LinearGradient}>
-          <FlatList
-            data={expenses}
+          <SectionList
+            sections={sections}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <SwipeableCard
@@ -69,6 +75,14 @@ export const ExpensesTab = React.memo(function ExpensesTab({
                 trailing={<Money value={item.amount} variant="default" tone="primary" />}
               />
             )}
+            renderSectionHeader={({ section }) => (
+              <View style={[styles.sectionHeader, { backgroundColor: c.background }]}>
+                <AppText variant="meta" tone="muted" weight="semibold">
+                  {section.title}
+                </AppText>
+              </View>
+            )}
+            stickySectionHeadersEnabled={false}
             contentContainerStyle={expenses.length === 0 ? styles.emptyContainer : styles.list}
             ListEmptyComponent={<EmptyState icon={Receipt} title="Chưa có khoản chi nào" />}
           />
@@ -96,4 +110,9 @@ const styles = StyleSheet.create({
   addBtnWrap: { alignSelf: 'flex-start' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
+  sectionHeader: {
+    paddingTop: 10,
+    paddingBottom: 6,
+    paddingHorizontal: 4,
+  },
 });

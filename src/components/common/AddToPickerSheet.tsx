@@ -26,7 +26,7 @@ import {
   filterTripsBySearch,
   groupTripsByGroup,
 } from '../../utils/recentTrips';
-import { AppText, Avatar, EmptyState } from '../ui';
+import { AppText, Avatar, DismissKeyboardView, EmptyState } from '../ui';
 
 interface AddToPickerSheetProps {
   isOpen: boolean;
@@ -156,6 +156,7 @@ export function AddToPickerSheet({
           android_keyboardInputMode="adjustResize"
         >
           <View style={styles.container}>
+            <DismissKeyboardView style={styles.flex}>
             <View style={styles.header}>
               <BottomSheet.Title>Chọn nhóm và chuyến</BottomSheet.Title>
             </View>
@@ -315,6 +316,7 @@ export function AddToPickerSheet({
                 )}
               </BottomSheetScrollView>
             )}
+            </DismissKeyboardView>
           </View>
         </BottomSheet.Content>
       </BottomSheet.Portal>
@@ -488,6 +490,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     flex: 1,
   },
+  flex: { flex: 1 },
   header: {
     paddingVertical: 8,
   },

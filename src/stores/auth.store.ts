@@ -1,6 +1,9 @@
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
 import { type Session, type User } from '@supabase/supabase-js';
 import { makeRedirectUri } from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
 import { create } from 'zustand';
 
 import { APP_SCHEME } from '../config/constants';
@@ -100,42 +103,59 @@ export const useAuthStore = create<AuthState>((set) => ({
   signInWithGoogle: async () => {
     set({ isLoading: true });
     try {
-      const redirectUri = makeRedirectUri({ scheme: APP_SCHEME });
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUri,
-          skipBrowserRedirect: true,
-        },
+      // Android: throws nếu device không có Google Play Services (HarmonyOS,
+      // Amazon Fire, emulator không có GMS image). iOS: no-op.
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
       });
 
-      if (error) throw error;
-      if (!data.url) throw new Error('Không nhận được URL đăng nhập Google');
+      // Native account picker — bypass hoàn toàn browser/custom scheme,
+      // né được bug MIUI strip deep link redirect.
+      const userInfo = await GoogleSignin.signIn();
 
-      const result = await WebBrowser.openAuthSessionAsync(
-        data.url,
-        redirectUri
-      );
+      // Response shape khác nhau giữa version: v13+ → `{ data: { idToken } }`,
+      // v12- → flat `{ idToken }`. Handle cả 2 defensively.
+      const idToken =
+        (userInfo as { data?: { idToken?: string | null }; idToken?: string | null })
+          ?.data?.idToken ??
+        (userInfo as { idToken?: string | null })?.idToken ??
+        null;
 
-      if (result.type === 'success') {
-        const url = result.url;
-        const fragment = url.split('#')[1];
-        if (!fragment) throw new Error('Đăng nhập Google thất bại — không nhận được token');
-        const params = new URLSearchParams(fragment);
-        const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
-
-        if (accessToken && refreshToken) {
-          const { data: sessionData, error: sessionError } =
-            await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-          if (sessionError) throw sessionError;
-          set({ session: sessionData.session, user: sessionData.user });
-        }
+      if (!idToken) {
+        throw new Error('Đăng nhập Google thất bại — không nhận được ID token');
       }
+
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: idToken,
+        });
+
+      if (sessionError) throw sessionError;
+
+      set({
+        session: sessionData.session,
+        user: sessionData.user,
+      });
+    } catch (e: unknown) {
+      const code = (e as { code?: string | number })?.code;
+      if (code === statusCodes.SIGN_IN_CANCELLED) return;
+      if (code === statusCodes.IN_PROGRESS) {
+        throw new Error('Đang xử lý đăng nhập, vui lòng đợi...');
+      }
+      if (code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        throw new Error(
+          'Thiết bị không hỗ trợ Google Play Services. Vui lòng dùng email/mật khẩu.'
+        );
+      }
+      if (code === 'DEVELOPER_ERROR' || code === 10) {
+        // SHA-1 / package mismatch — chỉ xảy ra với misconfiguration build.
+        if (__DEV__) console.error('[auth] Google DEVELOPER_ERROR:', e);
+        throw new Error(
+          'Cấu hình đăng nhập Google chưa đúng. Vui lòng báo team hỗ trợ.'
+        );
+      }
+      throw e;
     } finally {
       set({ isLoading: false });
     }
@@ -177,6 +197,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: async () => {
+    // Clear local Google account cache trước. Nếu không, lần login Google
+    // kế tiếp sẽ không show account picker (vì đã cache account cũ) —
+    // UX confusing trên thiết bị chia sẻ. Idempotent: gọi khi chưa sign-in OK.
+    try {
+      await GoogleSignin.signOut();
+    } catch (e) {
+      if (__DEV__) console.warn('[auth] GoogleSignin.signOut failed:', e);
+    }
+
     await supabase.auth.signOut();
     clearAuthCache();
     set({ session: null, user: null, profile: null });

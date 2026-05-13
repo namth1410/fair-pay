@@ -1,7 +1,7 @@
 import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button, useToast } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import {
@@ -11,7 +11,7 @@ import {
   submitFeedback,
 } from '../../services/feedback.service';
 import { getErrorMessage } from '../../utils/error';
-import { AppText } from '../ui';
+import { AppText, DismissKeyboardView } from '../ui';
 
 interface FeedbackSheetProps {
   isOpen: boolean;
@@ -47,6 +47,7 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
 
   const handleSubmit = async () => {
     if (busy) return;
+    Keyboard.dismiss();
     setFormError('');
     setBusy(true);
     try {
@@ -76,6 +77,7 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
           android_keyboardInputMode="adjustResize"
         >
           <BottomSheetView style={styles.container}>
+            <DismissKeyboardView>
             <View style={styles.header}>
               <BottomSheet.Title>Gửi góp ý</BottomSheet.Title>
             </View>
@@ -120,6 +122,7 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
                 <Button.Label>{busy ? 'Đang gửi...' : 'Gửi góp ý'}</Button.Label>
               </Button>
             </View>
+            </DismissKeyboardView>
           </BottomSheetView>
         </BottomSheet.Content>
       </BottomSheet.Portal>

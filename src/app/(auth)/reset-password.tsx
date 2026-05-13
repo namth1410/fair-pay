@@ -4,6 +4,7 @@ import { Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -12,7 +13,7 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, PasswordField } from '../../components/ui';
+import { AnimatedEntrance, AppText, DismissKeyboardView, PasswordField } from '../../components/ui';
 import { supabase } from '../../config/supabase';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
@@ -147,6 +148,7 @@ export default function ResetPasswordScreen() {
       setError('Mật khẩu xác nhận không khớp');
       return;
     }
+    Keyboard.dismiss();
     setError('');
     try {
       await updatePassword(password);
@@ -162,7 +164,7 @@ export default function ResetPasswordScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <BrandDecoration />
-      <View style={styles.content}>
+      <DismissKeyboardView style={styles.content}>
         <AnimatedEntrance delay={0}>
           <View style={styles.brand}>
             <Wordmark size="md" />
@@ -261,7 +263,7 @@ export default function ResetPasswordScreen() {
             </AnimatedEntrance>
           </>
         )}
-      </View>
+      </DismissKeyboardView>
     </KeyboardAvoidingView>
   );
 }

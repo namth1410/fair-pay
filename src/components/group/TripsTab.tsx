@@ -4,68 +4,42 @@ import { MapPin } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
+import { useAppTheme } from '../../hooks/useAppTheme';
 import type { Trip } from '../../services/trip.service';
+import { CreateTripSheet } from '../trip/CreateTripSheet';
 import {
   AppCard,
   AppText,
-  AppTextField,
-  ChipPicker,
   EmptyState,
-  FormReveal,
   ListSkeleton,
-  TripIcon,
 } from '../ui';
-
-const TRIP_TYPE_LABELS: Record<string, string> = {
-  travel: 'Du lịch',
-  meal: 'Ăn uống',
-  event: 'Sự kiện',
-  other: 'Khác',
-};
-
-const TRIP_TYPE_OPTIONS = [
-  { key: 'travel' as const, label: 'Du lịch' },
-  { key: 'meal' as const, label: 'Ăn uống' },
-  { key: 'event' as const, label: 'Sự kiện' },
-  { key: 'other' as const, label: 'Khác' },
-];
 
 interface TripsTabProps {
   trips: Trip[];
   isLoading: boolean;
   isAdmin: boolean;
+  groupId: string;
   onTripPress: (tripId: string) => void;
   onToggleStatus: (trip: Trip) => void;
-  onCreateTrip: (name: string, type: Trip['type']) => Promise<void>;
+  onCreateSuccess?: (name: string) => void;
 }
 
 export const TripsTab = React.memo(function TripsTab({
-  trips, isLoading, isAdmin, onTripPress, onToggleStatus, onCreateTrip,
+  trips, isLoading, isAdmin, groupId, onTripPress, onToggleStatus, onCreateSuccess,
 }: TripsTabProps) {
-  const [showForm, setShowForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<Trip['type']>('other');
-  const [busy, setBusy] = useState(false);
-
-  const handleCreate = async () => {
-    const name = newName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try {
-      await onCreateTrip(name, newType);
-      setNewName('');
-      setShowForm(false);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const c = useAppTheme();
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   const renderTrip = ({ item }: { item: Trip }) => (
     <AppCard
       title={item.name}
-      subtitle={`${TRIP_TYPE_LABELS[item.type]} · ${item.status === 'open' ? 'Đang mở' : 'Đã đóng'}`}
+      subtitle={item.status === 'open' ? 'Đang mở' : 'Đã đóng'}
       onPress={() => onTripPress(item.id)}
-      leading={<TripIcon value={item.type} size={40} />}
+      leading={
+        <View style={[styles.iconWrap, { backgroundColor: c.primarySoft }]}>
+          <MapPin size={20} color={c.foreground} strokeWidth={1.75} />
+        </View>
+      }
       trailing={
         isAdmin ? (
           <Pressable
@@ -87,33 +61,11 @@ export const TripsTab = React.memo(function TripsTab({
     <>
       {isAdmin && (
         <View style={styles.sectionActions}>
-          <Button variant="primary" size="sm" onPress={() => setShowForm(!showForm)}>
-            <Button.Label>{showForm ? 'Hủy' : 'Tạo chuyến'}</Button.Label>
+          <Button variant="primary" size="sm" onPress={() => setIsSheetOpen(true)}>
+            <Button.Label>Tạo chuyến</Button.Label>
           </Button>
         </View>
       )}
-
-      <FormReveal isOpen={showForm}>
-        <AppTextField
-          placeholder="Tên chuyến (VD: Đà Lạt T4/2026)"
-          value={newName}
-          onChangeText={setNewName}
-          autoFocus
-        />
-        <ChipPicker
-          options={TRIP_TYPE_OPTIONS}
-          selected={newType}
-          onSelect={setNewType}
-        />
-        <Button
-          variant="primary"
-          size="sm"
-          onPress={handleCreate}
-          isDisabled={busy || !newName.trim()}
-        >
-          <Button.Label>{busy ? 'Đang tạo...' : 'Tạo'}</Button.Label>
-        </Button>
-      </FormReveal>
 
       {isLoading && trips.length === 0 ? (
         <ListSkeleton count={3} />
@@ -128,6 +80,13 @@ export const TripsTab = React.memo(function TripsTab({
           />
         </ScrollShadow>
       )}
+
+      <CreateTripSheet
+        isOpen={isSheetOpen}
+        onOpenChange={setIsSheetOpen}
+        groupId={groupId}
+        onSuccess={onCreateSuccess}
+      />
     </>
   );
 });
@@ -136,4 +95,11 @@ const styles = StyleSheet.create({
   sectionActions: { paddingHorizontal: 16, paddingBottom: 8 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

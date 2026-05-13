@@ -1,13 +1,13 @@
 import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { TRIP_NAME_MAX_LENGTH } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText } from '../ui';
+import { AppText, DismissKeyboardView } from '../ui';
 
 interface RenameTripSheetProps {
   isOpen: boolean;
@@ -56,6 +56,7 @@ export function RenameTripSheet({
       onOpenChange(false);
       return;
     }
+    Keyboard.dismiss();
     setFormError('');
     setBusy(true);
     try {
@@ -81,6 +82,7 @@ export function RenameTripSheet({
           android_keyboardInputMode="adjustResize"
         >
           <BottomSheetView style={styles.container}>
+            <DismissKeyboardView>
             <View style={styles.header}>
               <BottomSheet.Title>Đổi tên chuyến đi</BottomSheet.Title>
             </View>
@@ -122,6 +124,7 @@ export function RenameTripSheet({
                 <Button.Label>{busy ? 'Đang lưu...' : 'Lưu tên mới'}</Button.Label>
               </Button>
             </View>
+            </DismissKeyboardView>
           </BottomSheetView>
         </BottomSheet.Content>
       </BottomSheet.Portal>

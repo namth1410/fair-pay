@@ -2,14 +2,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Button, ScrollShadow, useToast } from 'heroui-native';
 import { Wallet } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
-import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, EmptyState, FormReveal, Money, MoneyChipsDock, MoneyTextField, SwipeableCard } from '../ui';
+import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, DismissKeyboardView, EmptyState, FormReveal, Money, MoneyChipsDock, MoneyTextField, SwipeableCard } from '../ui';
 
 interface SettlementEntry {
   from: string;
@@ -76,6 +76,7 @@ export const SettlementTab = React.memo(function SettlementTab({
       toast.show({ variant: 'danger', label: 'Lỗi', description: 'Người trả và người nhận không được giống nhau' });
       return;
     }
+    Keyboard.dismiss();
     setBusy(true);
     try {
       await onAddPayment({
@@ -97,7 +98,11 @@ export const SettlementTab = React.memo(function SettlementTab({
   return (
     <View style={styles.flex}>
     <ScrollShadow LinearGradientComponent={LinearGradient}>
-    <ScrollView contentContainerStyle={styles.list}>
+    <ScrollView
+      contentContainerStyle={styles.list}
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled"
+    >
       {settlements.length > 0 && (
         <View style={styles.section}>
           <AppText variant="subtitle" weight="semibold">Đề xuất quyết toán</AppText>
@@ -125,51 +130,53 @@ export const SettlementTab = React.memo(function SettlementTab({
         ) : null}
 
         <FormReveal isOpen={isOpen && showForm}>
-          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả tiền</AppText>
-          <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
+          <DismissKeyboardView>
+            <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả tiền</AppText>
+            <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
 
-          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
-          <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
+            <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
+            <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
 
-          <MoneyTextField
-            placeholder="Số tiền (VND)"
-            value={payAmountStr}
-            onChangeText={setPayAmountStr}
-            showSuggestions={false}
-            onFocus={() => setAmountFocused(true)}
-            onBlur={() => setAmountFocused(false)}
-            accessibilityLabel="Số tiền thanh toán"
-          />
-          <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" />
+            <MoneyTextField
+              placeholder="Số tiền (VND)"
+              value={payAmountStr}
+              onChangeText={setPayAmountStr}
+              showSuggestions={false}
+              onFocus={() => setAmountFocused(true)}
+              onBlur={() => setAmountFocused(false)}
+              accessibilityLabel="Số tiền thanh toán"
+            />
+            <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" />
 
-          {payFrom && payTo && payFrom !== payTo && (
-            <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>
-              <AppText variant="meta" tone="muted" style={styles.previewLabel}>Số dư hiện tại</AppText>
-              {[payFrom, payTo].map((memberId) => {
-                const bal = balances.find((b) => b.memberId === memberId)?.balance || 0;
-                return (
-                  <View key={memberId} style={styles.previewRow}>
-                    <AppText variant="caption">{getMemberName(memberId)}</AppText>
-                    <Money
-                      value={Math.abs(bal)}
-                      variant="compact"
-                      tone={bal >= 0 ? 'success' : 'danger'}
-                      showSign
-                    />
-                  </View>
-                );
-              })}
-            </View>
-          )}
+            {payFrom && payTo && payFrom !== payTo && (
+              <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>
+                <AppText variant="meta" tone="muted" style={styles.previewLabel}>Số dư hiện tại</AppText>
+                {[payFrom, payTo].map((memberId) => {
+                  const bal = balances.find((b) => b.memberId === memberId)?.balance || 0;
+                  return (
+                    <View key={memberId} style={styles.previewRow}>
+                      <AppText variant="caption">{getMemberName(memberId)}</AppText>
+                      <Money
+                        value={Math.abs(bal)}
+                        variant="compact"
+                        tone={bal >= 0 ? 'success' : 'danger'}
+                        showSign
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
-          <Button
-            variant="primary"
-            size="md"
-            onPress={handleSubmit}
-            isDisabled={busy || !payFrom || !payTo || !payAmountStr.trim()}
-          >
-            <Button.Label>{busy ? 'Đang ghi...' : 'Ghi nhận'}</Button.Label>
-          </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onPress={handleSubmit}
+              isDisabled={busy || !payFrom || !payTo || !payAmountStr.trim()}
+            >
+              <Button.Label>{busy ? 'Đang ghi...' : 'Ghi nhận'}</Button.Label>
+            </Button>
+          </DismissKeyboardView>
         </FormReveal>
 
         {payments.map((pay) => (

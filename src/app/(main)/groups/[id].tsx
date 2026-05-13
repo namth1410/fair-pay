@@ -75,13 +75,12 @@ export default function GroupDetailScreen() {
     }))
   );
   const {
-    trips, tripsLoading, loadTrips, addTrip, toggleTripStatus,
+    trips, tripsLoading, loadTrips, toggleTripStatus,
   } = useTripStore(
     useShallow((s) => ({
       trips: s.trips,
       tripsLoading: s.isLoadingTrips,
       loadTrips: s.loadTrips,
-      addTrip: s.addTrip,
       toggleTripStatus: s.toggleTripStatus,
     }))
   );
@@ -181,16 +180,6 @@ export default function GroupDetailScreen() {
   );
 
   // ── Event handlers ──
-
-  const handleCreateTrip = async (name: string, type: Trip['type']) => {
-    if (!id) return;
-    try {
-      await addTrip(id, name, type);
-      toast.show({ variant: 'success', label: 'Đã tạo chuyến đi', description: name });
-    } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
-    }
-  };
 
   const handleShare = async () => {
     if (!group || sharingRef.current) return;
@@ -355,9 +344,12 @@ export default function GroupDetailScreen() {
                 trips={trips}
                 isLoading={tripsLoading}
                 isAdmin={isAdmin}
+                groupId={id ?? ''}
                 onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
                 onToggleStatus={handleToggleTripRequest}
-                onCreateTrip={handleCreateTrip}
+                onCreateSuccess={(name) =>
+                  toast.show({ variant: 'success', label: 'Đã tạo chuyến đi', description: name })
+                }
               />
             </View>
             <View style={{ width: W }}>

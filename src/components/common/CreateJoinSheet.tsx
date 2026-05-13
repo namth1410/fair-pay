@@ -1,12 +1,12 @@
 import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText, SectionTabs } from '../ui';
+import { AppText, DismissKeyboardView, SectionTabs } from '../ui';
 
 type Mode = 'create' | 'join';
 
@@ -56,6 +56,7 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
   const handleSubmit = async () => {
     const trimmed = valueRef.current.trim();
     if (!trimmed || busy) return;
+    Keyboard.dismiss();
     setFormError('');
     setBusy(true);
     try {
@@ -91,6 +92,7 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
           android_keyboardInputMode="adjustResize"
         >
           <BottomSheetView style={styles.container}>
+            <DismissKeyboardView>
             <View style={styles.header}>
               <BottomSheet.Title>
                 {isCreate ? 'Tạo nhóm mới' : 'Tham gia nhóm'}
@@ -150,6 +152,7 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
                 </Button>
               </View>
             </View>
+            </DismissKeyboardView>
           </BottomSheetView>
         </BottomSheet.Content>
       </BottomSheet.Portal>

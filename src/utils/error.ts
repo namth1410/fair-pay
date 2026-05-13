@@ -40,6 +40,7 @@ const ERROR_MAP: Record<string, string> = {
   invalid_amount: 'Số tiền không hợp lệ',
   invalid_splits: 'Chia tiền không hợp lệ',
   splits_sum_mismatch: 'Tổng chia tiền không khớp số tiền',
+  invalid_date_future: 'Không thể chọn ngày trong tương lai',
   request_not_found: 'Yêu cầu không tồn tại hoặc đã được xử lý',
 
   // Feedback rate limit (DB trigger — xem migration feedback_daily_limit_trigger)
@@ -50,6 +51,10 @@ const ERROR_MAP: Record<string, string> = {
   'Failed to fetch': 'Không có kết nối mạng',
   'Network request failed': 'Không có kết nối mạng',
   'TypeError: Network request failed': 'Không có kết nối mạng',
+
+  // Google Sign-In (native)
+  'unacceptable audience in id_token':
+    'Cấu hình Google Sign-In không khớp. Vui lòng báo team hỗ trợ.',
 };
 
 export function getErrorMessage(error: unknown): string {

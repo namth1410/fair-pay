@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { Button } from 'heroui-native';
 import { useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   AnimatedEntrance,
   AppText,
   AppTextField,
+  DismissKeyboardView,
   PasswordField,
 } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
@@ -52,6 +54,7 @@ export default function RegisterScreen() {
       setError('Mật khẩu xác nhận không khớp');
       return;
     }
+    Keyboard.dismiss();
     setError('');
     try {
       await signUpWithEmail(email, password, displayName);
@@ -67,7 +70,7 @@ export default function RegisterScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <BrandDecoration />
-      <View style={styles.content}>
+      <DismissKeyboardView style={styles.content}>
         <AnimatedEntrance delay={0}>
           <View style={styles.brand}>
             <Wordmark size="md" />
@@ -154,7 +157,7 @@ export default function RegisterScreen() {
             </Link>
           </View>
         </AnimatedEntrance>
-      </View>
+      </DismissKeyboardView>
     </KeyboardAvoidingView>
   );
 }

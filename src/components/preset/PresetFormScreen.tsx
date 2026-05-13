@@ -2,7 +2,7 @@ import { router, Stack } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
 import { Check, ChevronLeft } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,7 +16,7 @@ import { usePresetStore } from '../../stores/preset.store';
 import type { PresetSplitEntry } from '../../types/database.types';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
-import { AppText, ChipPicker, MoneyChipsDock } from '../ui';
+import { AppText, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
 
 interface PresetFormScreenProps {
   /** Nếu cung cấp → edit mode; preset được tra cứu trong store. */
@@ -330,6 +330,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
       }
     }
 
+    Keyboard.dismiss();
     setBusy(true);
     try {
       const params = {
@@ -380,12 +381,13 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
         style={styles.flex}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
         // bottomOffset lớn khi có input focus để KeyboardAwareScrollView scroll
         // input lên đủ cao trên keyboard + dock chip (~46px) + buffer.
         bottomOffset={anyInputFocused ? 70 : 20}
       >
-        <View style={styles.body}>
+        <DismissKeyboardView style={styles.body}>
           <TextInput
             placeholder="Tên preset"
             placeholderTextColor={c.muted}
@@ -652,7 +654,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
               </Button.Label>
             </Button>
           </View>
-        </View>
+        </DismissKeyboardView>
       </KeyboardAwareScrollView>
 
       <MoneyChipsDock

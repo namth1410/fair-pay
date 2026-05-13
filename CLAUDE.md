@@ -99,6 +99,13 @@ src/
 - Sub-components dùng `React.memo()`. Nguồn data linh hoạt: props, store (Zustand), context — chọn cái hợp lý nhất theo từng case (data đã có sẵn ở parent → props; cross-tree shared state → store/context). Không có quy tắc cứng.
 - `useAppTheme()` trả về `{ isDark, ...colors }` — KHÔNG import `useIsDark()` riêng (deprecated).
 
+### Tap-ngoài dismiss keyboard
+- Mọi screen/sheet chứa `TextInput`/`AppTextField`/`MoneyTextField`/`BottomSheetTextInput` PHẢI wrap content bằng `<DismissKeyboardView>` (từ `src/components/ui/DismissKeyboardView.tsx`) để tap empty area → keyboard dismiss. Component là Pressable không có visual feedback (disable ripple/sound) + `accessible={false}` — nested Pressable children (Button/ChipPicker/Link/Input) vẫn nhận tap đúng nhờ RN responder composition.
+- Trong `KeyboardAwareScrollView`/`ScrollView` có input, thêm `keyboardDismissMode="on-drag"` + `keyboardShouldPersistTaps="handled"`. Wrap children với `DismissKeyboardView` để tap empty area cũng dismiss.
+- Trong BottomSheet có input: wrap content **bên trong** `BottomSheetView`/`BottomSheetScrollView` (KHÔNG thay thế) — giữ nguyên `keyboardBlurBehavior="restore"` cho tap-overlay flow. Pressable wrap không xung đột với gorhom drag-to-close gesture.
+- `MoneyChipsDock` render là **sibling** (ngoài scroll) — không nằm trong wrap → tap chip vẫn fill amount, keyboard giữ mở.
+- Reference: 4 auth screens, ExpenseFormScreen, PresetFormScreen, SettlementTab, 7 BottomSheet input sheets.
+
 ### TextInput trong BottomSheet (gorhom / heroui-native)
 - IME tiếng Việt (telex/VNI) **bị loạn dấu/nhân ký tự** khi gõ trong `BottomSheetTextInput` controlled. Mọi re-render trong lúc compose dấu sẽ reset IME state. Lỗi gốc ở RN (issue #19339 đã lock không có resolution); gorhom #902/#1494 là cùng triệu chứng. Input ngoài bottom sheet KHÔNG bị.
 - Pattern fix bắt buộc: input **uncontrolled** — `defaultValue=""` + `onChangeText` ghi vào `useRef` (không trigger render). Track riêng `hasContent` boundary boolean để bật/tắt nút submit (chỉ flip khi rỗng↔không rỗng, không re-render mỗi keystroke). Đọc giá trị từ ref ở `handleSubmit`.

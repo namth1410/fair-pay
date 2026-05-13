@@ -1,7 +1,7 @@
 import { Button, useToast } from 'heroui-native';
 import { ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
 import { TabHeader } from '../../../components/header/TabHeader';
@@ -40,6 +40,7 @@ export default function SettingsScreen() {
 
   const handleSaveName = async () => {
     if (!newName.trim() || !profile) return;
+    Keyboard.dismiss();
     setIsSaving(true);
     try {
       await updateDisplayName(newName);
@@ -102,6 +103,8 @@ export default function SettingsScreen() {
         style={{ flex: 1, backgroundColor: c.background }}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
       >
         {/* ── Hồ sơ ── */}
         <AppText variant="label" tone="muted" style={styles.firstSectionTitle}>

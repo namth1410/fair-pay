@@ -1,13 +1,13 @@
 import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { DISPLAY_NAME_MAX_LENGTH } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
-import { AppText } from '../ui';
+import { AppText, DismissKeyboardView } from '../ui';
 
 interface RenameMemberSheetProps {
   isOpen: boolean;
@@ -58,6 +58,7 @@ export function RenameMemberSheet({
       onOpenChange(false);
       return;
     }
+    Keyboard.dismiss();
     setFormError('');
     setBusy(true);
     try {
@@ -83,6 +84,7 @@ export function RenameMemberSheet({
           android_keyboardInputMode="adjustResize"
         >
           <BottomSheetView style={styles.container}>
+            <DismissKeyboardView>
             <View style={styles.header}>
               <BottomSheet.Title>Đổi tên thành viên</BottomSheet.Title>
             </View>
@@ -124,6 +126,7 @@ export function RenameMemberSheet({
                 <Button.Label>{busy ? 'Đang lưu...' : 'Lưu tên mới'}</Button.Label>
               </Button>
             </View>
+            </DismissKeyboardView>
           </BottomSheetView>
         </BottomSheet.Content>
       </BottomSheet.Portal>

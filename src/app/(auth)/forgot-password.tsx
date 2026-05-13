@@ -2,6 +2,7 @@ import { Link, useRouter } from 'expo-router';
 import { Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, AppTextField } from '../../components/ui';
+import { AnimatedEntrance, AppText, AppTextField, DismissKeyboardView } from '../../components/ui';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { getResetCooldownRemaining } from '../../services/auth.helper';
 import { useAuthStore } from '../../stores/auth.store';
@@ -58,6 +59,7 @@ export default function ForgotPasswordScreen() {
       setError(emailError);
       return;
     }
+    Keyboard.dismiss();
     setError('');
     try {
       await sendPasswordResetEmail(email.trim());
@@ -76,7 +78,7 @@ export default function ForgotPasswordScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <BrandDecoration />
-      <View style={styles.content}>
+      <DismissKeyboardView style={styles.content}>
         <AnimatedEntrance delay={0}>
           <View style={styles.brand}>
             <Wordmark size="md" />
@@ -173,7 +175,7 @@ export default function ForgotPasswordScreen() {
             </View>
           </AnimatedEntrance>
         ) : null}
-      </View>
+      </DismissKeyboardView>
     </KeyboardAvoidingView>
   );
 }

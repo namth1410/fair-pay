@@ -1,7 +1,8 @@
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 
-import { SUPABASE_ANON_KEY,SUPABASE_URL } from './constants';
+import { GOOGLE_WEB_CLIENT_ID, SUPABASE_ANON_KEY, SUPABASE_URL } from './constants';
 
 const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
@@ -22,4 +23,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     detectSessionInUrl: false,
   },
+});
+
+GoogleSignin.configure({
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  scopes: ['openid', 'profile', 'email'],
+  offlineAccess: false,
 });

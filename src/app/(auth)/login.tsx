@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { Button } from 'heroui-native';
 import { useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   AnimatedEntrance,
   AppText,
   AppTextField,
+  DismissKeyboardView,
   GoogleIcon,
   PasswordField,
 } from '../../components/ui';
@@ -40,6 +42,7 @@ export default function LoginScreen() {
       setError(emailError);
       return;
     }
+    Keyboard.dismiss();
     setError('');
     try {
       await signInWithEmail(email, password);
@@ -66,7 +69,7 @@ export default function LoginScreen() {
       style={[styles.container, { backgroundColor: c.background }]}
     >
       <BrandDecoration />
-      <View style={styles.content}>
+      <DismissKeyboardView style={styles.content}>
         <AnimatedEntrance delay={0}>
           <View style={styles.brand}>
             <Wordmark size="lg" />
@@ -172,7 +175,7 @@ export default function LoginScreen() {
             </Link>
           </View>
         </AnimatedEntrance>
-      </View>
+      </DismissKeyboardView>
     </KeyboardAvoidingView>
   );
 }

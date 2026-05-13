@@ -3,26 +3,27 @@ import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
 
+import { TRIP_NAME_MAX_LENGTH } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
-import { useGroupStore } from '../../stores/group.store';
+import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
 import { AppText, DismissKeyboardView } from '../ui';
 
-interface AddVirtualMemberSheetProps {
+interface CreateTripSheetProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   groupId: string;
-  onSuccess: (name: string) => void;
+  onSuccess?: (name: string) => void;
 }
 
-export function AddVirtualMemberSheet({
+export function CreateTripSheet({
   isOpen,
   onOpenChange,
   groupId,
   onSuccess,
-}: AddVirtualMemberSheetProps) {
+}: CreateTripSheetProps) {
   const c = useAppTheme();
-  const { addVirtualMember } = useGroupStore();
+  const addTrip = useTripStore((s) => s.addTrip);
 
   const nameRef = useRef('');
   const [resetKey, setResetKey] = useState(0);
@@ -52,9 +53,9 @@ export function AddVirtualMemberSheet({
     setFormError('');
     setBusy(true);
     try {
-      await addVirtualMember(groupId, trimmed);
+      await addTrip(groupId, trimmed);
       onOpenChange(false);
-      onSuccess(trimmed);
+      onSuccess?.(trimmed);
     } catch (e: unknown) {
       setFormError(getErrorMessage(e));
     } finally {
@@ -75,47 +76,47 @@ export function AddVirtualMemberSheet({
         >
           <BottomSheetView style={styles.container}>
             <DismissKeyboardView>
-            <View style={styles.header}>
-              <BottomSheet.Title>Thêm thành viên ảo</BottomSheet.Title>
-            </View>
+              <View style={styles.header}>
+                <BottomSheet.Title>Tạo chuyến đi mới</BottomSheet.Title>
+              </View>
 
-            <View style={styles.body}>
-              <AppText variant="caption" tone="muted" style={styles.hint}>
-                Tạo thành viên không cần tài khoản — dùng khi bạn quản lý chi tiêu cho người chưa cài app.
-              </AppText>
-              <BottomSheetTextInput
-                key={resetKey}
-                placeholder="Tên hiển thị"
-                placeholderTextColor={c.muted}
-                defaultValue=""
-                onChangeText={handleChangeText}
-                returnKeyType="done"
-                onSubmitEditing={handleSubmit}
-                accessibilityLabel="Tên thành viên ảo"
-                editable={!busy}
-                style={[
-                  styles.input,
-                  {
-                    color: c.foreground,
-                    backgroundColor: c.surfaceAlt,
-                    borderColor: c.divider,
-                  },
-                ]}
-              />
-              {formError ? (
-                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                  <AppText variant="caption" tone="danger">{formError}</AppText>
-                </View>
-              ) : null}
-              <Button
-                variant="primary"
-                size="lg"
-                onPress={handleSubmit}
-                isDisabled={busy || !hasContent}
-              >
-                <Button.Label>{busy ? 'Đang tạo...' : 'Tạo thành viên'}</Button.Label>
-              </Button>
-            </View>
+              <View style={styles.body}>
+                <AppText variant="caption" tone="muted" style={styles.hint}>
+                  Đặt tên gợi nhớ để dễ tìm trong danh sách (VD: địa điểm + thời gian).
+                </AppText>
+                <BottomSheetTextInput
+                  key={resetKey}
+                  placeholder="Tên chuyến (VD: Đà Lạt T4/2026)"
+                  placeholderTextColor={c.muted}
+                  defaultValue=""
+                  onChangeText={handleChangeText}
+                  maxLength={TRIP_NAME_MAX_LENGTH}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Tên chuyến đi"
+                  style={[
+                    styles.input,
+                    {
+                      color: c.foreground,
+                      backgroundColor: c.surfaceAlt,
+                      borderColor: c.divider,
+                    },
+                  ]}
+                />
+                {formError ? (
+                  <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                    <AppText variant="caption" tone="danger">{formError}</AppText>
+                  </View>
+                ) : null}
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onPress={handleSubmit}
+                  isDisabled={busy || !hasContent}
+                >
+                  <Button.Label>{busy ? 'Đang tạo...' : 'Tạo chuyến'}</Button.Label>
+                </Button>
+              </View>
             </DismissKeyboardView>
           </BottomSheetView>
         </BottomSheet.Content>

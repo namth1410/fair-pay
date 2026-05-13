@@ -12,6 +12,18 @@ if (__DEV__ && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
   );
 }
 
+// Google Sign-In (native)
+// Web Client ID — `aud` claim của ID token trả về từ native GoogleSignin
+// phải khớp với giá trị này để Supabase verify thành công.
+export const GOOGLE_WEB_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
+
+if (__DEV__ && !GOOGLE_WEB_CLIENT_ID) {
+  console.warn(
+    '[constants] Thiếu EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID — Google Sign-In sẽ fail'
+  );
+}
+
 // Database
 export const DB_NAME = 'fairpay.db';
 

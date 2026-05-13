@@ -2,7 +2,7 @@ import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-shee
 import { File } from 'expo-file-system';
 import { BottomSheet, Button, useToast } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import {
@@ -14,7 +14,7 @@ import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
 import { type AvatarSource, pickAndProcessAvatar, type ProcessedAvatar } from '../../utils/imageProcessing';
 import { validateName } from '../../utils/validate';
-import { AppText, Avatar } from '../ui';
+import { AppText, Avatar, DismissKeyboardView } from '../ui';
 
 interface GroupEditSheetProps {
   isOpen: boolean;
@@ -108,6 +108,7 @@ export function GroupEditSheet({
       return;
     }
     if (next === groupName.trim()) return;
+    Keyboard.dismiss();
     setIsSavingName(true);
     setNameError(null);
     try {
@@ -210,6 +211,7 @@ export function GroupEditSheet({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
+            <DismissKeyboardView>
             <View style={styles.header}>
               <BottomSheet.Title>Sửa nhóm</BottomSheet.Title>
             </View>
@@ -363,6 +365,7 @@ export function GroupEditSheet({
                 </View>
               )}
             </View>
+            </DismissKeyboardView>
           </BottomSheetScrollView>
         </BottomSheet.Content>
       </BottomSheet.Portal>

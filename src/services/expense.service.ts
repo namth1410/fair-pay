@@ -54,7 +54,8 @@ export async function fetchExpenses(
     .select('*, expense_splits(*)')
     .eq('trip_id', tripId)
     .is('deleted_at', null)
-    .order('date', { ascending: false });
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
   return data || [];
@@ -212,7 +213,8 @@ export async function fetchTripBalanceData(tripId: string): Promise<TripBalanceD
       .select('*, expense_splits(*)')
       .eq('trip_id', tripId)
       .is('deleted_at', null)
-      .order('date', { ascending: false }),
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false }),
     supabase
       .from('payments')
       .select('*')
