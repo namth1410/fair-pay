@@ -1,6 +1,5 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Button, ScrollShadow } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Receipt } from 'lucide-react-native';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
@@ -62,31 +61,29 @@ export const ExpensesTab = React.memo(function ExpensesTab({
       {isLoading && expenses.length === 0 ? (
         <ListSkeleton count={3} />
       ) : (
-        <ScrollShadow LinearGradientComponent={LinearGradient}>
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <SwipeableCard
-                title={item.title}
-                subtitle={`${getMemberName(item.paid_by)} đã trả`}
-                onDelete={isOpen ? () => handleDelete(item) : undefined}
-                onLongPress={isOpen ? () => handleDelete(item) : undefined}
-                trailing={<Money value={item.amount} variant="default" tone="primary" />}
-              />
-            )}
-            renderSectionHeader={({ section }) => (
-              <View style={[styles.sectionHeader, { backgroundColor: c.background }]}>
-                <AppText variant="meta" tone="muted" weight="semibold">
-                  {section.title}
-                </AppText>
-              </View>
-            )}
-            stickySectionHeadersEnabled={false}
-            contentContainerStyle={expenses.length === 0 ? styles.emptyContainer : styles.list}
-            ListEmptyComponent={<EmptyState icon={Receipt} title="Chưa có khoản chi nào" />}
-          />
-        </ScrollShadow>
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <SwipeableCard
+              title={item.title}
+              subtitle={`${getMemberName(item.paid_by)} đã trả`}
+              onDelete={isOpen ? () => handleDelete(item) : undefined}
+              onLongPress={isOpen ? () => handleDelete(item) : undefined}
+              trailing={<Money value={item.amount} variant="default" tone="primary" />}
+            />
+          )}
+          renderSectionHeader={({ section }) => (
+            <View style={[styles.sectionHeader, { backgroundColor: c.background }]}>
+              <AppText variant="meta" tone="muted" weight="semibold">
+                {section.title}
+              </AppText>
+            </View>
+          )}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={expenses.length === 0 ? styles.emptyContainer : styles.list}
+          ListEmptyComponent={<EmptyState icon={Receipt} title="Chưa có khoản chi nào" />}
+        />
       )}
 
       <ConfirmDialog

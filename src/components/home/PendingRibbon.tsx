@@ -155,17 +155,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderRadius: 6,
     overflow: 'hidden',
-    minHeight: 60,
+    alignItems: 'stretch',
   },
   accent: {
     width: 4,
   },
   body: {
     flex: 1,
-    overflow: 'hidden',
   },
   content: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,

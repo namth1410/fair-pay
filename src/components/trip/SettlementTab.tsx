@@ -1,5 +1,4 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { Button, ScrollShadow, useToast } from 'heroui-native';
+import { Button, useToast } from 'heroui-native';
 import { Wallet } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
@@ -97,7 +96,6 @@ export const SettlementTab = React.memo(function SettlementTab({
 
   return (
     <View style={styles.flex}>
-    <ScrollShadow LinearGradientComponent={LinearGradient}>
     <ScrollView
       contentContainerStyle={styles.list}
       keyboardDismissMode="on-drag"
@@ -213,7 +211,6 @@ export const SettlementTab = React.memo(function SettlementTab({
         }}
       />
     </ScrollView>
-    </ScrollShadow>
     <MoneyChipsDock
       visible={showForm && amountFocused}
       amountStr={payAmountStr}

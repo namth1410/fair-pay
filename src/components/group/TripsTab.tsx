@@ -1,5 +1,4 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { Button, ScrollShadow } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { MapPin } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -70,15 +69,13 @@ export const TripsTab = React.memo(function TripsTab({
       {isLoading && trips.length === 0 ? (
         <ListSkeleton count={3} />
       ) : (
-        <ScrollShadow LinearGradientComponent={LinearGradient}>
-          <FlatList
-            data={trips}
-            keyExtractor={(item) => item.id}
-            renderItem={renderTrip}
-            contentContainerStyle={trips.length === 0 ? styles.emptyContainer : styles.list}
-            ListEmptyComponent={<EmptyState icon={MapPin} title="Chưa có chuyến đi nào" />}
-          />
-        </ScrollShadow>
+        <FlatList
+          data={trips}
+          keyExtractor={(item) => item.id}
+          renderItem={renderTrip}
+          contentContainerStyle={trips.length === 0 ? styles.emptyContainer : styles.list}
+          ListEmptyComponent={<EmptyState icon={MapPin} title="Chưa có chuyến đi nào" />}
+        />
       )}
 
       <CreateTripSheet

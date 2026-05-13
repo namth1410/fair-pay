@@ -42,6 +42,8 @@ const ERROR_MAP: Record<string, string> = {
   splits_sum_mismatch: 'Tổng chia tiền không khớp số tiền',
   invalid_date_future: 'Không thể chọn ngày trong tương lai',
   request_not_found: 'Yêu cầu không tồn tại hoặc đã được xử lý',
+  invalid_invite_code: 'Mã mời không hợp lệ',
+  already_member: 'Bạn đã là thành viên nhóm này',
 
   // Feedback rate limit (DB trigger — xem migration feedback_daily_limit_trigger)
   feedback_daily_limit_exceeded:
@@ -69,6 +71,11 @@ export function getErrorMessage(error: unknown): string {
   for (const [key, msg] of Object.entries(ERROR_MAP)) {
     if (raw.includes(key)) return msg;
   }
+
+  // Service layer thường throw Error với message tiếng Việt đã thân thiện
+  // (vd: "Mã mời không hợp lệ"). Pass-through để không bị che bởi fallback generic.
+  // Heuristic: có ký tự non-ASCII → đã là message hiển thị được.
+  if (raw && /[^\x00-\x7F]/.test(raw)) return raw;
 
   // Fallback — generic message, log raw error for debugging
   console.error('[Error]', raw);

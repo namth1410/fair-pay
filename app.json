@@ -34,7 +34,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Cho phép Fair Pay truy cập ảnh để đặt avatar nhóm.",
-          "cameraPermission": "Cho phép Fair Pay dùng camera để chụp avatar nhóm."
+          "cameraPermission": "Cho phép Fair Pay dùng camera để chụp avatar nhóm.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "granularPermissions": ["photo"]
         }
       ],
       [

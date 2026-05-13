@@ -13,11 +13,9 @@ type Mode = 'create' | 'join';
 interface CreateJoinSheetProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Fired after a successful join request that requires approval. */
-  onJoinPending: (groupName: string) => void;
 }
 
-export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJoinSheetProps) {
+export function CreateJoinSheet({ isOpen, onOpenChange }: CreateJoinSheetProps) {
   const c = useAppTheme();
   const { createGroup, joinByCode } = useGroupStore();
 
@@ -62,12 +60,11 @@ export function CreateJoinSheet({ isOpen, onOpenChange, onJoinPending }: CreateJ
     try {
       if (mode === 'create') {
         await createGroup(trimmed);
-        onOpenChange(false);
       } else {
-        const result = await joinByCode(trimmed);
-        onOpenChange(false);
-        onJoinPending(result.group.name);
+        // joinByCode trigger store.loadMyPendingJoinRequests → Home tự render ribbon
+        await joinByCode(trimmed);
       }
+      onOpenChange(false);
     } catch (e: unknown) {
       setFormError(getErrorMessage(e));
     } finally {

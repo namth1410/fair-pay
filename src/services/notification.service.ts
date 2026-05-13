@@ -381,62 +381,6 @@ export async function notifyPaymentRecorded(input: PaymentEventInput): Promise<v
   }
 }
 
-interface JoinRequestInput {
-  groupId: string;
-  groupName: string;
-  requesterUserId: string; // users.id của người xin vào
-  requesterName: string;
-}
-
-export async function notifyJoinRequested(input: JoinRequestInput): Promise<void> {
-  try {
-    // Recipients = admins (loại requester)
-    const { data: admins } = await supabase
-      .from('group_members')
-      .select('user_id')
-      .eq('group_id', input.groupId)
-      .eq('role', 'admin')
-      .is('left_at', null)
-      .not('user_id', 'is', null);
-
-    const adminIds = (admins ?? [])
-      .map((m: { user_id: string | null }) => m.user_id)
-      .filter((v): v is string => !!v && v !== input.requesterUserId);
-
-    if (!adminIds.length) return;
-
-    // Filter theo notify_member
-    const { data: usersRows } = await supabase
-      .from('users')
-      .select('id, settings')
-      .in('id', adminIds);
-    const allowed = (usersRows ?? [])
-      .filter(
-        (u: { settings: Partial<UserSettings> | null }) => u.settings?.notify_member ?? true
-      )
-      .map((u: { id: string }) => u.id);
-
-    if (!allowed.length) return;
-
-    const title = formatNotificationTitle({
-      type: 'member.join_requested',
-      actorName: input.requesterName,
-      groupName: input.groupName,
-    });
-    await createNotifications({
-      type: 'member.join_requested',
-      recipients: allowed,
-      actorId: input.requesterUserId,
-      actorName: input.requesterName,
-      groupId: input.groupId,
-      title,
-      data: { group_name: input.groupName },
-    });
-  } catch (e) {
-    if (__DEV__) console.warn('[Notif] join_requested failed:', e);
-  }
-}
-
 interface JoinResolvedInput {
   groupId: string;
   groupName: string;

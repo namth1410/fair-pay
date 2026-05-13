@@ -1,5 +1,4 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { Button, ScrollShadow, useToast } from 'heroui-native';
+import { Button, useToast } from 'heroui-native';
 import { Scale } from 'lucide-react-native';
 import React, { useRef } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -50,8 +49,7 @@ export const BalancesTab = React.memo(function BalancesTab({
           <Button.Label>Lưu ảnh số dư</Button.Label>
         </Button>
       </View>
-      <ScrollShadow LinearGradientComponent={LinearGradient}>
-        <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView contentContainerStyle={styles.list}>
           <View ref={balanceRef} collapsable={false} style={{ backgroundColor: c.background }}>
             <View style={[styles.exportSummary, { backgroundColor: c.surfaceAlt }]}>
               <AppText variant="title" weight="bold" tone="primary">{tripName}</AppText>
@@ -81,8 +79,7 @@ export const BalancesTab = React.memo(function BalancesTab({
               );
             })}
           </View>
-        </ScrollView>
-      </ScrollShadow>
+      </ScrollView>
     </View>
   );
 });

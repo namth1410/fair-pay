@@ -4,7 +4,7 @@ import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentD
 import { validateName } from '../utils/validate';
 import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
-import { notifyJoinRequested, notifyJoinResolved } from './notification.service';
+import { notifyJoinResolved } from './notification.service';
 
 export interface BalanceSummary {
   /** Tổng số dư qua tất cả nhóm/chuyến đang mở (dương = được nợ, âm = đang nợ) */
@@ -141,67 +141,40 @@ export async function createGroup(name: string): Promise<Group> {
  * Dùng upsert để handle: first-time, rejoin, re-request sau rejection.
  */
 export async function joinGroupByCode(code: string): Promise<JoinResult> {
-  const userId = await getAuthUserId();
-  if (!userId) throw new Error('Chưa đăng nhập');
-
-  // Tìm group theo invite code
-  const { data: group, error: grpErr } = await supabase
-    .from('groups')
-    .select('*')
-    .eq('invite_code', code.trim().toLowerCase())
-    .is('deleted_at', null)
-    .single();
-
-  if (grpErr || !group) throw new Error('Mã mời không hợp lệ');
-
-  // Nếu đang là active member → không cần join lại
-  const { data: activeMember } = await supabase
-    .from('group_members')
-    .select('id')
-    .eq('group_id', group.id)
-    .eq('user_id', userId)
-    .is('left_at', null)
-    .maybeSingle();
-
-  if (activeMember) throw new Error('Bạn đã là thành viên nhóm này');
-
-  // Lấy display_name của user
-  const { data: user } = await supabase
-    .from('users')
-    .select('display_name')
-    .eq('id', userId)
-    .single();
-  const displayName = user?.display_name || 'Thành viên';
-
-  // Upsert join_request (handle: first-time, rejoin, re-request sau rejection)
-  const { data: request, error: reqErr } = await supabase
-    .from('join_requests')
-    .upsert(
-      {
-        group_id: group.id,
-        user_id: userId,
-        status: 'pending',
-        display_name: displayName,
-        reviewed_by: null,
-        reviewed_at: null,
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: 'group_id,user_id' }
-    )
-    .select('id')
-    .single();
-
-  if (reqErr) throw reqErr;
-
-  // Notify admins (parallel, non-blocking)
-  await notifyJoinRequested({
-    groupId: group.id,
-    groupName: group.name,
-    requesterUserId: userId,
-    requesterName: displayName,
+  // RPC bypass RLS: non-member không thể tự query `groups` theo invite_code
+  // (RLS chỉ cho is_member/created_by SELECT) cũng không tự query admin list để
+  // fan-out notify được. RPC làm atomic 4 bước: lookup group + active-member
+  // check + upsert pending request + notify admins.
+  const { data, error } = await supabase.rpc('request_join_by_code', {
+    p_code: code,
   });
+  if (error) throw error;
 
-  return { type: 'pending', group, requestId: request.id };
+  const payload = data as {
+    request_id: string;
+    requester_name: string;
+    group: Group;
+  };
+
+  return { type: 'pending', group: payload.group, requestId: payload.request_id };
+}
+
+export interface MyPendingJoinRequest {
+  request_id: string;
+  group_id: string;
+  group_name: string;
+  created_at: string;
+}
+
+/**
+ * Pending join requests của user hiện tại, kèm group_name.
+ * RPC SECURITY DEFINER vì non-member không SELECT được `groups.name` qua RLS.
+ * Dùng ở Home để render ribbon "ĐANG CHỜ DUYỆT" — persist qua logout/login.
+ */
+export async function fetchMyPendingJoinRequests(): Promise<MyPendingJoinRequest[]> {
+  const { data, error } = await supabase.rpc('get_my_pending_join_requests');
+  if (error) throw error;
+  return (data as MyPendingJoinRequest[] | null) ?? [];
 }
 
 /** F-23: Lấy danh sách join requests đang pending của một nhóm (cho Admin) */

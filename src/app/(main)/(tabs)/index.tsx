@@ -38,9 +38,18 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const viewMode = useHomeViewMode();
 
-  const { groups, balanceSummary, isLoading, loadGroups } = useGroupStore();
+  const { groups, balanceSummary, isLoading, loadGroups, myPendingJoinRequests } =
+    useGroupStore();
 
-  const [joinPendingGroup, setJoinPendingGroup] = useState<string | null>(null);
+  // Dismiss per-session: ẩn ribbon nào user đã đóng trong session hiện tại.
+  // Server vẫn giữ status='pending' — ribbon sẽ quay lại ở lần app khởi động sau
+  // cho đến khi admin duyệt/từ chối.
+  const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const visiblePendingRequests = myPendingJoinRequests.filter(
+    (r) => !dismissedRequestIds.has(r.request_id)
+  );
   const createJoinOpen = useUIStore((s) => s.createJoinOpen);
   const setCreateJoinOpen = useUIStore((s) => s.setCreateJoinOpen);
 
@@ -168,12 +177,19 @@ export default function HomeScreen() {
               <HeroDebt total={balanceSummary.total} />
             </View>
           )}
-          {joinPendingGroup && (
+          {visiblePendingRequests.map((req) => (
             <PendingRibbon
-              groupName={joinPendingGroup}
-              onDismiss={() => setJoinPendingGroup(null)}
+              key={req.request_id}
+              groupName={req.group_name}
+              onDismiss={() =>
+                setDismissedRequestIds((prev) => {
+                  const next = new Set(prev);
+                  next.add(req.request_id);
+                  return next;
+                })
+              }
             />
-          )}
+          ))}
           {showHero && (
             <SectionHeader
               title="NHÓM CỦA BẠN"
@@ -219,7 +235,6 @@ export default function HomeScreen() {
       <CreateJoinSheet
         isOpen={createJoinOpen}
         onOpenChange={setCreateJoinOpen}
-        onJoinPending={setJoinPendingGroup}
       />
 
       <WelcomeDialog isOpen={showWelcome} onClose={handleDismissWelcome} />

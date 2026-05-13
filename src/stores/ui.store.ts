@@ -16,6 +16,15 @@ interface UIState {
   /** Cùng pattern presetsAddRequestSeq — bridge nút Share ở header trip → mở ExportScopeSheet. */
   tripExportRequestSeq: number;
   requestTripExport: () => void;
+
+  /**
+   * True khi user đang chạm vào GroupCarousel (touch xuống đến khi nhả).
+   * (tabs)/_layout đọc giá trị này để tắt `swipeEnabled` của ReanimatedTabs
+   * trong khoảng đó → tránh xung đột giữa pan của carousel và pan chuyển tab.
+   * Carousel set qua Pan.onTouchesDown / onFinalize (worklet → runOnJS).
+   */
+  carouselTouching: boolean;
+  setCarouselTouching: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -29,4 +38,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   tripExportRequestSeq: 0,
   requestTripExport: () =>
     set({ tripExportRequestSeq: get().tripExportRequestSeq + 1 }),
+
+  carouselTouching: false,
+  setCarouselTouching: (v) => set({ carouselTouching: v }),
 }));

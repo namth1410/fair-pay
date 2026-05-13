@@ -21,7 +21,7 @@ export default function MainLayout() {
         {/* Deep pages — push từ tabs, có animation riêng */}
         <Stack.Screen
           name="groups/[id]"
-          options={{ title: 'Nhóm', animation: 'fade' }}
+          options={{ title: 'Nhóm', animation: 'slide_from_right' }}
         />
         <Stack.Screen name="trips/[id]/index" options={{ title: 'Chuyến đi' }} />
         <Stack.Screen

@@ -1,5 +1,4 @@
-import { LinearGradient } from 'expo-linear-gradient';
-import { Button, ScrollShadow } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Share2 } from 'lucide-react-native';
 import React from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -164,14 +163,12 @@ export const MembersTab = React.memo(function MembersTab({
         </View>
       )}
 
-      <ScrollShadow LinearGradientComponent={LinearGradient}>
-        <FlatList
-          data={members}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMember}
-          contentContainerStyle={styles.list}
-        />
-      </ScrollShadow>
+      <FlatList
+        data={members}
+        keyExtractor={(item) => item.id}
+        renderItem={renderMember}
+        contentContainerStyle={styles.list}
+      />
     </>
   );
 });

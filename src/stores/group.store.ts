@@ -8,6 +8,7 @@ import {
   deleteGroup,
   fetchGroupMembers,
   fetchMyGroups,
+  fetchMyPendingJoinRequests,
   fetchPendingJoinRequests,
   fetchUserBalanceSummary,
   type GroupMember,
@@ -15,6 +16,7 @@ import {
   joinGroupByCode,
   type JoinRequest,
   type JoinResult,
+  type MyPendingJoinRequest,
   rejectJoinRequest,
   removeMember,
   renameMember,
@@ -26,11 +28,13 @@ interface GroupState {
   groups: GroupWithMemberCount[];
   currentGroupMembers: GroupMember[];
   pendingJoinRequests: JoinRequest[];
+  myPendingJoinRequests: MyPendingJoinRequest[];
   balanceSummary: BalanceSummary;
   isLoading: boolean;
 
   loadGroups: () => Promise<void>;
   loadBalanceSummary: () => Promise<void>;
+  loadMyPendingJoinRequests: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
   joinByCode: (code: string) => Promise<JoinResult>;
   loadMembers: (groupId: string) => Promise<void>;
@@ -54,17 +58,19 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
   currentGroupMembers: [],
   pendingJoinRequests: [],
+  myPendingJoinRequests: [],
   balanceSummary: EMPTY_SUMMARY,
   isLoading: false,
 
   loadGroups: async () => {
     set({ isLoading: true });
     try {
-      const [groups, balanceSummary] = await Promise.all([
+      const [groups, balanceSummary, myPendingJoinRequests] = await Promise.all([
         fetchMyGroups(),
         fetchUserBalanceSummary(),
+        fetchMyPendingJoinRequests(),
       ]);
-      set({ groups, balanceSummary });
+      set({ groups, balanceSummary, myPendingJoinRequests });
     } finally {
       set({ isLoading: false });
     }
@@ -75,14 +81,21 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({ balanceSummary });
   },
 
+  loadMyPendingJoinRequests: async () => {
+    const myPendingJoinRequests = await fetchMyPendingJoinRequests();
+    set({ myPendingJoinRequests });
+  },
+
   createGroup: async (name) => {
     await createGroup(name);
     await get().loadGroups();
   },
 
   joinByCode: async (code) => {
-    // Không reload groups — user chưa join được, danh sách không thay đổi
-    return joinGroupByCode(code);
+    const result = await joinGroupByCode(code);
+    // Refresh pending list để Home render ribbon từ server state
+    await get().loadMyPendingJoinRequests();
+    return result;
   },
 
   loadMembers: async (groupId) => {
@@ -159,6 +172,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       groups: [],
       currentGroupMembers: [],
       pendingJoinRequests: [],
+      myPendingJoinRequests: [],
       balanceSummary: EMPTY_SUMMARY,
       isLoading: false,
     }),

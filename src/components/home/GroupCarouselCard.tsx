@@ -1,20 +1,11 @@
-import {
-  Blur,
-  Canvas,
-  Image as SkiaImage,
-  useImage,
-} from '@shopify/react-native-skia';
-import { ChevronRight, Users } from 'lucide-react-native';
-import { memo, useEffect } from 'react';
+import { Users } from 'lucide-react-native';
+import { memo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  Easing,
   type SharedValue,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
@@ -34,21 +25,23 @@ interface GroupCarouselCardProps {
   balance: number;
   /** This card's absolute index in the groups list. */
   absoluteIndex: number;
-  /** Total number of cards — used for modular wrap math. */
+  /** Total number of cards — dùng cho modular wrap math. */
   total: number;
+  /** False khi total < 3 → không loop, position = absoluteIndex - scrollX trực tiếp. */
+  allowLoop: boolean;
   /**
-   * Currently active card index — SharedValue, mutated on UI thread. May be
-   * negative or larger than `total - 1`; reduced via modulo at read time so
-   * the stack loops infinitely.
+   * Continuous offset của carousel (đơn vị: số slot). Có thể âm hoặc lớn hơn
+   * `total` — modulo ở read time để loop vô hạn.
    */
-  topIndex: SharedValue<number>;
-  /** Pan drag offset of the top card. Inactive cards interpolate against this. */
-  dragX: SharedValue<number>;
+  scrollX: SharedValue<number>;
+  /** Khoảng cách giữa 2 tâm card liền kề (px). */
+  slot: number;
   cardWidth: number;
   cardHeight: number;
-  /** Used as the off-screen distance for swipe-out. */
-  screenWidth: number;
+  /** Tap khi card đã ở giữa → push route. */
   onPressActive: () => void;
+  /** Tap khi card đang ở vị trí bên → snap nó vào giữa. */
+  onSnapTo: () => void;
 }
 
 interface BalanceTone {
@@ -67,7 +60,7 @@ function getBalanceTone(
     return {
       toneColor: c.muted,
       toneSoft: c.divider,
-      directionLabel: 'cân bằng',
+      directionLabel: 'đã thanh toán',
       moneyTone: undefined,
       isSettled: true,
     };
@@ -90,7 +83,6 @@ function getBalanceTone(
   };
 }
 
-const SHINE_WIDTH = 80;
 const CARD_PAD = 14;
 const CARD_RADIUS = 24;
 const IMAGE_RADIUS = 16;
@@ -103,21 +95,18 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
   balance,
   absoluteIndex,
   total,
-  topIndex,
-  dragX,
+  allowLoop,
+  scrollX,
+  slot,
   cardWidth,
   cardHeight,
-  screenWidth,
   onPressActive,
+  onSnapTo,
 }: GroupCarouselCardProps) {
   const c = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();
   const tone = getBalanceTone(balance, c);
   const heroFallback = pickHeroGradient(id);
-  // Bg "color-spill" như YouTube/Spotify: dùng CHÍNH ảnh blur cực mạnh thay vì
-  // 1 màu trung bình. Spatial color (vùng nào ảnh đậm thì bg vùng đó đậm) tự
-  // động theo image, không cần extract dominant.
-  const skiaBg = useImage(avatarUrl ?? null);
 
   // Image inset: padding xung quanh, borderRadius nhỏ hơn card. Avatar luôn
   // square ở upload (aspect [1,1]) nên `cover` fit khít, không crop.
@@ -126,131 +115,55 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
 
   const pressed = useSharedValue(0);
 
-  // Modular relative position in the stack:
-  //   0      = top
-  //   1, 2   = behind, peeking
-  //   -1     = previous card (peeks in from left during back-swipe)
-  //   else   = hidden (deeper in stack or already swiped past)
-  // The list cycles: with N cards, swiping forward from the last brings #0 to
-  // the top again; swiping back from #0 reveals the last card.
-  const rel = useDerivedValue(() => {
+  // Vị trí liên tục so với tâm carousel (đơn vị: số slot).
+  //   0  = đúng giữa
+  //   ±1 = card cạnh trái/phải
+  //   |p| > 1.5 → ẩn (xa quá)
+  // Với allowLoop, modulo vào (-N/2, N/2] để mỗi card lấy "instance" gần nhất
+  // → infinite loop. Với N<3 (allowLoop=false), dùng raw position trực tiếp.
+  const position = useDerivedValue(() => {
     const N = total;
     if (N <= 1) return 0;
-    const T = topIndex.value;
-    // Positive modulo so negative T also normalizes correctly.
-    const raw = (((absoluteIndex - T) % N) + N) % N;
-    // Last slot is shown as the "prev" peek when there are at least 3 cards.
-    if (N >= 3 && raw === N - 1) return -1;
-    return raw;
+    const raw = absoluteIndex - scrollX.value;
+    if (!allowLoop) return raw;
+    return ((raw + N / 2) % N + N) % N - N / 2;
   });
-
-  // True when this card is the front-most (and not being dragged off too far) —
-  // gates the shine sweep + decides which card receives taps.
-  const isCentered = useDerivedValue(
-    () => rel.value === 0 && Math.abs(dragX.value) < 60,
-  );
 
   const wrapperStyle = useAnimatedStyle(() => {
-    const r = rel.value;
-    const dx = dragX.value;
-    const W = screenWidth;
+    const p = position.value;
+    const absP = Math.abs(p);
     const press = 1 - 0.025 * pressed.value;
 
-    if (r === 0) {
-      const rotZ = (dx / W) * 8;
-      const absProgress = Math.min(1, Math.abs(dx) / W);
-      return {
-        opacity: 1 - absProgress * 0.15,
-        zIndex: 30,
-        transform: [
-          { translateX: dx },
-          { translateY: 0 },
-          { rotate: `${rotZ}deg` },
-          { scale: 1 * press },
-        ],
-      };
-    }
-    if (r === 1) {
-      const promote = Math.max(0, -dx) / W;
-      const scale = 0.94 + promote * 0.06;
-      const translateY = 16 - promote * 16;
-      return {
-        opacity: 1,
-        zIndex: 20,
-        transform: [{ translateY }, { scale }],
-      };
-    }
-    if (r === 2) {
-      const promote = Math.max(0, -dx) / W;
-      const scale = 0.88 + promote * 0.06;
-      const translateY = 32 - promote * 16;
-      return {
-        opacity: 0.8 + promote * 0.2,
-        zIndex: 10,
-        transform: [{ translateY }, { scale }],
-      };
-    }
-    if (r === -1) {
-      const promote = Math.max(0, dx) / W;
-      const tx = -W * 0.9 + promote * (W * 0.9);
-      const rotZ = -8 + promote * 8;
-      return {
-        opacity: promote,
-        zIndex: 31,
-        transform: [
-          { translateX: tx },
-          { rotate: `${rotZ}deg` },
-          { scale: 1 },
-        ],
-      };
-    }
-    if (r > 2) {
-      return {
-        opacity: 0,
-        zIndex: 0,
-        transform: [{ translateY: 32 }, { scale: 0.88 }],
-      };
-    }
+    // KHÔNG dùng opacity manipulation: Android deallocate hardware layer khi
+    // opacity về 0, lúc visible lại Skia Canvas chưa kịp re-paint → 1 frame
+    // trống lộ ScrollView bg trắng. Giữ luôn opacity=1, dùng translate đẩy ra
+    // ngoài màn cho các card xa tâm (đã đủ off-screen bằng p*slot).
+    //
+    // Scale tối thiểu 0.5 cho cards rất xa (clamp). Vẫn render đầy đủ →
+    // rasterization cache hợp lệ → không nháy khi card xoay vào carousel.
+    const scale = Math.max(0.5, 1 - 0.18 * absP) * press;
+    const rotZ = p * 6;
+    const tx = p * slot;
+    // zIndex: center cao nhất, side card thấp hơn → tap vào vùng overlap (nếu
+    // có) → center wins. Nhưng với slot=1.05*cardWidth cards không overlap.
+    const zIndex = absP < 0.5 ? 30 : absP < 1.2 ? 20 : 10;
+
     return {
-      opacity: 0,
-      zIndex: 0,
-      transform: [{ translateX: -W * 1.2 }, { scale: 1 }],
+      zIndex,
+      transform: [
+        { translateX: tx },
+        { rotate: `${rotZ}deg` },
+        { scale },
+      ],
     };
   });
 
-  // Money parallax — opposite direction, polish nhẹ trên top card.
+  // Money parallax nhẹ — chỉ khi card đang gần tâm.
   const moneyParallaxStyle = useAnimatedStyle(() => {
     if (!animationsEnabled) return { transform: [{ translateX: 0 }] };
-    if (rel.value !== 0) return { transform: [{ translateX: 0 }] };
-    const tx = (dragX.value / screenWidth) * 18;
-    return { transform: [{ translateX: tx }] };
-  });
-
-  const shine = useSharedValue(0);
-  useEffect(() => {
-    if (!animationsEnabled) {
-      shine.value = 0;
-      return;
-    }
-    shine.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.cubic) }),
-        withTiming(1, { duration: 700 }),
-        withTiming(0, { duration: 0 }),
-      ),
-      -1,
-    );
-  }, [shine, animationsEnabled]);
-
-  const shineStyle = useAnimatedStyle(() => {
-    const visible = isCentered.value && animationsEnabled ? 1 : 0;
-    const start = -SHINE_WIDTH * 1.6;
-    const end = cardWidth + SHINE_WIDTH * 1.6;
-    const tx = start + shine.value * (end - start);
-    return {
-      opacity: visible,
-      transform: [{ translateX: tx }, { rotate: '-22deg' }],
-    };
+    const p = position.value;
+    if (Math.abs(p) > 1) return { transform: [{ translateX: 0 }] };
+    return { transform: [{ translateX: -p * 12 }] };
   });
 
   const handlePressIn = () => {
@@ -261,9 +174,20 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
   };
 
   const handlePress = () => {
-    if (rel.value !== 0 || Math.abs(dragX.value) > 40) return;
+    const p = position.value;
+    if (Math.abs(p) < 0.3) {
+      // Card đã ở giữa → mở chi tiết.
+      hapticLight();
+      onPressActive();
+      return;
+    }
+    if (Math.abs(p) > 1.4) {
+      // Card đang ẩn — không nên xử lý (Pressable lẽ ra cũng đã pointerEvents none).
+      return;
+    }
+    // Card ở vị trí bên → snap vào giữa, không push route.
     hapticLight();
-    onPressActive();
+    onSnapTo();
   };
 
   const a11y = `${name}, ${memberCount} thành viên, ${tone.directionLabel}${
@@ -282,41 +206,60 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
         wrapperStyle,
       ]}
       pointerEvents="box-none"
+      // Cache content của card thành bitmap GPU 1 lần rồi tái dùng cho mọi
+      // transform sau đó. Khi scale/rotate đổi liên tục lúc card chuyển vị trí,
+      // Android KHÔNG recompose shadow boundary + clip path mỗi frame → tránh
+      // 1-frame trống lộ ScrollView bg (trắng light mode). iOS rasterize tương
+      // tự để tránh shadow re-render giật.
+      renderToHardwareTextureAndroid
+      shouldRasterizeIOS
     >
-      <View style={[styles.clipBox, { backgroundColor: c.surface }]}>
-        {/* Color-spill bg: ảnh chính được blur cực mạnh + scale 1.6× rồi đặt
-            làm nền. Vùng nào ảnh có màu gì, bg vùng đó có màu đó (không phải
-            average tone). Fallback dùng seed gradient khi chưa có avatar. */}
-        {avatarUrl && skiaBg ? (
-          <Canvas style={[StyleSheet.absoluteFill, { width: cardWidth, height: cardHeight }]}>
-            <SkiaImage
-              image={skiaBg}
-              x={-cardWidth * 0.3}
-              y={-cardHeight * 0.3}
-              width={cardWidth * 1.6}
-              height={cardHeight * 1.6}
-              fit="cover"
-            >
-              <Blur blur={50} mode="clamp" />
-            </SkiaImage>
-          </Canvas>
-        ) : (
-          <Svg
-            width="100%"
-            height="100%"
-            style={StyleSheet.absoluteFill}
-            preserveAspectRatio="none"
-            pointerEvents="none"
-          >
-            <Defs>
-              <LinearGradient id={`carcard-bg-${id}`} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={heroFallback.from} />
-                <Stop offset="100%" stopColor={heroFallback.to} />
-              </LinearGradient>
-            </Defs>
-            <Rect width="100%" height="100%" fill={`url(#carcard-bg-${id})`} />
-          </Svg>
-        )}
+      <View
+        style={[styles.clipBox, { backgroundColor: heroFallback.from }]}
+        // collapsable=false giúp Android giữ View này làm 1 native node riêng
+        // (không inline với parent) → hardware texture của parent cache ổn định.
+        collapsable={false}
+      >
+        {/* SVG seed gradient = base layer LUÔN render (không conditional). Khi
+            Skia Canvas mất surface 1 frame lúc card đổi opacity (visible ↔
+            hidden khi vào/ra carousel), gradient dưới đáy che lại nên không lộ
+            ra `clipBox` background → không flash trắng. Chi phí ~0 vì SVG static. */}
+        <Svg
+          width="100%"
+          height="100%"
+          style={StyleSheet.absoluteFill}
+          preserveAspectRatio="none"
+          pointerEvents="none"
+        >
+          <Defs>
+            <LinearGradient id={`carcard-bg-${id}`} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={heroFallback.from} />
+              <Stop offset="100%" stopColor={heroFallback.to} />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill={`url(#carcard-bg-${id})`} />
+        </Svg>
+
+        {/* Color-spill bg: blurred copy của avatar, scale 1.6× để màu lan rộng
+            ra mép card (blur RN Image fade ở rìa). Dùng RN <Image blurRadius>
+            thay cho Skia Canvas vì Skia blur shader re-execute khi parent
+            transform → 1 frame clear surface → flash trắng. RN Image render
+            blur 1 lần (CoreImage iOS / RenderScript Android), transform sau đó
+            chỉ thao tác bitmap, không re-blur. */}
+        {avatarUrl ? (
+          <Image
+            source={{ uri: avatarUrl }}
+            style={{
+              position: 'absolute',
+              left: -cardWidth * 0.3,
+              top: -cardHeight * 0.3,
+              width: cardWidth * 1.6,
+              height: cardHeight * 1.6,
+            }}
+            blurRadius={25}
+            resizeMode="cover"
+          />
+        ) : null}
 
         {/* Theme overlay — wash mờ để text đọc rõ + giữ identity light/dark.
             Light: white 45% (giảm độ rực, giữ tinh thần app sáng). Dark: black
@@ -339,7 +282,14 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
           <View
             style={[
               styles.imageBlock,
-              { width: imageSize, height: imageSize },
+              {
+                width: imageSize,
+                height: imageSize,
+                // Phòng tuyến: nếu RN <Image> bị flicker 1 frame trong lúc
+                // parent transform (Android quirk), placeholder lộ ra là màu
+                // seed gradient chứ không phải trắng.
+                backgroundColor: heroFallback.from,
+              },
             ]}
           >
             {avatarUrl ? (
@@ -411,89 +361,33 @@ export const GroupCarouselCard = memo(function GroupCarouselCard({
               </View>
             </View>
 
-            <View style={styles.bottomRow}>
-              <Animated.View style={moneyParallaxStyle}>
-                {tone.isSettled ? (
-                  <View style={styles.settledRow}>
-                    <View
-                      style={[styles.settledBar, { backgroundColor: c.muted }]}
-                    />
-                    <View
-                      style={[styles.settledBar, { backgroundColor: c.muted }]}
-                    />
-                    <AppText
-                      variant="meta"
-                      style={{
-                        color: c.muted,
-                        fontFamily: fonts.semibold,
-                        marginLeft: 8,
-                        letterSpacing: 0.3,
-                      }}
-                    >
-                      đã thanh toán
-                    </AppText>
-                  </View>
-                ) : (
-                  <Money
-                    value={Math.abs(balance)}
-                    variant="display"
-                    tone={tone.moneyTone}
-                    showSign
-                  />
-                )}
-              </Animated.View>
-              <View
-                style={[styles.directionPill, { backgroundColor: tone.toneSoft }]}
-              >
+            <View style={styles.bottomCol}>
+              {tone.isSettled ? (
                 <AppText
                   variant="meta"
                   style={{
                     color: tone.toneColor,
                     fontFamily: fonts.semibold,
-                    letterSpacing: 0.4,
-                    fontSize: 10.5,
+                    letterSpacing: 0.6,
+                    fontSize: 11,
+                    textTransform: 'uppercase',
                   }}
                 >
                   {tone.directionLabel}
                 </AppText>
-                <ChevronRight size={13} color={tone.toneColor} strokeWidth={2.4} />
-              </View>
+              ) : (
+                <Animated.View style={moneyParallaxStyle}>
+                  <Money
+                    value={balance}
+                    variant="default"
+                    tone={tone.moneyTone}
+                    showSign
+                  />
+                </Animated.View>
+              )}
             </View>
           </View>
         </View>
-
-        {/* Shine sweep — diagonal streak chỉ chạy trên top card */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.shine,
-            {
-              width: SHINE_WIDTH,
-              height: cardHeight * 2,
-              top: -cardHeight * 0.5,
-            },
-            shineStyle,
-          ]}
-        >
-          <Svg width="100%" height="100%" preserveAspectRatio="none">
-            <Defs>
-              <LinearGradient
-                id={`carcard-shine-${id}`}
-                x1="0"
-                y1="0"
-                x2="1"
-                y2="0"
-              >
-                <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0" />
-                <Stop offset="42%" stopColor="#FFFFFF" stopOpacity="0.15" />
-                <Stop offset="50%" stopColor="#FFFFFF" stopOpacity="0.5" />
-                <Stop offset="58%" stopColor="#FFFFFF" stopOpacity="0.15" />
-                <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
-              </LinearGradient>
-            </Defs>
-            <Rect width="100%" height="100%" fill={`url(#carcard-shine-${id})`} />
-          </Svg>
-        </Animated.View>
 
         <Pressable
           onPress={handlePress}
@@ -549,33 +443,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 5,
   },
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  settledRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settledBar: {
-    width: 12,
-    height: 2,
-    borderRadius: 1,
-    opacity: 0.7,
-    marginRight: 3,
-  },
-  directionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    gap: 4,
-    paddingBottom: 5,
-  },
-  shine: {
-    position: 'absolute',
-    left: 0,
+  bottomCol: {
+    gap: 2,
   },
 });
