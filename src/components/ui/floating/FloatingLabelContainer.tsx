@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import {
   Pressable,
+  type StyleProp,
   StyleSheet,
   Text,
   View,
-  type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import Animated, {
@@ -64,11 +64,14 @@ export function FloatingLabelContainer({
     focusProgress.value = reducedMotion ? target : withTiming(target, { duration: ANIM_DURATION });
   }, [isFocused, reducedMotion, focusProgress]);
 
-  const labelAnimatedStyle = useAnimatedStyle(() => {
+  const labelWrapAnimatedStyle = useAnimatedStyle(() => ({
+    top: interpolate(floatProgress.value, [0, 1], [14, -7]),
+  }));
+
+  const labelTextAnimatedStyle = useAnimatedStyle(() => {
     const focusedColor = error ? c.danger : c.primary;
     const restColor = error ? c.danger : c.muted;
     return {
-      top: interpolate(floatProgress.value, [0, 1], [14, -7]),
       fontSize: interpolate(floatProgress.value, [0, 1], [15, 11]),
       color: interpolateColor(focusProgress.value, [0, 1], [restColor, focusedColor]),
     };
@@ -93,17 +96,17 @@ export function FloatingLabelContainer({
       ]}
     >
       {children}
-      <Animated.Text
-        numberOfLines={1}
+      <Animated.View
         pointerEvents="none"
-        style={[
-          styles.label,
-          { fontFamily: fonts.regular, backgroundColor: bg },
-          labelAnimatedStyle,
-        ]}
+        style={[styles.labelWrap, { backgroundColor: bg }, labelWrapAnimatedStyle]}
       >
-        {label}
-      </Animated.Text>
+        <Animated.Text
+          numberOfLines={1}
+          style={[styles.labelText, { fontFamily: fonts.regular }, labelTextAnimatedStyle]}
+        >
+          {label}
+        </Animated.Text>
+      </Animated.View>
     </Animated.View>
   );
 
@@ -138,11 +141,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     justifyContent: 'center',
   },
-  label: {
+  labelWrap: {
     position: 'absolute',
     left: 10,
-    right: 10,
+    maxWidth: '90%',
     paddingHorizontal: 4,
+  },
+  labelText: {
     includeFontPadding: false,
   },
   pressed: {
