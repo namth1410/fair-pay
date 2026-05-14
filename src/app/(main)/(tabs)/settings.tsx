@@ -7,10 +7,10 @@ import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
 import { TabHeader } from '../../../components/header/TabHeader';
 import {
   AppText,
-  AppTextField,
   Avatar,
   SettingRow,
 } from '../../../components/ui';
+import { FloatingLabelInput } from '../../../components/ui/floating';
 import { DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import {
@@ -156,14 +156,15 @@ export default function SettingsScreen() {
 
           {isEditingName && (
             <View style={styles.editBlock}>
-              <AppTextField
+              <FloatingLabelInput
                 value={newName}
                 onChangeText={(t) => setNewName(t.slice(0, DISPLAY_NAME_MAX_LENGTH))}
                 autoFocus
                 returnKeyType="done"
                 maxLength={DISPLAY_NAME_MAX_LENGTH}
                 onSubmitEditing={handleSaveName}
-                placeholder="Tên hiển thị"
+                label="Tên hiển thị"
+                surfaceColor={c.surface}
               />
               <AppText variant="meta" tone="muted" style={styles.counter}>
                 {newName.trim().length}/{DISPLAY_NAME_MAX_LENGTH}

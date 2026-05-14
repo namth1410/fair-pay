@@ -382,13 +382,13 @@ function ActionRow({ icon, label, sublabel, onPress, c }: ActionRowProps) {
       style={({ pressed }) => [
         styles.actionRow,
         {
-          backgroundColor: c.surfaceAlt,
+          backgroundColor: c.surface,
           borderColor: c.divider,
           opacity: pressed ? 0.7 : 1,
         },
       ]}
     >
-      <View style={[styles.actionIcon, { backgroundColor: c.surface }]}>{icon}</View>
+      <View style={[styles.actionIcon, { backgroundColor: c.surfaceAlt }]}>{icon}</View>
       <View style={styles.actionTextWrap}>
         <AppText variant="body" weight="semibold">
           {label}

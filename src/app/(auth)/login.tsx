@@ -14,11 +14,10 @@ import { Wordmark } from '../../components/brand/Wordmark';
 import {
   AnimatedEntrance,
   AppText,
-  AppTextField,
   DismissKeyboardView,
   GoogleIcon,
-  PasswordField,
 } from '../../components/ui';
+import { FloatingLabelInput, FloatingPasswordInput } from '../../components/ui/floating';
 import { APP_SLOGAN } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
@@ -82,8 +81,8 @@ export default function LoginScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={150}>
-          <AppTextField
-            placeholder="Email"
+          <FloatingLabelInput
+            label="Email"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -95,8 +94,8 @@ export default function LoginScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={220}>
-          <PasswordField
-            placeholder="Mật khẩu"
+          <FloatingPasswordInput
+            label="Mật khẩu"
             value={password}
             onChangeText={setPassword}
             autoComplete="password"

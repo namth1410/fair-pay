@@ -12,15 +12,19 @@ import {
 } from 'react-native';
 
 import { TabHeader } from '../../../components/header/TabHeader';
+import { InvitationConfirmDialog } from '../../../components/group/InvitationConfirmDialog';
 import { NotificationRow } from '../../../components/notifications/NotificationRow';
 import { AppText, EmptyState, ListSkeleton } from '../../../components/ui';
 import { SkiaFireBorder } from '../../../components/ui/skia';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import {
   fetchMyGroups,
+  fetchMyPendingInvitations,
   type GroupWithMemberCount,
+  type MyPendingInvitation,
 } from '../../../services/group.service';
 import type { Notification } from '../../../services/notification.service';
+import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
 import { getErrorMessage } from '../../../utils/error';
 import { hapticLight } from '../../../utils/haptics';
@@ -76,6 +80,7 @@ export default function NotificationsScreen() {
 
   const [groups, setGroups] = useState<GroupWithMemberCount[]>([]);
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [confirmInvitation, setConfirmInvitation] = useState<MyPendingInvitation | null>(null);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   // Initial load + throttle: re-focus trong vòng 30s chỉ refresh badge,
@@ -179,12 +184,43 @@ export default function NotificationsScreen() {
         await markAsRead([id]);
       }
       const data = (n.data ?? {}) as Record<string, unknown>;
+
+      // Invite received: mở dialog confirm thay vì navigate.
+      if (n.type === 'member.invite_received') {
+        const invitationId = data.invitation_id as string | undefined;
+        if (!invitationId) return;
+        // Lookup ở store trước (đã được load qua loadGroups/realtime)
+        let inv = useGroupStore
+          .getState()
+          .myPendingInvitations.find((x) => x.invitation_id === invitationId);
+        // Fallback fetch nếu user offline lúc invite tới
+        if (!inv) {
+          try {
+            const fresh = await fetchMyPendingInvitations();
+            useGroupStore.setState({ myPendingInvitations: fresh });
+            inv = fresh.find((x) => x.invitation_id === invitationId);
+          } catch {
+            // ignore — handle missing dưới
+          }
+        }
+        if (inv) {
+          setConfirmInvitation(inv);
+        } else {
+          toast.show({
+            variant: 'warning',
+            label: 'Lời mời không còn hiệu lực',
+            description: 'Có thể đã bị thu hồi hoặc bạn đã trả lời ở thiết bị khác.',
+          });
+        }
+        return;
+      }
+
       const tripId = (data.trip_id as string | undefined) ?? n.trip_id;
       const groupId = (data.group_id as string | undefined) ?? n.group_id;
       if (tripId) router.push(`/trips/${tripId}`);
       else if (groupId) router.push(`/groups/${groupId}`);
     },
-    [markAsRead]
+    [markAsRead, toast]
   );
 
   const handleDeleteById = useCallback(
@@ -442,6 +478,11 @@ export default function NotificationsScreen() {
           </BottomSheet.Content>
         </BottomSheet.Portal>
       </BottomSheet>
+
+      <InvitationConfirmDialog
+        invitation={confirmInvitation}
+        onClose={() => setConfirmInvitation(null)}
+      />
     </View>
   );
 }

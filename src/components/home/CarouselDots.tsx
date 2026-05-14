@@ -11,10 +11,11 @@ interface CarouselDotsProps {
   currentIndex: number;
   activeColor: string;
   baseColor: string;
+  orientation?: 'horizontal' | 'vertical';
 }
 
 const DOT_SIZE = 6;
-const ACTIVE_WIDTH = 22;
+const ACTIVE_LENGTH = 22;
 const GAP = 6;
 
 const Dot = memo(function Dot({
@@ -22,11 +23,13 @@ const Dot = memo(function Dot({
   currentIndex,
   baseColor,
   activeColor,
+  orientation,
 }: {
   index: number;
   currentIndex: number;
   baseColor: string;
   activeColor: string;
+  orientation: 'horizontal' | 'vertical';
 }) {
   const t = useSharedValue(index === currentIndex ? 1 : 0);
 
@@ -37,10 +40,14 @@ const Dot = memo(function Dot({
     });
   }, [index, currentIndex, t]);
 
-  const dotStyle = useAnimatedStyle(() => ({
-    width: DOT_SIZE + t.value * (ACTIVE_WIDTH - DOT_SIZE),
-    opacity: 0.45 + t.value * 0.55,
-  }));
+  const dotStyle = useAnimatedStyle(() => {
+    const length = DOT_SIZE + t.value * (ACTIVE_LENGTH - DOT_SIZE);
+    return {
+      width: orientation === 'horizontal' ? length : DOT_SIZE,
+      height: orientation === 'horizontal' ? DOT_SIZE : length,
+      opacity: 0.45 + t.value * 0.55,
+    };
+  });
 
   const fillStyle = useAnimatedStyle(() => ({ opacity: t.value }));
 
@@ -62,10 +69,14 @@ export const CarouselDots = memo(function CarouselDots({
   currentIndex,
   activeColor,
   baseColor,
+  orientation = 'horizontal',
 }: CarouselDotsProps) {
   if (count <= 1) return null;
   return (
-    <View style={styles.row} accessibilityRole="tablist">
+    <View
+      style={orientation === 'horizontal' ? styles.row : styles.col}
+      accessibilityRole="tablist"
+    >
       {Array.from({ length: count }).map((_, i) => (
         <Dot
           key={i}
@@ -73,6 +84,7 @@ export const CarouselDots = memo(function CarouselDots({
           currentIndex={currentIndex}
           baseColor={baseColor}
           activeColor={activeColor}
+          orientation={orientation}
         />
       ))}
     </View>
@@ -86,8 +98,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: GAP,
   },
+  col: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: GAP,
+  },
   dot: {
-    height: DOT_SIZE,
     borderRadius: DOT_SIZE / 2,
     overflow: 'hidden',
   },

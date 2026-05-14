@@ -11,7 +11,8 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, AppTextField, DismissKeyboardView } from '../../components/ui';
+import { AnimatedEntrance, AppText, DismissKeyboardView } from '../../components/ui';
+import { FloatingLabelInput } from '../../components/ui/floating';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { getResetCooldownRemaining } from '../../services/auth.helper';
 import { useAuthStore } from '../../stores/auth.store';
@@ -107,8 +108,8 @@ export default function ForgotPasswordScreen() {
         {!sent ? (
           <>
             <AnimatedEntrance delay={150}>
-              <AppTextField
-                placeholder="Email"
+              <FloatingLabelInput
+                label="Email"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"

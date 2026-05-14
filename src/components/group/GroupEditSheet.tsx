@@ -1,4 +1,4 @@
-import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { File } from 'expo-file-system';
 import { BottomSheet, Button, useToast } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
@@ -15,6 +15,7 @@ import { getErrorMessage } from '../../utils/error';
 import { type AvatarSource, pickAndProcessAvatar, type ProcessedAvatar } from '../../utils/imageProcessing';
 import { validateName } from '../../utils/validate';
 import { AppText, Avatar, DismissKeyboardView } from '../ui';
+import { FloatingBottomSheetInput } from '../ui/floating';
 
 interface GroupEditSheetProps {
   isOpen: boolean;
@@ -218,13 +219,9 @@ export function GroupEditSheet({
 
             {/* ── Section: Tên nhóm ── */}
             <View style={styles.section}>
-              <AppText variant="label" tone="muted" style={styles.sectionLabel}>
-                Tên nhóm
-              </AppText>
-              <BottomSheetTextInput
+              <FloatingBottomSheetInput
                 key={resetKey}
-                placeholder="Tên nhóm"
-                placeholderTextColor={c.muted}
+                label="Tên nhóm"
                 defaultValue={groupName}
                 onChangeText={handleChangeName}
                 returnKeyType="done"
@@ -232,14 +229,7 @@ export function GroupEditSheet({
                 maxLength={100}
                 accessibilityLabel="Tên nhóm"
                 editable={!isSavingName}
-                style={[
-                  styles.input,
-                  {
-                    color: c.foreground,
-                    backgroundColor: c.surfaceAlt,
-                    borderColor: c.divider,
-                  },
-                ]}
+                surfaceColor={c.surface}
               />
               {nameError ? (
                 <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
@@ -390,13 +380,6 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     marginBottom: 2,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    fontSize: 16,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

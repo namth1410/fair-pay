@@ -45,6 +45,14 @@ const ERROR_MAP: Record<string, string> = {
   invalid_invite_code: 'Mã mời không hợp lệ',
   already_member: 'Bạn đã là thành viên nhóm này',
 
+  // RPC custom — invitation flow (invite_member_by_email / respond_to_invitation / revoke_invitation)
+  email_invalid_or_not_found: 'Không thể mời. Vui lòng kiểm tra lại email.',
+  cannot_invite_self: 'Bạn không thể tự mời chính mình',
+  already_invited: 'Đã có lời mời đang chờ phản hồi',
+  invitation_not_found: 'Lời mời không tồn tại hoặc đã được xử lý',
+  invitation_not_pending: 'Lời mời đã được xử lý',
+  invalid_action: 'Hành động không hợp lệ',
+
   // Feedback rate limit (DB trigger — xem migration feedback_daily_limit_trigger)
   feedback_daily_limit_exceeded:
     'Bạn đã gửi tối đa 3 góp ý hôm nay, vui lòng quay lại vào ngày mai',

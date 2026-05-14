@@ -521,6 +521,15 @@ balance[member] =
   - Σ payment.amount WHERE payment.from_member_id = member (đã trả đi)
 ```
 
+**Quy ước dấu cho balance (toàn dự án — DB + UI):**
+- `balance > 0` → member ĐƯỢC NỢ — UI hiển thị **`+`** + tone `success` (xanh) + label "được nhận".
+- `balance < 0` → member ĐANG NỢ — UI hiển thị **`-`** + tone `danger` (đỏ) + label "cần trả".
+- `balance = 0` → settled — UI ẩn dấu/badge hoặc hiện chữ "cân bằng".
+
+Lý do: dấu phản ánh **góc nhìn của user** ("tôi nợ" = âm, "được nợ" = dương), không phải bookkeeping kế toán. Đảo lại sẽ gây hiểu nhầm khi user nhìn vào card/balance.
+
+Triển khai UI: `<Money value={balance} showSign />` — pass **RAW signed balance**, KHÔNG `Math.abs`. [Money.tsx](src/components/ui/Money.tsx) tự gắn dấu đúng theo dấu của value. Pass `Math.abs(balance)` cùng `showSign` sẽ luôn ra `+` → SAI convention (bug đã có trong [GroupArcCard.tsx](src/components/home/GroupArcCard.tsx), [GroupRow.tsx](src/components/home/GroupRow.tsx) trước khi sửa 2026-05-14).
+
 ### 4.2 Thuật toán tối giản giao dịch (Greedy Simplification)
 
 ```

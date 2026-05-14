@@ -14,10 +14,9 @@ import { Wordmark } from '../../components/brand/Wordmark';
 import {
   AnimatedEntrance,
   AppText,
-  AppTextField,
   DismissKeyboardView,
-  PasswordField,
 } from '../../components/ui';
+import { FloatingLabelInput, FloatingPasswordInput } from '../../components/ui/floating';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
 import { getErrorMessage } from '../../utils/error';
@@ -95,8 +94,8 @@ export default function RegisterScreen() {
         ) : null}
 
         <AnimatedEntrance delay={150}>
-          <AppTextField
-            placeholder="Tên hiển thị (2-50 ký tự)"
+          <FloatingLabelInput
+            label="Tên hiển thị (2-50 ký tự)"
             value={displayName}
             onChangeText={setDisplayName}
             autoCapitalize="words"
@@ -105,8 +104,8 @@ export default function RegisterScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={220}>
-          <AppTextField
-            placeholder="Email"
+          <FloatingLabelInput
+            label="Email"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -117,8 +116,8 @@ export default function RegisterScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={290}>
-          <PasswordField
-            placeholder="Mật khẩu (ít nhất 6 ký tự)"
+          <FloatingPasswordInput
+            label="Mật khẩu (ít nhất 6 ký tự)"
             value={password}
             onChangeText={setPassword}
             autoComplete="new-password"
@@ -127,8 +126,8 @@ export default function RegisterScreen() {
         </AnimatedEntrance>
 
         <AnimatedEntrance delay={330}>
-          <PasswordField
-            placeholder="Xác nhận mật khẩu"
+          <FloatingPasswordInput
+            label="Xác nhận mật khẩu"
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             autoComplete="new-password"

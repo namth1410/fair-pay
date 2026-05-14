@@ -1,4 +1,4 @@
-import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
@@ -7,6 +7,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
 import { AppText, DismissKeyboardView, SectionTabs } from '../ui';
+import { FloatingBottomSheetInput } from '../ui/floating';
 
 type Mode = 'create' | 'join';
 
@@ -113,24 +114,16 @@ export function CreateJoinSheet({ isOpen, onOpenChange }: CreateJoinSheetProps) 
                     : 'Nhập mã 6 ký tự được người quản trị chia sẻ.'}
                 </AppText>
 
-                <BottomSheetTextInput
+                <FloatingBottomSheetInput
                   key={`${mode}-${resetKey}`}
-                  placeholder={isCreate ? 'Tên nhóm mới' : 'a1b2c3'}
-                  placeholderTextColor={c.muted}
+                  label={isCreate ? 'Tên nhóm mới' : 'Mã mời (6 ký tự)'}
                   defaultValue=""
                   onChangeText={handleChangeText}
                   returnKeyType="done"
                   onSubmitEditing={handleSubmit}
                   autoCapitalize={isCreate ? 'sentences' : 'none'}
                   accessibilityLabel={isCreate ? 'Tên nhóm mới' : 'Mã mời'}
-                  style={[
-                    styles.input,
-                    {
-                      color: c.foreground,
-                      backgroundColor: c.surfaceAlt,
-                      borderColor: c.divider,
-                    },
-                  ]}
+                  surfaceColor={c.surface}
                 />
 
                 {formError ? (
@@ -174,13 +167,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginBottom: 2,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    fontSize: 16,
   },
   errorBox: {
     padding: 12,

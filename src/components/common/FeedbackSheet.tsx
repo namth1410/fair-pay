@@ -1,4 +1,4 @@
-import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button, useToast } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
@@ -12,6 +12,7 @@ import {
 } from '../../services/feedback.service';
 import { getErrorMessage } from '../../utils/error';
 import { AppText, DismissKeyboardView } from '../ui';
+import { FloatingBottomSheetInput } from '../ui/floating';
 
 interface FeedbackSheetProps {
   isOpen: boolean;
@@ -86,24 +87,16 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
               <AppText variant="caption" tone="muted" style={styles.hint}>
                 Mọi phản hồi của bạn đều giúp app tốt hơn. Hãy chia sẻ những gì bạn thấy chưa ổn hoặc tính năng bạn mong muốn.
               </AppText>
-              <BottomSheetTextInput
+              <FloatingBottomSheetInput
                 key={resetKey}
-                placeholder="Viết góp ý của bạn..."
-                placeholderTextColor={c.muted}
+                label="Viết góp ý của bạn..."
                 defaultValue=""
                 onChangeText={handleChangeText}
                 multiline
                 maxLength={FEEDBACK_MAX_LENGTH}
-                textAlignVertical="top"
                 accessibilityLabel="Nội dung góp ý"
-                style={[
-                  styles.input,
-                  {
-                    color: c.foreground,
-                    backgroundColor: c.surfaceAlt,
-                    borderColor: c.divider,
-                  },
-                ]}
+                surfaceColor={c.surface}
+                minHeight={140}
               />
               <AppText variant="meta" tone="muted" style={styles.lengthHint}>
                 Tối thiểu {FEEDBACK_MIN_LENGTH}, tối đa {FEEDBACK_MAX_LENGTH} ký tự
@@ -144,14 +137,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginBottom: 2,
-  },
-  input: {
-    minHeight: 140,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
   },
   lengthHint: {
     textAlign: 'right',

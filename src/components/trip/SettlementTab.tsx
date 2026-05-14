@@ -8,7 +8,8 @@ import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
 import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
-import { AppCard, AppText, AppTextField, ChipPicker, ConfirmDialog, DismissKeyboardView, EmptyState, FormReveal, Money, MoneyChipsDock, MoneyTextField, SwipeableCard } from '../ui';
+import { AppCard, AppText, ChipPicker, ConfirmDialog, DismissKeyboardView, EmptyState, FormReveal, Money, MoneyChipsDock, SwipeableCard } from '../ui';
+import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
 interface SettlementEntry {
   from: string;
@@ -135,16 +136,17 @@ export const SettlementTab = React.memo(function SettlementTab({
             <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
             <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
 
-            <MoneyTextField
-              placeholder="Số tiền (VND)"
+            <FloatingMoneyInput
+              label="Số tiền (VND)"
               value={payAmountStr}
               onChangeText={setPayAmountStr}
               showSuggestions={false}
               onFocus={() => setAmountFocused(true)}
               onBlur={() => setAmountFocused(false)}
               accessibilityLabel="Số tiền thanh toán"
+              surfaceColor={c.surface}
             />
-            <AppTextField placeholder="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" />
+            <FloatingLabelInput label="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" surfaceColor={c.surface} />
 
             {payFrom && payTo && payFrom !== payTo && (
               <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>

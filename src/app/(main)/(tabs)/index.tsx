@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CreateJoinSheet } from '../../../components/common/CreateJoinSheet';
 import { WelcomeDialog } from '../../../components/common/WelcomeDialog';
+import { GroupArcCarousel } from '../../../components/home/GroupArcCarousel';
 import { GroupCarousel } from '../../../components/home/GroupCarousel';
 import { GroupRow } from '../../../components/home/GroupRow';
 import { HeroDebt } from '../../../components/home/HeroDebt';
@@ -88,9 +89,12 @@ export default function HomeScreen() {
     }, [refreshUnreadCount])
   );
 
-  const handleViewModeChange = useCallback((mode: 'list' | 'carousel') => {
-    void setHomeViewMode(mode);
-  }, []);
+  const handleViewModeChange = useCallback(
+    (mode: 'list' | 'carousel' | 'arc') => {
+      void setHomeViewMode(mode);
+    },
+    [],
+  );
 
   const handleOpenCreateJoin = useCallback(() => {
     hapticLight();
@@ -104,6 +108,8 @@ export default function HomeScreen() {
     groupsTagline = undefined;
   } else if (viewMode === 'carousel') {
     groupsTagline = 'Vuốt qua lại để duyệt vòng tròn các nhóm';
+  } else if (viewMode === 'arc') {
+    groupsTagline = 'Vuốt lên xuống để duyệt theo cung cong';
   } else {
     groupsTagline = 'Chạm vào một nhóm để xem chi tiết · vuốt để làm mới';
   }
@@ -127,6 +133,13 @@ export default function HomeScreen() {
   } else if (viewMode === 'carousel') {
     listBody = (
       <GroupCarousel
+        groups={groups}
+        groupBalances={balanceSummary.groupBalances}
+      />
+    );
+  } else if (viewMode === 'arc') {
+    listBody = (
+      <GroupArcCarousel
         groups={groups}
         groupBalances={balanceSummary.groupBalances}
       />

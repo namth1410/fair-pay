@@ -10,6 +10,7 @@ import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { formatDateTimeVN } from '../../utils/format';
 import { AppText } from '../ui';
+import { FloatingLabelContainer } from '../ui/floating';
 
 interface DateTimeFieldProps {
   value: Date;
@@ -34,7 +35,6 @@ export function DateTimeField({
       maximumDate: maxDate,
       onChange: (event: DateTimePickerEvent, picked?: Date) => {
         if (event.type !== 'set' || !picked) return;
-        // Bước 2: chọn giờ. Giữ ngày vừa pick, mặc định giờ = giờ trong `value` cũ.
         const dateOnly = picked;
         DateTimePickerAndroid.open({
           value: dateOnly,
@@ -42,7 +42,6 @@ export function DateTimeField({
           is24Hour: true,
           onChange: (evt2: DateTimePickerEvent, picked2?: Date) => {
             if (evt2.type !== 'set' || !picked2) return;
-            // Combine date từ bước 1 + giờ/phút từ bước 2
             const combined = new Date(
               dateOnly.getFullYear(),
               dateOnly.getMonth(),
@@ -52,7 +51,6 @@ export function DateTimeField({
               0,
               0,
             );
-            // Clamp về maxDate nếu vượt
             if (maxDate && combined.getTime() > maxDate.getTime()) {
               onChange(maxDate);
             } else {
@@ -84,32 +82,27 @@ export function DateTimeField({
     [maxDate, onChange],
   );
 
+  const formatted = formatDateTimeVN(value);
+
   return (
     <View>
-      <AppText variant="meta" tone="muted" style={styles.label}>
-        {label}
-      </AppText>
-      <Pressable
+      <FloatingLabelContainer
+        label={label}
+        isFocused={iosOpen}
+        hasValue
         onPress={handlePress}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${formatDateTimeVN(value)}`}
-        style={({ pressed }) => [
-          styles.field,
-          {
-            borderColor: c.divider,
-            backgroundColor: c.surface,
-            opacity: pressed ? 0.7 : 1,
-          },
-        ]}
+        accessibilityLabel={`${label}: ${formatted}`}
       >
-        <Calendar size={18} color={c.muted} />
-        <AppText
-          variant="body"
-          style={[styles.text, { color: c.foreground, fontFamily: fonts.regular }]}
-        >
-          {formatDateTimeVN(value)}
-        </AppText>
-      </Pressable>
+        <View style={styles.row}>
+          <Calendar size={18} color={c.muted} />
+          <AppText
+            variant="body"
+            style={[styles.text, { color: c.foreground, fontFamily: fonts.regular }]}
+          >
+            {formatted}
+          </AppText>
+        </View>
+      </FloatingLabelContainer>
 
       {Platform.OS === 'ios' && iosOpen ? (
         <Modal
@@ -148,19 +141,10 @@ export function DateTimeField({
 }
 
 const styles = StyleSheet.create({
-  label: {
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  field: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 48,
   },
   text: {
     fontSize: 15,

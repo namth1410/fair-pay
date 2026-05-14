@@ -13,7 +13,8 @@ import {
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
-import { AnimatedEntrance, AppText, DismissKeyboardView, PasswordField } from '../../components/ui';
+import { AnimatedEntrance, AppText, DismissKeyboardView } from '../../components/ui';
+import { FloatingPasswordInput } from '../../components/ui/floating';
 import { supabase } from '../../config/supabase';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuthStore } from '../../stores/auth.store';
@@ -229,8 +230,8 @@ export default function ResetPasswordScreen() {
             ) : null}
 
             <AnimatedEntrance delay={150}>
-              <PasswordField
-                placeholder="Mật khẩu mới (ít nhất 6 ký tự)"
+              <FloatingPasswordInput
+                label="Mật khẩu mới (ít nhất 6 ký tự)"
                 value={password}
                 onChangeText={setPassword}
                 autoComplete="new-password"
@@ -239,8 +240,8 @@ export default function ResetPasswordScreen() {
             </AnimatedEntrance>
 
             <AnimatedEntrance delay={220}>
-              <PasswordField
-                placeholder="Xác nhận mật khẩu mới"
+              <FloatingPasswordInput
+                label="Xác nhận mật khẩu mới"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 autoComplete="new-password"

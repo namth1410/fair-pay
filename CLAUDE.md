@@ -94,6 +94,13 @@ src/
 - `validateAmount()` và `validateSplits()` nằm trong `src/utils/split.ts` — gọi trước khi tạo expense.
 - Input validation cơ bản (tên, số tiền) nằm trong `src/utils/validate.ts` — gọi ở đầu service create functions.
 
+### Quy ước dấu cho balance (UI)
+- **`-` (minus)** = user ĐANG NỢ — `balance < 0`, "cần trả", tone `danger` (đỏ).
+- **`+` (plus)** = user ĐƯỢC NỢ — `balance > 0`, "được nhận", tone `success` (xanh).
+- **`0` (settled)** → KHÔNG hiển thị badge/sign. Tuỳ component có thể hiện chữ "cân bằng" hoặc ẩn hẳn.
+- Lý do: dấu phản ánh **góc nhìn của user**, không phải kế toán. User nợ → số âm. Được nợ → số dương. Đảo lại sẽ gây hiểu nhầm.
+- Triển khai: `<Money value={balance} showSign />` — pass **RAW signed balance** (KHÔNG `Math.abs`). `Money.tsx` xử lý dấu đúng convention: `value >= 0 ? '+' : '-'`. Pass abs với `showSign` sẽ luôn ra `+` → SAI (bug đã từng có ở [GroupArcCard.tsx](src/components/home/GroupArcCard.tsx), [GroupRow.tsx](src/components/home/GroupRow.tsx)).
+
 ### Component organization
 - Screens lớn (>300 dòng) PHẢI tách thành sub-components theo tab/section.
 - Sub-components dùng `React.memo()`. Nguồn data linh hoạt: props, store (Zustand), context — chọn cái hợp lý nhất theo từng case (data đã có sẵn ở parent → props; cross-tree shared state → store/context). Không có quy tắc cứng.
@@ -184,6 +191,35 @@ src/
 - Switch "Lưu làm preset" trong form → tạo **global** preset (không trip). Pre-check trùng title chỉ check global scope (`presetConflict` true → disable submit + hint inline).
 - `applyPresetId` URL param: form effect mount → lookup preset trong store → nếu trip match + full data → apply paid_by + splits qua `applyPresetFullData` helper. Stale member → fallback default + warning banner trên form.
 - **AppDock chỉ visible ở (tabs) main pages** — không cần truyền `currentTripId` xuống QuickAddActionSheet.
+
+### Android build & signing (bare workflow)
+- Repo này commit thư mục `android/` (KHÔNG ignore) → build local bằng `cd android && ./gradlew bundleRelease`, **KHÔNG** rely vào `expo prebuild` để generate config mỗi lần. `app.json` thay đổi `versionCode`/`android.*` KHÔNG có tác dụng cho đến khi prebuild chạy lại.
+- Bump version cho Play Console upload: sửa **trực tiếp** `versionCode` ở [android/app/build.gradle:95](android/app/build.gradle#L95) (mỗi build Play Console yêu cầu `versionCode` mới; `versionName` được phép trùng).
+- **Signing config: 1 keystore master dùng chung cho cả `debug` + `release`** ở [android/app/build.gradle:100-131](android/app/build.gradle#L100-L131):
+  ```gradle
+  signingConfigs {
+      fairpay {
+          if (project.hasProperty('FAIRPAY_KEYSTORE_PATH')) {
+              storeFile file(FAIRPAY_KEYSTORE_PATH)
+              storePassword FAIRPAY_KEYSTORE_PASSWORD
+              keyAlias FAIRPAY_KEY_ALIAS
+              keyPassword FAIRPAY_KEY_PASSWORD
+          } else {
+              throw new GradleException(
+                  'Thiếu FAIRPAY_KEYSTORE_PATH trong ~/.gradle/gradle.properties. ' +
+                  'Xem hướng dẫn setup keystore trong CLAUDE.md.'
+              )
+          }
+      }
+  }
+  buildTypes {
+      debug   { signingConfig signingConfigs.fairpay }
+      release { signingConfig signingConfigs.fairpay; ... }
+  }
+  ```
+- 4 property đọc từ `~/.gradle/gradle.properties` (global, ngoài repo, KHÔNG commit): `FAIRPAY_KEYSTORE_PATH`, `FAIRPAY_KEYSTORE_PASSWORD`, `FAIRPAY_KEY_ALIAS`, `FAIRPAY_KEY_PASSWORD`.
+- Lý do dùng chung keystore cho debug: SHA-1 fingerprint duy nhất → Google Sign-In OAuth client chỉ cần whitelist 1 SHA-1 cho mọi build local. KHÔNG dùng `~/.android/debug.keystore` mặc định.
+- **Nếu chạy `expo prebuild` (đặc biệt `--clean`)**: cấu hình `signingConfigs.fairpay` + `buildTypes.debug.signingConfig` sẽ bị **OVERWRITE** về template Expo mặc định (`debug` xài `debug.keystore`, `release` không có signing). Phải restore lại block trên + giữ `versionCode` mới nhất. Bug đã từng xảy ra → xem [project_android_signing.md](C:\Users\ADMIN\.claude\projects\d--fair-pay\memory\project_android_signing.md).
 
 ### Testing
 - Tests nằm trong `src/__tests__/` — chỉ test hàm thuần (utils).

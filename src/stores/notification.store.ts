@@ -26,6 +26,10 @@ interface NotificationState {
   markAsRead: (ids: string[]) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** Insert a realtime-received notification at the head. Skip duplicates. */
+  prepend: (n: Notification) => void;
+  /** Replace an existing notification in place (dedup UPDATE event). */
+  applyUpdate: (n: Notification) => void;
   reset: () => void;
 }
 
@@ -118,6 +122,28 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       set({ items: prevItems, unreadCount: prevUnread });
       if (__DEV__) console.warn('[Notif] markAllAsRead rollback:', e);
     }
+  },
+
+  prepend: (n) => {
+    const { items, unreadCount } = get();
+    if (items.some((x) => x.id === n.id)) return;
+    set({
+      items: [n, ...items],
+      unreadCount: n.read_at ? unreadCount : unreadCount + 1,
+    });
+  },
+
+  applyUpdate: (n) => {
+    const { items } = get();
+    const idx = items.findIndex((x) => x.id === n.id);
+    if (idx === -1) {
+      // UPDATE arrived before the original INSERT was in cache — treat as new.
+      get().prepend(n);
+      return;
+    }
+    const next = items.slice();
+    next[idx] = { ...next[idx], ...n };
+    set({ items: next });
   },
 
   remove: async (id) => {

@@ -20,4 +20,3 @@ export { SectionTabs } from './SectionTabs';
 export { SettingRow } from './SettingRow';
 export * from './skia';
 export { SwipeableCard } from './SwipeableCard';
-export { VoroConfirmDialog } from './VoroConfirmDialog';

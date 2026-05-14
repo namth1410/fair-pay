@@ -1,4 +1,4 @@
-import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
@@ -8,6 +8,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
 import { AppText, DismissKeyboardView } from '../ui';
+import { FloatingBottomSheetInput } from '../ui/floating';
 
 interface RenameTripSheetProps {
   isOpen: boolean;
@@ -91,24 +92,16 @@ export function RenameTripSheet({
               <AppText variant="caption" tone="muted" style={styles.hint}>
                 Tên mới sẽ hiển thị ở danh sách nhóm và mọi nơi liên quan đến chuyến đi.
               </AppText>
-              <BottomSheetTextInput
+              <FloatingBottomSheetInput
                 key={resetKey}
-                placeholder="Tên chuyến đi"
-                placeholderTextColor={c.muted}
+                label="Tên chuyến đi"
                 defaultValue={currentName}
                 onChangeText={handleChangeText}
                 maxLength={TRIP_NAME_MAX_LENGTH}
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit}
                 accessibilityLabel="Tên chuyến đi mới"
-                style={[
-                  styles.input,
-                  {
-                    color: c.foreground,
-                    backgroundColor: c.surfaceAlt,
-                    borderColor: c.divider,
-                  },
-                ]}
+                surfaceColor={c.surface}
               />
               {formError ? (
                 <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
@@ -146,13 +139,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginBottom: 2,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    fontSize: 16,
   },
   errorBox: {
     padding: 12,

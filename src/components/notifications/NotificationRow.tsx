@@ -63,6 +63,14 @@ function iconForType(type: string, size: number, color: string) {
     return <CheckCircle2 size={size} color={color} />;
   if (type === 'member.join_rejected')
     return <XCircle size={size} color={color} />;
+  if (type === 'member.invite_received')
+    return <UserPlus size={size} color={color} />;
+  if (type === 'member.invite_accepted')
+    return <CheckCircle2 size={size} color={color} />;
+  if (type === 'member.invite_declined')
+    return <XCircle size={size} color={color} />;
+  if (type === 'member.invite_revoked')
+    return <UserMinus size={size} color={color} />;
   if (type === 'member.role_change')
     return <Users size={size} color={color} />;
   if (type === 'trip.closed')

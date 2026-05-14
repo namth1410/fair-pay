@@ -1,4 +1,9 @@
-import { LayoutGrid, List, type LucideIcon } from 'lucide-react-native';
+import {
+  AlignCenterHorizontal,
+  LayoutGrid,
+  List,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { memo, useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -21,11 +26,13 @@ interface HomeViewToggleProps {
 const ICONS: Record<HomeViewMode, LucideIcon> = {
   list: List,
   carousel: LayoutGrid,
+  arc: AlignCenterHorizontal,
 };
 
 const LABELS: Record<HomeViewMode, string> = {
   list: 'Danh sách',
   carousel: 'Carousel',
+  arc: 'Arc dọc',
 };
 
 const ITEM_SIZE = 30;
@@ -34,7 +41,7 @@ const GAP = 2;
 export const HomeViewToggle = memo(function HomeViewToggle({
   value,
   onChange,
-  modes = ['list', 'carousel'],
+  modes = ['list', 'carousel', 'arc'],
 }: HomeViewToggleProps) {
   const c = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();

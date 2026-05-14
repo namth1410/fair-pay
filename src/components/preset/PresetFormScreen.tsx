@@ -17,6 +17,7 @@ import type { PresetSplitEntry } from '../../types/database.types';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { AppText, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
+import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
 interface PresetFormScreenProps {
   /** Nếu cung cấp → edit mode; preset được tra cứu trong store. */
@@ -388,42 +389,22 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
         bottomOffset={anyInputFocused ? 70 : 20}
       >
         <DismissKeyboardView style={styles.body}>
-          <TextInput
-            placeholder="Tên preset"
-            placeholderTextColor={c.muted}
+          <FloatingLabelInput
+            label="Tên preset"
             value={title}
             onChangeText={setTitle}
             returnKeyType="next"
             accessibilityLabel="Tên preset"
-            style={[
-              styles.input,
-              {
-                color: c.foreground,
-                backgroundColor: c.surfaceAlt,
-                borderColor: c.divider,
-              },
-            ]}
           />
 
-          <TextInput
-            placeholder="Số tiền (VND)"
-            placeholderTextColor={c.muted}
-            value={formatThousands(amountStr)}
-            onChangeText={(t) => setAmountStr(parseMoneyInput(t))}
+          <FloatingMoneyInput
+            label="Số tiền (VND)"
+            value={amountStr}
+            onChangeText={setAmountStr}
+            showSuggestions={false}
             onFocus={() => setAmountFocused(true)}
             onBlur={() => setAmountFocused(false)}
-            keyboardType="number-pad"
-            returnKeyType="done"
             accessibilityLabel="Số tiền"
-            style={[
-              styles.input,
-              {
-                color: c.foreground,
-                backgroundColor: c.surfaceAlt,
-                borderColor: c.divider,
-                fontFamily: fonts.bold,
-              },
-            ]}
           />
 
           <AppText variant="meta" tone="muted" style={styles.fieldLabel}>

@@ -1,7 +1,7 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
-import { validateName } from '../utils/validate';
+import { validateEmail, validateName } from '../utils/validate';
 import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
 import { notifyJoinResolved } from './notification.service';
@@ -304,6 +304,95 @@ export async function addVirtualMember(
   });
 
   return data;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Invitation flow (admin invite by email → user accept/decline → admin revoke).
+// Mọi mutation qua RPC SECURITY DEFINER trong supabase/migrations/20260514150100_invite_rpcs.sql.
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface GroupInvitation {
+  id: string;
+  group_id: string;
+  invited_email: string;
+  invited_user_id: string;
+  invited_by: string;
+  status: 'pending' | 'accepted' | 'declined' | 'revoked';
+  created_at: string;
+  responded_at: string | null;
+  invited_display_name?: string;
+  invited_photo_url?: string | null;
+}
+
+export interface MyPendingInvitation {
+  invitation_id: string;
+  group_id: string;
+  group_name: string;
+  group_avatar_url: string | null;
+  inviter_name: string;
+  created_at: string;
+}
+
+/**
+ * Admin mời user qua email — tạo invitation pending.
+ * Email validate cả client-side (sớm) lẫn server-side (anti-tamper).
+ * Server normalize lowercase + trim → đồng bộ ở client để tránh round-trip.
+ */
+export async function inviteMemberByEmail(
+  groupId: string,
+  email: string
+): Promise<{ invitation_id: string; invited_user_id: string; invited_name: string }> {
+  const emailErr = validateEmail(email);
+  if (emailErr) throw new Error(emailErr);
+
+  const { data, error } = await supabase.rpc('invite_member_by_email', {
+    p_group_id: groupId,
+    p_email: email.trim().toLowerCase(),
+  });
+  if (error) throw error;
+  return data as { invitation_id: string; invited_user_id: string; invited_name: string };
+}
+
+/**
+ * User accept hoặc decline invitation pending của họ.
+ * Server tự rejoin nếu user từng là member rồi rời (giữ history).
+ */
+export async function respondToInvitation(
+  invitationId: string,
+  action: 'accept' | 'decline'
+): Promise<{ group_id: string; group_name: string; status: string }> {
+  const { data, error } = await supabase.rpc('respond_to_invitation', {
+    p_invitation_id: invitationId,
+    p_action: action,
+  });
+  if (error) throw error;
+  return data as { group_id: string; group_name: string; status: string };
+}
+
+/** Admin rút lời mời pending. */
+export async function revokeInvitation(invitationId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_invitation', {
+    p_invitation_id: invitationId,
+  });
+  if (error) throw error;
+}
+
+/** Admin xem danh sách invitations pending của group (kèm display_name/photo của invitee). */
+export async function fetchPendingInvitations(
+  groupId: string
+): Promise<GroupInvitation[]> {
+  const { data, error } = await supabase.rpc('get_pending_invitations_for_group', {
+    p_group_id: groupId,
+  });
+  if (error) throw error;
+  return (data as GroupInvitation[] | null) ?? [];
+}
+
+/** User xem các invitation pending dành cho mình (Home banner + dialog confirm). */
+export async function fetchMyPendingInvitations(): Promise<MyPendingInvitation[]> {
+  const { data, error } = await supabase.rpc('get_my_pending_invitations');
+  if (error) throw error;
+  return (data as MyPendingInvitation[] | null) ?? [];
 }
 
 /** Fetch active members of a group (left_at IS NULL) */

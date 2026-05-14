@@ -13,6 +13,10 @@ export type NotificationType =
   | 'member.join_requested'
   | 'member.join_approved'
   | 'member.join_rejected'
+  | 'member.invite_received'
+  | 'member.invite_accepted'
+  | 'member.invite_declined'
+  | 'member.invite_revoked'
   | 'member.role_change'
   | 'trip.closed'
   | 'trip.cleared'
@@ -86,6 +90,14 @@ export function formatNotificationTitle(params: {
       return `Bạn đã được duyệt vào nhóm ${groupName ?? ''}`.trim();
     case 'member.join_rejected':
       return `Yêu cầu vào nhóm ${groupName ?? ''} bị từ chối`.trim();
+    case 'member.invite_received':
+      return `${actorName} mời bạn vào nhóm ${groupName ?? ''}`.trim();
+    case 'member.invite_accepted':
+      return `${actorName} đã chấp nhận lời mời vào nhóm ${groupName ?? ''}`.trim();
+    case 'member.invite_declined':
+      return `${actorName} đã từ chối lời mời vào nhóm ${groupName ?? ''}`.trim();
+    case 'member.invite_revoked':
+      return `Lời mời vào nhóm ${groupName ?? ''} đã bị thu hồi`.trim();
     case 'member.role_change':
       return `Bạn được chuyển sang ${role === 'admin' ? 'quản trị viên' : 'thành viên'}`;
     case 'trip.closed':

@@ -28,6 +28,10 @@ describe('getSettingKeyForType — map notification type → setting toggle', ()
     expect(getSettingKeyForType('member.join_requested')).toBe('notify_member');
     expect(getSettingKeyForType('member.join_approved')).toBe('notify_member');
     expect(getSettingKeyForType('member.join_rejected')).toBe('notify_member');
+    expect(getSettingKeyForType('member.invite_received')).toBe('notify_member');
+    expect(getSettingKeyForType('member.invite_accepted')).toBe('notify_member');
+    expect(getSettingKeyForType('member.invite_declined')).toBe('notify_member');
+    expect(getSettingKeyForType('member.invite_revoked')).toBe('notify_member');
     expect(getSettingKeyForType('member.role_change')).toBe('notify_member');
   });
 
@@ -114,6 +118,42 @@ describe('formatNotificationTitle — render Vietnamese title', () => {
     expect(title).toBe('Yêu cầu vào nhóm Phượt bị từ chối');
   });
 
+  it('member.invite_received', () => {
+    const title = formatNotificationTitle({
+      type: 'member.invite_received',
+      actorName: 'Nam',
+      groupName: 'Phượt Đà Nẵng',
+    });
+    expect(title).toBe('Nam mời bạn vào nhóm Phượt Đà Nẵng');
+  });
+
+  it('member.invite_accepted', () => {
+    const title = formatNotificationTitle({
+      type: 'member.invite_accepted',
+      actorName: 'Lan',
+      groupName: 'Bữa trưa',
+    });
+    expect(title).toBe('Lan đã chấp nhận lời mời vào nhóm Bữa trưa');
+  });
+
+  it('member.invite_declined', () => {
+    const title = formatNotificationTitle({
+      type: 'member.invite_declined',
+      actorName: 'Minh',
+      groupName: 'Phượt',
+    });
+    expect(title).toBe('Minh đã từ chối lời mời vào nhóm Phượt');
+  });
+
+  it('member.invite_revoked', () => {
+    const title = formatNotificationTitle({
+      type: 'member.invite_revoked',
+      actorName: 'Admin',
+      groupName: 'Hà Nội',
+    });
+    expect(title).toBe('Lời mời vào nhóm Hà Nội đã bị thu hồi');
+  });
+
   it('member.role_change — admin', () => {
     const title = formatNotificationTitle({
       type: 'member.role_change',
@@ -172,6 +212,10 @@ describe('formatNotificationTitle — render Vietnamese title', () => {
       'member.join_requested',
       'member.join_approved',
       'member.join_rejected',
+      'member.invite_received',
+      'member.invite_accepted',
+      'member.invite_declined',
+      'member.invite_revoked',
       'member.role_change',
       'trip.closed',
       'trip.reminder_settle',

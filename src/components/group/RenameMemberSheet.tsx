@@ -1,4 +1,4 @@
-import { BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
@@ -8,6 +8,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
 import { AppText, DismissKeyboardView } from '../ui';
+import { FloatingBottomSheetInput } from '../ui/floating';
 
 interface RenameMemberSheetProps {
   isOpen: boolean;
@@ -93,24 +94,16 @@ export function RenameMemberSheet({
               <AppText variant="caption" tone="muted" style={styles.hint}>
                 Tên mới sẽ hiển thị ở danh sách thành viên, các khoản chi và thanh toán liên quan.
               </AppText>
-              <BottomSheetTextInput
+              <FloatingBottomSheetInput
                 key={resetKey}
-                placeholder="Tên thành viên"
-                placeholderTextColor={c.muted}
+                label="Tên thành viên"
                 defaultValue={currentName}
                 onChangeText={handleChangeText}
                 maxLength={DISPLAY_NAME_MAX_LENGTH}
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit}
                 accessibilityLabel="Tên thành viên mới"
-                style={[
-                  styles.input,
-                  {
-                    color: c.foreground,
-                    backgroundColor: c.surfaceAlt,
-                    borderColor: c.divider,
-                  },
-                ]}
+                surfaceColor={c.surface}
               />
               {formError ? (
                 <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
@@ -148,13 +141,6 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginBottom: 2,
-  },
-  input: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    fontSize: 16,
   },
   errorBox: {
     padding: 12,

@@ -1,10 +1,14 @@
 import { Button } from 'heroui-native';
 import { Share2 } from 'lucide-react-native';
 import React from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
-import type { GroupMember, JoinRequest } from '../../services/group.service';
+import type {
+  GroupInvitation,
+  GroupMember,
+  JoinRequest,
+} from '../../services/group.service';
 import { AppCard, AppText, Avatar, GradientHero } from '../ui';
 
 type Role = 'admin' | 'member';
@@ -37,19 +41,25 @@ function VirtualPill({ color }: { color: string }) {
 interface MembersTabProps {
   members: GroupMember[];
   pendingRequests: JoinRequest[];
+  pendingInvitations: GroupInvitation[];
+  isLoadingPendingInvitations: boolean;
   inviteCode?: string;
   isAdmin: boolean;
+  /** Id của invitation đang được revoke (để disable nút riêng row đó). */
+  revokingInvitationId: string | null;
   onShare: () => void;
   onKick: (member: GroupMember) => void;
   onRename: (member: GroupMember) => void;
   onApprove: (req: JoinRequest) => void;
   onReject: (req: JoinRequest) => void;
-  onAddVirtual: () => void;
+  onAddMember: () => void;
+  onRevokeInvitation: (inv: GroupInvitation) => void;
 }
 
 export const MembersTab = React.memo(function MembersTab({
-  members, pendingRequests, inviteCode, isAdmin,
-  onShare, onKick, onRename, onApprove, onReject, onAddVirtual,
+  members, pendingRequests, pendingInvitations, isLoadingPendingInvitations,
+  inviteCode, isAdmin, revokingInvitationId,
+  onShare, onKick, onRename, onApprove, onReject, onAddMember, onRevokeInvitation,
 }: MembersTabProps) {
   const c = useAppTheme();
 
@@ -117,11 +127,11 @@ export const MembersTab = React.memo(function MembersTab({
         </GradientHero>
       </Pressable>
 
-      {/* Admin-only: thêm thành viên ảo */}
+      {/* Admin-only: thêm thành viên (mời email / thành viên ảo) */}
       {isAdmin && (
         <View style={styles.addVirtualSection}>
-          <Button variant="secondary" size="sm" onPress={onAddVirtual}>
-            <Button.Label>+ Thêm thành viên ảo</Button.Label>
+          <Button variant="secondary" size="sm" onPress={onAddMember}>
+            <Button.Label>+ Thêm thành viên</Button.Label>
           </Button>
         </View>
       )}
@@ -160,6 +170,54 @@ export const MembersTab = React.memo(function MembersTab({
               }
             />
           ))}
+        </View>
+      )}
+
+      {/* Pending invitations (admin-initiated, đợi user accept) */}
+      {isAdmin && (pendingInvitations.length > 0 || isLoadingPendingInvitations) && (
+        <View style={styles.pendingSection}>
+          <AppText variant="label" tone="muted" style={styles.pendingLabel}>
+            Lời mời đang chờ ({pendingInvitations.length})
+          </AppText>
+          {isLoadingPendingInvitations && pendingInvitations.length === 0 ? (
+            <View style={styles.inlineLoading}>
+              <ActivityIndicator size="small" color={c.muted} />
+            </View>
+          ) : (
+            pendingInvitations.map((inv) => {
+              const isRevoking = revokingInvitationId === inv.id;
+              const display = inv.invited_display_name?.trim() || inv.invited_email;
+              return (
+                <AppCard
+                  key={inv.id}
+                  title={display}
+                  subtitle={inv.invited_email}
+                  leading={
+                    <Avatar
+                      seed={inv.invited_user_id}
+                      label={display}
+                      photoUrl={inv.invited_photo_url ?? null}
+                      size={40}
+                    />
+                  }
+                  borderLeft={{ width: 3, color: c.tint }}
+                  trailing={
+                    <Pressable
+                      onPress={() => !isRevoking && onRevokeInvitation(inv)}
+                      disabled={isRevoking}
+                      accessibilityRole="button"
+                      accessibilityLabel="Thu hồi lời mời"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <AppText variant="caption" weight="medium" tone="danger">
+                        {isRevoking ? 'Đang thu hồi...' : 'Thu hồi'}
+                      </AppText>
+                    </Pressable>
+                  }
+                />
+              );
+            })
+          )}
         </View>
       )}
 
@@ -212,5 +270,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   pendingLabel: { marginBottom: 8, marginTop: 4 },
+  inlineLoading: { paddingVertical: 12, alignItems: 'flex-start' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
 });

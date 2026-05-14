@@ -57,6 +57,15 @@ interface TripState {
   auditLogs: AuditLog[];
   isLoadingTrips: boolean;
   isLoadingExpenses: boolean;
+  /**
+   * Id of the trip whose expenses/payments/balances are currently cached.
+   * Used by the notification realtime router to skip refetch when a
+   * realtime event references a different trip than the one the user
+   * is actively viewing (so we don't clobber the visible trip's data).
+   */
+  currentTripId: string | null;
+  /** Group id matching the currently loaded `trips` list. */
+  currentTripsGroupId: string | null;
 
   loadTrips: (groupId: string) => Promise<void>;
   addTrip: (groupId: string, name: string) => Promise<void>;
@@ -108,9 +117,11 @@ export const useTripStore = create<TripState>((set, get) => ({
   auditLogs: [],
   isLoadingTrips: false,
   isLoadingExpenses: false,
+  currentTripId: null,
+  currentTripsGroupId: null,
 
   loadTrips: async (groupId) => {
-    set({ isLoadingTrips: true });
+    set({ isLoadingTrips: true, currentTripsGroupId: groupId });
     try {
       const trips = await fetchTrips(groupId);
       set({ trips });
@@ -230,7 +241,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     // Initial fetch (mount trip detail) hoặc post-RPC mass-delete: populate cache đầy đủ.
     // Toggle isLoadingExpenses để ExpensesTab hiện skeleton — tránh phải gọi
     // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
-    set({ isLoadingExpenses: true });
+    set({ isLoadingExpenses: true, currentTripId: tripId });
     try {
       const data = await fetchTripBalanceData(tripId);
       if (!data) {
@@ -290,5 +301,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       auditLogs: [],
       isLoadingTrips: false,
       isLoadingExpenses: false,
+      currentTripId: null,
+      currentTripsGroupId: null,
     }),
 }));

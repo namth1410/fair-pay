@@ -26,12 +26,26 @@ import { LightningTransitionProvider } from '../contexts/LightningTransition';
 import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
 import { useAppTheme } from '../hooks/useAppTheme';
+import { useInvitationsRealtime } from '../hooks/useInvitationsRealtime';
+import { useNotificationRealtime } from '../hooks/useNotificationRealtime';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
 import { bootstrapPreferences, getDarkMode } from '../utils/userPreferences';
 
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Self-gating bridge: subscribes to Supabase realtime for the current user's
+ * notifications. Hook no-ops when there's no session, and tears down its
+ * channel on logout/unmount. Mounted as sibling to <Slot/> so it sits inside
+ * <HeroUINativeProvider> (toast context) but doesn't depend on the route tree.
+ */
+function NotificationRealtimeBridge() {
+  useNotificationRealtime();
+  useInvitationsRealtime();
+  return null;
+}
 
 // Module-level flag: splash chỉ chạy 1 lần / cold boot. Nếu RootLayout có remount
 // (theme change, navigation cross-group khi login/logout, hot reload…), state
@@ -161,6 +175,7 @@ export default function RootLayout() {
                 <AuthGate>
                   <Slot />
                 </AuthGate>
+                <NotificationRealtimeBridge />
               </LightningTransitionProvider>
             </MorphTransitionProvider>
             <ThemeTransitionOverlay />

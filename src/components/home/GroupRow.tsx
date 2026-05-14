@@ -137,8 +137,10 @@ export const GroupRow = memo(function GroupRow({
           <View
             style={[styles.balancePill, { backgroundColor: toneSoft }]}
           >
+            {/* Pass RAW signed balance — Money tự gắn dấu đúng convention
+                ('-' khi nợ, '+' khi được nợ). Xem CLAUDE.md §Quy ước dấu. */}
             <Money
-              value={Math.abs(balance)}
+              value={balance}
               variant="default"
               tone={isPositive ? 'success' : 'danger'}
               showSign

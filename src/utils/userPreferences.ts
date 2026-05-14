@@ -8,7 +8,7 @@ import { useAuthStore } from '../stores/auth.store';
 const STORAGE_KEY = 'fair_pay_user_prefs';
 const HOME_VIEW_MODE_KEY = 'fair_pay_home_view_mode';
 
-export type HomeViewMode = 'list' | 'carousel';
+export type HomeViewMode = 'list' | 'carousel' | 'arc';
 const DEFAULT_HOME_VIEW_MODE: HomeViewMode = 'list';
 
 interface PrefCache {
@@ -51,7 +51,9 @@ export async function bootstrapPreferences(): Promise<void> {
     ]);
     const parsed = raw ? (JSON.parse(raw) as Partial<UserSettings>) : null;
     const homeViewMode: HomeViewMode =
-      rawHomeMode === 'list' || rawHomeMode === 'carousel'
+      rawHomeMode === 'list' ||
+      rawHomeMode === 'carousel' ||
+      rawHomeMode === 'arc'
         ? rawHomeMode
         : DEFAULT_HOME_VIEW_MODE;
     const darkMode: UserSettings['dark_mode'] =

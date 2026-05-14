@@ -13,16 +13,20 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useShallow } from 'zustand/react/shallow';
 
-import { AddVirtualMemberSheet } from '../../../components/common/AddVirtualMemberSheet';
+import { AddMemberSheet } from '../../../components/common/AddMemberSheet';
 import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
-import { AppText, Avatar, BouncyDialog, ConfirmDialog, SectionTabs, VoroConfirmDialog } from '../../../components/ui';
+import { AppText, Avatar, BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
-import type { GroupMember, JoinRequest } from '../../../services/group.service';
+import type {
+  GroupInvitation,
+  GroupMember,
+  JoinRequest,
+} from '../../../services/group.service';
 import type { Trip } from '../../../services/trip.service';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
@@ -59,17 +63,23 @@ export default function GroupDetailScreen() {
   // tránh re-render theo các field không liên quan (vd `balanceSummary`).
   const {
     groups, currentGroupMembers, pendingJoinRequests,
-    loadMembers, loadPendingRequests, approveRequest, rejectRequest,
+    pendingInvitations, isLoadingPendingInvitations,
+    loadMembers, loadPendingRequests, loadPendingInvitations,
+    approveRequest, rejectRequest, revokeInvite,
     kickMember, removeGroup,
   } = useGroupStore(
     useShallow((s) => ({
       groups: s.groups,
       currentGroupMembers: s.currentGroupMembers,
       pendingJoinRequests: s.pendingJoinRequests,
+      pendingInvitations: s.pendingInvitations,
+      isLoadingPendingInvitations: s.isLoadingPendingInvitations,
       loadMembers: s.loadMembers,
       loadPendingRequests: s.loadPendingRequests,
+      loadPendingInvitations: s.loadPendingInvitations,
       approveRequest: s.approveRequest,
       rejectRequest: s.rejectRequest,
+      revokeInvite: s.revokeInvite,
       kickMember: s.kickMember,
       removeGroup: s.removeGroup,
     }))
@@ -90,8 +100,10 @@ export default function GroupDetailScreen() {
   const [myRole, setMyRole] = useState<Role>('member');
   const [confirm, setConfirm] = useState<ConfirmState>(CONFIRM_CLOSED);
   const [deleteGroupOpen, setDeleteGroupOpen] = useState(false);
-  const [addVirtualOpen, setAddVirtualOpen] = useState(false);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
   const [tripToToggle, setTripToToggle] = useState<Trip | null>(null);
+  const [toggleBusy, setToggleBusy] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [memberToRename, setMemberToRename] = useState<GroupMember | null>(null);
@@ -175,7 +187,10 @@ export default function GroupDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isAdmin && id) loadPendingRequests(id);
+      if (isAdmin && id) {
+        loadPendingRequests(id);
+        loadPendingInvitations(id);
+      }
     }, [isAdmin, id])
   );
 
@@ -247,11 +262,35 @@ export default function GroupDetailScreen() {
     });
   };
 
+  const handleRevokeInvitation = (inv: GroupInvitation) => {
+    const display = inv.invited_display_name?.trim() || inv.invited_email;
+    setConfirm({
+      isOpen: true,
+      title: 'Thu hồi lời mời',
+      description: `Thu hồi lời mời gửi tới ${display}?`,
+      confirmLabel: 'Thu hồi',
+      destructive: true,
+      onConfirm: async () => {
+        if (!id) return;
+        setRevokingInvitationId(inv.id);
+        try {
+          await revokeInvite(inv.id, id);
+          toast.show({ variant: 'success', label: 'Đã thu hồi lời mời' });
+        } catch (e: unknown) {
+          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        } finally {
+          setRevokingInvitationId(null);
+        }
+      },
+    });
+  };
+
   const handleToggleTripRequest = (trip: Trip) => setTripToToggle(trip);
 
   const confirmToggleTrip = async () => {
     const trip = tripToToggle;
-    if (!trip) return;
+    if (!trip || toggleBusy) return;
+    setToggleBusy(true);
     try {
       await toggleTripStatus(trip);
       toast.show({
@@ -259,8 +298,11 @@ export default function GroupDetailScreen() {
         label: trip.status === 'open' ? 'Đã đóng chuyến' : 'Đã mở lại chuyến',
         description: trip.name,
       });
+      setTripToToggle(null);
     } catch (e: unknown) {
       toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+    } finally {
+      setToggleBusy(false);
     }
   };
 
@@ -326,7 +368,9 @@ export default function GroupDetailScreen() {
           {
             key: 'members',
             label: `Thành viên (${currentGroupMembers.length})`,
-            badge: isAdmin ? pendingJoinRequests.length : undefined,
+            badge: isAdmin
+              ? pendingJoinRequests.length + pendingInvitations.length
+              : undefined,
           },
           { key: 'settings', label: 'Cài đặt', hidden: !isAdmin },
         ]}
@@ -356,14 +400,18 @@ export default function GroupDetailScreen() {
               <MembersTab
                 members={currentGroupMembers}
                 pendingRequests={pendingJoinRequests}
+                pendingInvitations={pendingInvitations}
+                isLoadingPendingInvitations={isLoadingPendingInvitations}
                 inviteCode={group?.invite_code}
                 isAdmin={isAdmin}
+                revokingInvitationId={revokingInvitationId}
                 onShare={handleShare}
                 onKick={handleKick}
                 onRename={(m) => { setMemberToRename(m); setRenameOpen(true); }}
                 onApprove={handleApprove}
                 onReject={handleReject}
-                onAddVirtual={() => setAddVirtualOpen(true)}
+                onAddMember={() => setAddMemberOpen(true)}
+                onRevokeInvitation={handleRevokeInvitation}
               />
             </View>
             {isAdmin ? (
@@ -394,11 +442,11 @@ export default function GroupDetailScreen() {
       />
 
       {id ? (
-        <AddVirtualMemberSheet
-          isOpen={addVirtualOpen}
-          onOpenChange={setAddVirtualOpen}
+        <AddMemberSheet
+          isOpen={addMemberOpen}
+          onOpenChange={setAddMemberOpen}
           groupId={id}
-          onSuccess={(name) =>
+          onVirtualAdded={(name) =>
             toast.show({
               variant: 'success',
               label: 'Đã thêm thành viên ảo',
@@ -431,19 +479,37 @@ export default function GroupDetailScreen() {
         />
       ) : null}
 
-      <VoroConfirmDialog
+      <BouncyDialog
         isOpen={tripToToggle !== null}
-        onClose={() => setTripToToggle(null)}
-        title={tripToToggle?.status === 'open' ? 'Đóng chuyến đi' : 'Mở lại chuyến đi'}
-        description={
-          tripToToggle?.status === 'open'
+        onClose={() => { if (!toggleBusy) setTripToToggle(null); }}
+        dismissOnBackdrop={!toggleBusy}
+      >
+        <BouncyDialog.Title>
+          {tripToToggle?.status === 'open' ? 'Đóng chuyến đi?' : 'Mở lại chuyến đi?'}
+        </BouncyDialog.Title>
+        <BouncyDialog.Description>
+          {tripToToggle?.status === 'open'
             ? `Đóng chuyến "${tripToToggle?.name}"? Bạn vẫn có thể mở lại sau.`
-            : `Mở lại chuyến "${tripToToggle?.name}" để tiếp tục ghi chi phí.`
-        }
-        confirmLabel={tripToToggle?.status === 'open' ? 'Đóng chuyến' : 'Mở lại'}
-        destructive={tripToToggle?.status === 'open'}
-        onConfirm={confirmToggleTrip}
-      />
+            : `Mở lại chuyến "${tripToToggle?.name}" để tiếp tục ghi chi phí.`}
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setTripToToggle(null)} isDisabled={toggleBusy}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button
+            variant={tripToToggle?.status === 'open' ? 'danger' : 'primary'}
+            size="sm"
+            onPress={confirmToggleTrip}
+            isDisabled={toggleBusy}
+          >
+            <Button.Label>
+              {toggleBusy
+                ? 'Đang xử lý...'
+                : tripToToggle?.status === 'open' ? 'Đóng chuyến' : 'Mở lại'}
+            </Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
 
       <BouncyDialog
         isOpen={deleteGroupOpen}

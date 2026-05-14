@@ -45,14 +45,13 @@ import {
 import { ImagePickerSheet } from '../common/ImagePickerSheet';
 import {
   AppText,
-  AppTextField,
   ChipPicker,
   DismissKeyboardView,
   Money,
   MoneyChipsDock,
-  MoneyTextField,
 } from '../ui';
 import { ConfirmDialog } from '../ui';
+import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 import { AddToField } from './AddToField';
 import { DateTimeField } from './DateTimeField';
 
@@ -578,14 +577,14 @@ export function ExpenseFormScreen({
             </View>
           ) : null}
 
-          <AppTextField
-            placeholder="Tên khoản chi"
+          <FloatingLabelInput
+            label="Tên khoản chi"
             value={title}
             onChangeText={setTitle}
             accessibilityLabel="Tên khoản chi"
           />
-          <MoneyTextField
-            placeholder="Số tiền (VND)"
+          <FloatingMoneyInput
+            label="Số tiền (VND)"
             value={amountStr}
             onChangeText={setAmountStr}
             showSuggestions={false}
@@ -609,11 +608,12 @@ export function ExpenseFormScreen({
             </AppText>
           )}
 
-          <AppTextField
-            placeholder="Ghi chú (tùy chọn)"
+          <FloatingLabelInput
+            label="Ghi chú (tùy chọn)"
             value={note}
             onChangeText={setNote}
             accessibilityLabel="Ghi chú"
+            multiline
           />
 
           {members.length > 0 && amount > 0 ? (
