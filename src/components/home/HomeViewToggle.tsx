@@ -41,7 +41,7 @@ const GAP = 2;
 export const HomeViewToggle = memo(function HomeViewToggle({
   value,
   onChange,
-  modes = ['list', 'carousel', 'arc'],
+  modes = ['arc', 'carousel', 'list'],
 }: HomeViewToggleProps) {
   const c = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();

@@ -21,10 +21,66 @@ function fireAndForget(p: Promise<unknown>) {
   });
 }
 
+/**
+ * Tính route deep link cho 1 notification — dùng khi user tap FCM push hoặc
+ * khi click bell card. KHÔNG refetch (đó là việc của `routeNotification`).
+ *
+ * Trả `null` cho type không có entity cụ thể (ví dụ member.invite_received
+ * điều hướng về Home để xem ribbon, không phải route param-based).
+ */
+export function getDeepLinkForNotification(
+  type: string,
+  groupId: string | null,
+  tripId: string | null
+): string | null {
+  switch (type) {
+    case 'expense.created':
+    case 'expense.edited':
+    case 'expense.deleted':
+    case 'payment.recorded':
+    case 'payment.received':
+    case 'trip.closed':
+    case 'trip.cleared':
+    case 'trip.reminder_settle':
+      return tripId ? `/trips/${tripId}` : null;
+
+    case 'member.join_requested':
+    case 'member.role_change':
+    case 'member.invite_accepted':
+    case 'member.invite_declined':
+    case 'trip.deleted':
+      return groupId ? `/groups/${groupId}` : null;
+
+    case 'member.join_approved':
+      // Approved → user mới là member, dẫn vào group đó.
+      return groupId ? `/groups/${groupId}` : '/';
+
+    case 'member.join_rejected':
+    case 'member.invite_received':
+    case 'member.invite_revoked':
+      // Home có ribbon "My pending join requests / invitations".
+      return '/';
+
+    default:
+      return null;
+  }
+}
+
 export function routeNotification(notif: Notification): void {
-  const type = notif.type as NotificationType;
-  const groupId = notif.group_id;
-  const tripId = notif.trip_id;
+  dispatchNotificationRefetch(notif.type, notif.group_id, notif.trip_id);
+}
+
+/**
+ * Cùng logic refetch như `routeNotification` nhưng nhận field rời — dùng từ
+ * FCM tap handler ở root layout, nơi chỉ có payload data của push (không có
+ * full Notification row).
+ */
+export function dispatchNotificationRefetch(
+  rawType: string,
+  groupId: string | null,
+  tripId: string | null
+): void {
+  const type = rawType as NotificationType;
 
   // Lazy require để tránh circular deps (stores có thể import từ services dùng
   // các util chung).

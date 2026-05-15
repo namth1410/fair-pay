@@ -40,6 +40,8 @@ expo-env.d.ts
 # Google / Firebase credentials
 google-services.json
 play-store-key.json
+# Firebase Admin SDK service account JSON (private_key inside — never commit)
+*-firebase-adminsdk-*.json
 
 # Temporary
 *.log

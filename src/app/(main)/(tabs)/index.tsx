@@ -103,16 +103,6 @@ export default function HomeScreen() {
 
   const showHero = groups.length > 0;
   const showToggle = groups.length > 0;
-  let groupsTagline: string | undefined;
-  if (groups.length === 0) {
-    groupsTagline = undefined;
-  } else if (viewMode === 'carousel') {
-    groupsTagline = 'Vuốt qua lại để duyệt vòng tròn các nhóm';
-  } else if (viewMode === 'arc') {
-    groupsTagline = 'Vuốt lên xuống để duyệt theo cung cong';
-  } else {
-    groupsTagline = 'Chạm vào một nhóm để xem chi tiết · vuốt để làm mới';
-  }
 
   const showSkeleton = isLoading && groups.length === 0;
   const isEmpty = !showSkeleton && groups.length === 0;
@@ -207,7 +197,6 @@ export default function HomeScreen() {
             <SectionHeader
               title="NHÓM CỦA BẠN"
               count={groups.length}
-              tagline={groupsTagline}
               right={
                 <View style={styles.headerRight}>
                   {showToggle && (

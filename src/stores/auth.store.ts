@@ -13,6 +13,10 @@ import {
   getResetCooldownRemaining,
   markResetSent,
 } from '../services/auth.helper';
+import {
+  registerForPushNotifications,
+  unregisterPushToken,
+} from '../services/pushNotification.service';
 import type { UserProfile } from '../services/user.service';
 
 interface AuthState {
@@ -80,6 +84,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       if (error) throw error;
       set({ session: data.session, user: data.user });
+      // Fire-and-forget: không chặn login UX nếu permission dialog chậm hoặc fail.
+      registerForPushNotifications();
     } finally {
       set({ isLoading: false });
     }
@@ -95,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       if (error) throw error;
       set({ session: data.session, user: data.user });
+      registerForPushNotifications();
     } finally {
       set({ isLoading: false });
     }
@@ -137,6 +144,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         session: sessionData.session,
         user: sessionData.user,
       });
+      registerForPushNotifications();
     } catch (e: unknown) {
       const code = (e as { code?: string | number })?.code;
       if (code === statusCodes.SIGN_IN_CANCELLED) return;
@@ -197,6 +205,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: async () => {
+    // Clear FCM token TRƯỚC khi clear session — cần auth còn active để pass RLS
+    // update users.fcm_token = NULL. Sau khi signOut() Supabase, RLS sẽ block.
+    await unregisterPushToken();
+
     // Clear local Google account cache trước. Nếu không, lần login Google
     // kế tiếp sẽ không show account picker (vì đã cache account cũ) —
     // UX confusing trên thiết bị chia sẻ. Idempotent: gọi khi chưa sign-in OK.

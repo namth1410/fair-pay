@@ -42,6 +42,7 @@ const baseSettings = {
   notify_payment: true,
   notify_member: true,
   notify_smart: true,
+  push_enabled: true,
   haptics_enabled: true,
   animations_enabled: true,
 };

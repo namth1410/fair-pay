@@ -18,7 +18,14 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#D1FAE5"
       },
-      "package": "com.throneware.fairpay"
+      "package": "com.throneware.fairpay",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
     },
     "plugins": [
       [
@@ -33,15 +40,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Cho phép Fair Pay truy cập ảnh để đặt avatar nhóm.",
           "cameraPermission": "Cho phép Fair Pay dùng camera để chụp avatar nhóm.",
           "microphonePermission": false
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "granularPermissions": ["photo"]
         }
       ],
       [
@@ -78,7 +78,13 @@
       ],
       "expo-sharing",
       "@react-native-google-signin/google-signin",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#10B981"
+        }
+      ]
     ],
     "extra": {
       "router": {

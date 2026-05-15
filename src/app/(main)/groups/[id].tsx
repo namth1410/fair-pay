@@ -19,7 +19,7 @@ import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
-import { AppText, Avatar, BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
+import { Avatar, BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
 import type {
@@ -351,14 +351,6 @@ export default function GroupDetailScreen() {
               </View>
             ) : null}
           </View>
-          <AppText
-            variant="title"
-            weight="semibold"
-            numberOfLines={1}
-            style={styles.heroName}
-          >
-            {group.name}
-          </AppText>
         </Pressable>
       ) : null}
 
@@ -557,9 +549,5 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  heroName: {
-    maxWidth: '85%',
-    textAlign: 'center',
   },
 });

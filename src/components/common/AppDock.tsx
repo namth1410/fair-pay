@@ -31,33 +31,33 @@ const PILL_PADDING_H = 12;
 const ITEM_GAP = 8;
 const INDICATOR_SIZE = 38;
 
-// Layout: [Home] [Notif] [FAB] [Presets] [Settings]
+// Layout: [Home] [Presets] [FAB] [Notif] [Settings]
 // 4 nav items + 1 FAB ở giữa; 4 gaps giữa 5 elements.
 const PILL_WIDTH =
   PILL_PADDING_H * 2 + ITEM_SIZE * 4 + FAB_SIZE + ITEM_GAP * 4;
 
 const NAV_INDEX_HOME = 0;
-const NAV_INDEX_NOTIF = 1;
-const NAV_INDEX_PRESETS = 2;
+const NAV_INDEX_PRESETS = 1;
+const NAV_INDEX_NOTIF = 2;
 const NAV_INDEX_SETTINGS = 3;
 
 function pathToActiveIndex(pathname: string): number {
   if (pathname === '/' || pathname === '') return NAV_INDEX_HOME;
-  if (pathname === '/notifications') return NAV_INDEX_NOTIF;
   if (pathname === '/presets') return NAV_INDEX_PRESETS;
+  if (pathname === '/notifications') return NAV_INDEX_NOTIF;
   if (pathname === '/settings') return NAV_INDEX_SETTINGS;
   return -1;
 }
 
 // Center x của 4 nav slots (skip FAB). Tính tuần tự từ trái:
-// Home → Notif → [FAB] → Presets → Settings
+// Home → Presets → [FAB] → Notif → Settings
 const ITEM_CENTERS_REL = (() => {
   const home = PILL_PADDING_H + ITEM_SIZE / 2;
-  const notif = home + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  const fabCenter = notif + ITEM_SIZE / 2 + ITEM_GAP + FAB_SIZE / 2;
-  const presets = fabCenter + FAB_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  const settings = presets + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  return [home, notif, presets, settings];
+  const presets = home + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
+  const fabCenter = presets + ITEM_SIZE / 2 + ITEM_GAP + FAB_SIZE / 2;
+  const notif = fabCenter + FAB_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
+  const settings = notif + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
+  return [home, presets, notif, settings];
 })();
 
 const INDICATOR_OFFSETS = ITEM_CENTERS_REL.map((x) => x - INDICATOR_SIZE / 2);
@@ -168,8 +168,8 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
       indicatorIndex.value,
       [
         NAV_INDEX_HOME,
-        NAV_INDEX_NOTIF,
         NAV_INDEX_PRESETS,
+        NAV_INDEX_NOTIF,
         NAV_INDEX_SETTINGS,
       ],
       INDICATOR_OFFSETS,
@@ -262,16 +262,13 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
         />
 
         <DockNavItem
-          Icon={Bell}
-          isActive={activeIndex === NAV_INDEX_NOTIF}
+          Icon={Bookmark}
+          isActive={activeIndex === NAV_INDEX_PRESETS}
           color={
-            activeIndex === NAV_INDEX_NOTIF ? iconColor : inactiveIconColor
+            activeIndex === NAV_INDEX_PRESETS ? iconColor : inactiveIconColor
           }
-          accessibilityLabel={`Thông báo${unread > 0 ? `, ${unread} chưa đọc` : ''}`}
-          onPress={() => navigateTo('/notifications')}
-          badge={unread > 0 ? (unread > 9 ? '9+' : String(unread)) : null}
-          badgeBg={c.danger}
-          badgeBorder={c.background}
+          accessibilityLabel="Preset khoản chi"
+          onPress={() => navigateTo('/presets')}
         />
 
         <Pressable
@@ -301,13 +298,16 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
         </Pressable>
 
         <DockNavItem
-          Icon={Bookmark}
-          isActive={activeIndex === NAV_INDEX_PRESETS}
+          Icon={Bell}
+          isActive={activeIndex === NAV_INDEX_NOTIF}
           color={
-            activeIndex === NAV_INDEX_PRESETS ? iconColor : inactiveIconColor
+            activeIndex === NAV_INDEX_NOTIF ? iconColor : inactiveIconColor
           }
-          accessibilityLabel="Preset khoản chi"
-          onPress={() => navigateTo('/presets')}
+          accessibilityLabel={`Thông báo${unread > 0 ? `, ${unread} chưa đọc` : ''}`}
+          onPress={() => navigateTo('/notifications')}
+          badge={unread > 0 ? (unread > 9 ? '9+' : String(unread)) : null}
+          badgeBg={c.danger}
+          badgeBorder={c.background}
         />
 
         <DockNavItem

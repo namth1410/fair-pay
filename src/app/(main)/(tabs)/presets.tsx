@@ -14,6 +14,7 @@ import {
   AppText,
   BouncyDialog,
   EmptyState,
+  ListSkeleton,
 } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { type ExpensePreset, isFullPreset } from '../../../services/preset.service';
@@ -75,7 +76,9 @@ export default function PresetsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
       <TabHeader routeName="presets" title="Preset khoản chi" />
-      {presets.length === 0 && !loading ? (
+      {loading && presets.length === 0 ? (
+        <ListSkeleton count={4} />
+      ) : presets.length === 0 ? (
         <View style={styles.emptyWrap}>
           <EmptyState
             title="Chưa có preset"

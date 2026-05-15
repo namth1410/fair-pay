@@ -21,6 +21,9 @@ export interface UserSettings {
   notify_member: boolean;
   /** Smart suggestions (settle reminder…). */
   notify_smart: boolean;
+  /** Master FCM push toggle — independent of in-app/realtime notifications.
+   *  OFF: fcm_token bị clear, không nhận push trên tray. ON: re-register. */
+  push_enabled: boolean;
   haptics_enabled: boolean;
   animations_enabled: boolean;
 }
@@ -31,6 +34,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notify_payment: true,
   notify_member: true,
   notify_smart: true,
+  push_enabled: true,
   haptics_enabled: true,
   animations_enabled: true,
 };
@@ -113,8 +117,8 @@ export async function updateSettings(settings: UserSettings): Promise<void> {
   if (error) throw error;
 }
 
-/** Update FCM token for push notifications */
-export async function updateFcmToken(token: string): Promise<void> {
+/** Update FCM token for push notifications. Pass `null` to clear on logout. */
+export async function updateFcmToken(token: string | null): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
 

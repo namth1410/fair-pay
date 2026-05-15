@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { captureFromCamera } from '../components/common/CameraCaptureHost';
 import { GROUP_AVATAR_MAX_BYTES } from '../config/constants';
-import { ensureCameraPermission, ensureLibraryPermission } from './permissions';
+import { ensureCameraPermission } from './permissions';
 
 export type AvatarSource = 'camera' | 'library';
 
@@ -113,8 +113,10 @@ export async function pickImage(source: AvatarSource): Promise<PickedImage | nul
     workingWidth = captured.width;
     workingHeight = captured.height;
   } else {
-    const granted = await ensureLibraryPermission();
-    if (!granted) return null;
+    // Android 13+: launchImageLibraryAsync tự fallback sang Photo Picker hệ thống
+    // khi app không khai READ_MEDIA_IMAGES → không cần request permission.
+    // Android ≤12: dùng legacy URI qua content provider, cũng không cần permission
+    // cho one-shot pick (READ_EXTERNAL_STORAGE maxSdk=32 vẫn trong manifest).
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       aspect: [1, 1],

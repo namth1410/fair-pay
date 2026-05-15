@@ -291,11 +291,7 @@ export default function TripDetailScreen() {
               />
             </View>
             <View style={{ width: W }}>
-              <BalancesTab
-                tripName={trip?.name || ''}
-                balances={balances}
-                totalExpenses={totalExpenses}
-              />
+              <BalancesTab balances={balances} />
             </View>
             <View style={{ width: W }}>
               <SettlementTab

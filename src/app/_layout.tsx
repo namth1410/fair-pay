@@ -28,9 +28,14 @@ import { initDatabase } from '../db/database';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useInvitationsRealtime } from '../hooks/useInvitationsRealtime';
 import { useNotificationRealtime } from '../hooks/useNotificationRealtime';
+import {
+  type PushNotificationData,
+  setupNotificationListeners,
+} from '../services/pushNotification.service';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
+import { dispatchNotificationRefetch,getDeepLinkForNotification } from '../utils/notificationRouter';
 import { bootstrapPreferences, getDarkMode } from '../utils/userPreferences';
 
 SplashScreen.preventAutoHideAsync();
@@ -44,6 +49,39 @@ SplashScreen.preventAutoHideAsync();
 function NotificationRealtimeBridge() {
   useNotificationRealtime();
   useInvitationsRealtime();
+  return null;
+}
+
+/**
+ * FCM tap → deep link + refetch stores. Setup 1 lần ở root, KHÔNG re-mount
+ * theo session để bắt cold-start case (app bị kill → user tap notification →
+ * launch → cần process tap ngay khi root mount). Refetch sẽ no-op nếu chưa
+ * có session (stores chưa load).
+ */
+function PushTapBridge() {
+  const router = useRouter();
+  useEffect(() => {
+    const cleanup = setupNotificationListeners((data: PushNotificationData) => {
+      const route =
+        data.route ||
+        getDeepLinkForNotification(
+          data.type || '',
+          data.group_id ?? null,
+          data.trip_id ?? null
+        );
+      if (data.type) {
+        dispatchNotificationRefetch(
+          data.type,
+          data.group_id ?? null,
+          data.trip_id ?? null
+        );
+      }
+      if (route) {
+        router.push(route as never);
+      }
+    });
+    return cleanup;
+  }, [router]);
   return null;
 }
 
@@ -176,6 +214,7 @@ export default function RootLayout() {
                   <Slot />
                 </AuthGate>
                 <NotificationRealtimeBridge />
+                <PushTapBridge />
               </LightningTransitionProvider>
             </MorphTransitionProvider>
             <ThemeTransitionOverlay />

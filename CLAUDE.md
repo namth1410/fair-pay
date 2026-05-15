@@ -219,7 +219,51 @@ src/
   ```
 - 4 property đọc từ `~/.gradle/gradle.properties` (global, ngoài repo, KHÔNG commit): `FAIRPAY_KEYSTORE_PATH`, `FAIRPAY_KEYSTORE_PASSWORD`, `FAIRPAY_KEY_ALIAS`, `FAIRPAY_KEY_PASSWORD`.
 - Lý do dùng chung keystore cho debug: SHA-1 fingerprint duy nhất → Google Sign-In OAuth client chỉ cần whitelist 1 SHA-1 cho mọi build local. KHÔNG dùng `~/.android/debug.keystore` mặc định.
-- **Nếu chạy `expo prebuild` (đặc biệt `--clean`)**: cấu hình `signingConfigs.fairpay` + `buildTypes.debug.signingConfig` sẽ bị **OVERWRITE** về template Expo mặc định (`debug` xài `debug.keystore`, `release` không có signing). Phải restore lại block trên + giữ `versionCode` mới nhất. Bug đã từng xảy ra → xem [project_android_signing.md](C:\Users\ADMIN\.claude\projects\d--fair-pay\memory\project_android_signing.md).
+- **Nếu chạy `expo prebuild` (đặc biệt `--clean`)**: cấu hình `signingConfigs.fairpay` + `buildTypes.debug.signingConfig` sẽ bị **OVERWRITE** về template Expo mặc định (`debug` xài `debug.keystore`, `release` không có signing). Phải restore lại block trên + giữ `versionCode` mới nhất. Bug đã từng xảy ra → xem [project_android_signing.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/project_android_signing.md).
+
+### FCM push notifications (Android-only)
+- Stack: `expo-notifications` (SDK 55 dùng FCM v1 native) + cột `users.fcm_token` (1 user / 1 token) + Edge Function `send-push` + Postgres trigger qua `pg_net`.
+- Token registration: gọi `registerForPushNotifications()` (fire-and-forget) sau khi `set({ session })` trong 3 flow login ở [auth.store.ts](src/stores/auth.store.ts). `signOut()` gọi `unregisterPushToken()` TRƯỚC `supabase.auth.signOut()` để pass RLS update.
+- Foreground duplicate suppression: `Notifications.setNotificationHandler` trả `shouldShowBanner=false` — realtime channel `notif:${appUserId}` đã handle toast/badge. FCM chỉ đẹp khi app background/killed.
+- Tap deep link: `PushTapBridge` ở [_layout.tsx](src/app/_layout.tsx) gọi `setupNotificationListeners` 1 lần (KHÔNG re-mount theo session để bắt cold-start). Parse `data.route` từ FCM payload → `router.push()` + `dispatchNotificationRefetch()` để invalidate stores. Route mapping ở `getDeepLinkForNotification()` ([notificationRouter.ts](src/utils/notificationRouter.ts)).
+- Bridge: trigger `notifications_fcm_insert/update` ([20260515120000_fcm_push_trigger.sql](supabase/migrations/20260515120000_fcm_push_trigger.sql)) gọi `pg_net.http_post` đến `/send-push` async — KHÔNG block transaction. UPDATE trigger chỉ fire khi `data->>'count'` thay đổi (dedup case) — KHÔNG fire khi user mark-as-read.
+- Edge Function `send-push`: lookup notification + `fcm_token` → mint OAuth token (cache 55min) → POST FCM v1 → nếu UNREGISTERED/INVALID_ARGUMENT thì clear `fcm_token=NULL`. Service account JSON ở env var `FIREBASE_SERVICE_ACCOUNT`.
+- **Secrets storage qua Supabase Vault** (KHÔNG dùng `ALTER DATABASE SET app.*` — Supabase managed reject với 42501 permission denied cho mọi role kể cả `postgres`). Function `_dispatch_push_notification` đọc từ `vault.decrypted_secrets WHERE name IN ('edge_function_url', 'edge_function_token')`. Pivot patch ở [20260515130000_fcm_push_vault_pivot.sql](supabase/migrations/20260515130000_fcm_push_vault_pivot.sql) (CREATE OR REPLACE function body cũ trong [20260515120000_fcm_push_trigger.sql](supabase/migrations/20260515120000_fcm_push_trigger.sql) — file cũ giữ nguyên để migration history truy vết, runtime đã pivot).
+- **Setup deployment (1 lần)**:
+  1. `supabase secrets set FIREBASE_SERVICE_ACCOUNT='<full-service-account-json>'`
+  2. `SELECT vault.create_secret('https://<ref>.supabase.co/functions/v1', 'edge_function_url', 'Edge Function URL prefix for FCM dispatcher');`
+  3. `SELECT vault.create_secret('<service-role-jwt>', 'edge_function_token', 'Service-role JWT for Edge Function authorization');`
+  4. `supabase functions deploy send-push`
+  - **Rotate**: dùng `SELECT vault.update_secret('<secret-id>', '<new-value>')` — vault.create_secret CHỈ tạo mới, không upsert.
+- Master toggle `UserSettings.push_enabled` (default true) ở settings: OFF → unregisterPushToken (token=NULL → send-push skip với `no_fcm_token`); ON → re-register. Độc lập với 4 toggle `notify_*` (filter ở `getGroupRecipients()` — không tạo notification row).
+- **Khi `expo prebuild --clean`**: phần lớn FCM config Expo TỰ regenerate đúng vì app.json đã declare:
+  - `expo.android.googleServicesFile: "./google-services.json"` → Expo tự copy `google-services.json` sang `android/app/` + add Google Services Gradle plugin (classpath + `apply plugin`).
+  - Plugin `expo-notifications` trong app.json plugins → tự add `firebase-messaging` dependency + `POST_NOTIFICATIONS` permission.
+  - **KHÔNG cần restore tay** 4 thứ này nếu app.json giữ nguyên config.
+- Verify sau prebuild --clean: `git diff android/` xem có thiếu gì không (so với state đã work). Nếu app.json bị edit nhầm (mất `googleServicesFile` hoặc plugin `expo-notifications`) → prebuild sẽ KHÔNG sinh FCM config → restore app.json + prebuild lại.
+- Riêng **signing config** (`signingConfigs.fairpay` block) là custom KHÔNG có trong Expo standard → vẫn bị wipe khi --clean → phải restore tay như đã document ở section "Android build & signing". Memory chi tiết: [feedback_fcm_prebuild_overwrite.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_fcm_prebuild_overwrite.md).
+- iOS chưa support — APNs cần Apple Developer cert + cấu hình khác. `registerForPushNotifications()` early-return `Platform.OS !== 'android'`.
+
+### Tooling gotchas
+
+#### Uniwind + Tailwind v4 scanner đọc toàn root project
+- Uniwind cấu hình tailwind oxide scanner với pattern `**/*` từ `cssEntryFile` dirname (= project root) → scan TẤT CẢ file ở root, kể cả `CLAUDE.md`, `README.md`, `.json`, `.txt`. KHÔNG bị giới hạn ở `src/**/*.{ts,tsx}` của `tailwind.config.ts`.
+- Tailwind regex `\\([\dA-Fa-f]{1,6}[\t\n\f\r ]?|[\S\s])` decode CSS escape `\xxxxxx`. Nếu input có `\<6-hex-digits>` mà giá trị > `0x10FFFF` (max Unicode), `String.fromCodePoint` throw `RangeError: Invalid code point`.
+- **Tránh các pattern sau** trong bất kỳ file nào ở project root (đặc biệt CLAUDE.md, MEMORY.md, README.md, markdown link absolute path):
+  - Windows path `\` separator → đổi sang `/` (markdown link nhận cả 2): `C:/Users/.../memory/feedback_xxx.md` thay vì `C:\Users\...\memory\feedback_xxx.md`.
+  - Identifier / variable / filename / string bắt đầu bằng 6 ký tự hex liên tiếp sau `\`: `\feedba` ("feedback"), `\decade`, `\beefed`, `\cafebe`, `\abcdef`, `\decafe`... — tất cả `parseInt(hex,16) > 0x10FFFF` → crash. Quy tắc: chuỗi 6+ ký tự `[0-9a-fA-F]` liên tiếp ngay sau `\` là risk. Đặc biệt nguy với prefix `\feed`, `\dead`, `\cafe`, `\babe`, `\face` vì 4 ký tự đó toàn hex + thường nối với chữ Anh.
+  - Test 5 chars hoặc ít hơn an toàn (vd `\faded` = 0xFADED < 0x10FFFF), nhưng nếu chữ thứ 6 là hex (vd `\fadedz` chỉ match 5 char vì z không hex → safe; nhưng `\faded1` match 6 → 0xFADED1 → CRASH).
+- Bug đã gặp 2026-05-15: link `\Users\...\memory\feedback_fcm_prebuild_overwrite.md` trong CLAUDE.md → segment `\feedba` overflow → Metro bundle crash với `RangeError: Invalid code point 16707002`. Pin tailwindcss về version cũ KHÔNG fix vì bug có ở mọi 4.x. Real fix: sửa file gốc dùng `/` separator.
+- Debug: convert decimal err code sang hex (`(N).toString(16)`) → grep project tìm chuỗi `\<6hex>`. Hoặc patch `node_modules/tailwindcss/dist/lib.js` function `ke` thêm `console.error` thay vì throw. Tham khảo [feedback_tailwind_oxide_scan_root.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_tailwind_oxide_scan_root.md).
+
+#### npm install silent dep bumps
+- `npm install <pkg>` **re-resolve toàn dep tree** — silent bump mọi caret-ranged dep (`^x.y.z`) lên version mới nhất trong major. `package.json` giữ nguyên (range), nhưng `package-lock.json` + `node_modules/` đổi → app behavior thay đổi mà user không thấy.
+- Bug đã gặp: `npm install expo-notifications` bump `uniwind` 1.5.0→1.6.5 (pin nested `@tailwindcss/node@4.2.1`) + `react-native-reanimated` 4.2.1→4.3.1 (require worklets `0.8.x` mà worklets stay 0.7.4) → crash + gradle fail.
+- **Fair Pay pin chặt** trong [package.json](package.json):
+  - `dependencies`: 4 dep critical bỏ caret, dùng exact version (`"uniwind": "1.5.0"`, `"react-native-reanimated": "4.2.1"`, `"react-native-worklets": "0.7.2"`, `"tailwindcss": "4.2.2"`).
+  - `overrides`: 6 dep enforce nested transitive (`uniwind`, `react-native-reanimated`, `react-native-worklets`, `tailwindcss`, `@tailwindcss/node` 4.1.17, `@tailwindcss/oxide` 4.1.17). Overrides ép cả nested deps (uniwind 1.5.0 pin `@tailwindcss/node@4.1.17` exact qua overrides).
+- Khi cài package mới: chạy `npm install <pkg>` rồi check `git diff package-lock.json` ngay. Nếu thấy dep không liên quan bump → revert + thêm vào `overrides`. Hoặc dùng `npm install <pkg> --save-exact` để pin chặt version mới.
+- Tham khảo [feedback_npm_install_silent_bumps.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_npm_install_silent_bumps.md).
 
 ### Testing
 - Tests nằm trong `src/__tests__/` — chỉ test hàm thuần (utils).

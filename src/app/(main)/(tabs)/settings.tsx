@@ -14,6 +14,10 @@ import { FloatingLabelInput } from '../../../components/ui/floating';
 import { DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import {
+  registerForPushNotifications,
+  unregisterPushToken,
+} from '../../../services/pushNotification.service';
+import {
   DEFAULT_SETTINGS,
   updateDisplayName,
   updateSettings,
@@ -76,6 +80,15 @@ export default function SettingsScreen() {
     try {
       await updateSettings(newSettings);
       await persistPreferencesCache(newSettings);
+      // Master push toggle → register/unregister FCM token. Fire-and-forget,
+      // user-facing toggle đã update tức thì qua optimistic setProfile.
+      if (key === 'push_enabled') {
+        if (value === true) {
+          registerForPushNotifications();
+        } else {
+          unregisterPushToken();
+        }
+      }
     } catch (e: unknown) {
       setProfile({ ...profile, settings: prevSettings });
       if (key === 'dark_mode') {
@@ -229,6 +242,13 @@ export default function SettingsScreen() {
           THÔNG BÁO
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+          <SettingRow
+            label="Thông báo đẩy"
+            hint="Nhận thông báo trên màn hình khoá kể cả khi đóng app"
+            value={settings.push_enabled}
+            onValueChange={(v) => handleToggleSetting('push_enabled', v)}
+          />
+          <View style={[styles.divider, { backgroundColor: c.divider }]} />
           <SettingRow
             label="Hoạt động nhóm"
             hint="Khoản chi mới, sửa/xóa, đóng chuyến đi"
