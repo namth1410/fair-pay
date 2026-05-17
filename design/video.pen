@@ -1,0 +1,1603 @@
+{
+  "version": "2.11",
+  "children": [
+    {
+      "type": "text",
+      "id": "J0OZR",
+      "x": 0,
+      "y": -80,
+      "name": "rowTitle",
+      "fill": "#0B0B0F",
+      "content": "Fair Pay — Video Intro Keyframes (9:16, 1080×1920) · palette khớp app thật",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 36,
+      "fontWeight": "700"
+    },
+    {
+      "type": "frame",
+      "id": "QTnxU",
+      "x": 0,
+      "y": 0,
+      "name": "KF090 · Logo Reveal",
+      "clip": true,
+      "width": 1080,
+      "height": 1920,
+      "fill": "#FFFFFF",
+      "cornerRadius": 40,
+      "layout": "none",
+      "children": [
+        {
+          "type": "frame",
+          "id": "uGEvX",
+          "x": 0,
+          "y": 0,
+          "name": "stack",
+          "width": 1080,
+          "height": 1920,
+          "fill": "#00000000",
+          "layout": "vertical",
+          "gap": 72,
+          "padding": [
+            0,
+            80
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "1nCTW",
+              "name": "appIcon",
+              "width": 320,
+              "height": 320,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": 135,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#A8E6CF",
+                    "position": 0
+                  },
+                  {
+                    "color": "#4FD1A5",
+                    "position": 1
+                  }
+                ]
+              },
+              "cornerRadius": 72,
+              "effect": {
+                "type": "shadow",
+                "shadowType": "outer",
+                "color": "#10B98155",
+                "offset": {
+                  "x": 0,
+                  "y": 24
+                },
+                "blur": 48
+              },
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "PrrR1",
+                  "name": "iconGlyph",
+                  "width": 170,
+                  "height": 170,
+                  "iconFontName": "scroll-text",
+                  "iconFontFamily": "lucide",
+                  "fill": "#FFFFFF"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aM11Q",
+              "name": "titleGroup",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 28,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "8Zhw9",
+                  "name": "fairPayTitle",
+                  "fill": "#0B0B0F",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Fair Pay",
+                  "lineHeight": 1,
+                  "textAlign": "center",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 200,
+                  "fontWeight": "800",
+                  "letterSpacing": -6
+                },
+                {
+                  "type": "text",
+                  "id": "e0u5D",
+                  "name": "tagline",
+                  "fill": "#6B7280",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "Chia tiền nhóm — nhanh, gọn, công bằng.",
+                  "lineHeight": 1.3,
+                  "textAlign": "center",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 42
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ellipse",
+          "id": "uvjrQ",
+          "x": 160,
+          "y": 300,
+          "name": "dot1",
+          "fill": "#FFD4B8",
+          "width": 20,
+          "height": 20
+        },
+        {
+          "type": "ellipse",
+          "id": "he80r",
+          "x": 880,
+          "y": 380,
+          "name": "dot2",
+          "fill": "#C7C9F5",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "type": "ellipse",
+          "id": "bcL4w",
+          "x": 130,
+          "y": 1500,
+          "name": "dot3",
+          "fill": "#B8E8D4",
+          "width": 24,
+          "height": 24
+        },
+        {
+          "type": "ellipse",
+          "id": "0vzTU",
+          "x": 920,
+          "y": 1620,
+          "name": "dot4",
+          "fill": "#FFE4E9",
+          "width": 18,
+          "height": 18
+        },
+        {
+          "type": "ellipse",
+          "id": "4xzY1",
+          "x": 500,
+          "y": 240,
+          "name": "dot5",
+          "opacity": 0.35,
+          "fill": "#0B0B0F",
+          "width": 10,
+          "height": 10
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "nUr48",
+      "x": 1280,
+      "y": 0,
+      "name": "KF200 · Preset 1-tap spotlight",
+      "clip": true,
+      "width": 1080,
+      "height": 1920,
+      "fill": "#F5F5F7",
+      "cornerRadius": 40,
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "v1rEs",
+          "x": 90,
+          "y": 160,
+          "name": "oneTap",
+          "fill": "#0B0B0F",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "1 chạm.",
+          "lineHeight": 1,
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 200,
+          "fontWeight": "800",
+          "letterSpacing": -8
+        },
+        {
+          "type": "text",
+          "id": "x9eTv",
+          "x": 90,
+          "y": 400,
+          "name": "oneTapSub",
+          "fill": "#6B7280",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Khoản chi mới — đã có sẵn.",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 38,
+          "fontWeight": "500"
+        },
+        {
+          "type": "frame",
+          "id": "03jtQ",
+          "x": 60,
+          "y": 680,
+          "name": "sheet",
+          "width": 960,
+          "height": 1180,
+          "fill": "#FFFFFF",
+          "cornerRadius": 48,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#0B0B0F22",
+            "offset": {
+              "x": 0,
+              "y": -12
+            },
+            "blur": 60
+          },
+          "layout": "vertical",
+          "gap": 32,
+          "padding": [
+            36,
+            44
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "VX9UZ",
+              "name": "handleWrap200",
+              "width": "fill_container",
+              "height": 24,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 9999,
+                  "id": "MsuYq",
+                  "name": "handleBar200",
+                  "fill": "#D1D5DB",
+                  "width": 96,
+                  "height": 6
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "jzukw",
+              "name": "sheetTitle200",
+              "fill": "#0B0B0F",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Thêm khoản chi mới",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 54,
+              "fontWeight": "700"
+            },
+            {
+              "type": "text",
+              "id": "Vsrl4",
+              "name": "presetLabel200",
+              "fill": "#6B7280",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Preset",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 30,
+              "fontWeight": "500"
+            },
+            {
+              "type": "frame",
+              "id": "GOiaH",
+              "name": "chipRow200",
+              "width": "fill_container",
+              "height": 260,
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "WajpI",
+                  "name": "chipSelected",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 28,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 5,
+                    "fill": "#0B0B0F"
+                  },
+                  "effect": [
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#0B0B0F11",
+                      "spread": 12
+                    },
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#0B0B0F22",
+                      "blur": 48,
+                      "spread": 8
+                    }
+                  ],
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "MVnoz",
+                      "name": "chipSelTitle",
+                      "fill": "#0B0B0F",
+                      "content": "Ăn trưa",
+                      "fontFamily": "Be Vietnam Pro",
+                      "fontSize": 54,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "WcoeV",
+                      "name": "chipSelAmount",
+                      "fill": "#6B7280",
+                      "content": "35.000đ",
+                      "fontFamily": "Be Vietnam Pro",
+                      "fontSize": 38,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "HBLL4",
+                      "name": "chipSelBadge",
+                      "fill": "#0B0B0F",
+                      "cornerRadius": 9999,
+                      "gap": 8,
+                      "padding": [
+                        8,
+                        16
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "2RKAT",
+                          "name": "chipSelBolt",
+                          "width": 22,
+                          "height": 22,
+                          "iconFontName": "zap",
+                          "iconFontFamily": "lucide",
+                          "fill": "#FFFFFF"
+                        },
+                        {
+                          "type": "text",
+                          "id": "8ej5z",
+                          "name": "chipSelBoltText",
+                          "fill": "#FFFFFF",
+                          "content": "1-tap",
+                          "fontFamily": "Be Vietnam Pro",
+                          "fontSize": 24,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "bMPdK",
+                  "name": "chipMuted",
+                  "opacity": 0.5,
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 28,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1.5,
+                    "fill": "#E5E7EB"
+                  },
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 28,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "dwutX",
+                      "name": "chipMutedTitle",
+                      "fill": "#0B0B0F",
+                      "content": "Aa",
+                      "fontFamily": "Be Vietnam Pro",
+                      "fontSize": 54,
+                      "fontWeight": "700"
+                    },
+                    {
+                      "type": "text",
+                      "id": "34YVy",
+                      "name": "chipMutedAmount",
+                      "fill": "#6B7280",
+                      "content": "440.000đ",
+                      "fontFamily": "Be Vietnam Pro",
+                      "fontSize": 38,
+                      "fontWeight": "500"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ellipse",
+          "id": "Azx5s",
+          "x": 120,
+          "y": 1130,
+          "name": "ripple1",
+          "opacity": 0.6,
+          "fill": "#00000000",
+          "width": 280,
+          "height": 280,
+          "stroke": {
+            "align": "center",
+            "thickness": 6,
+            "fill": "#0B0B0F"
+          }
+        },
+        {
+          "type": "ellipse",
+          "id": "rA8FJ",
+          "x": 60,
+          "y": 1070,
+          "name": "ripple2",
+          "opacity": 0.25,
+          "fill": "#00000000",
+          "width": 400,
+          "height": 400,
+          "stroke": {
+            "align": "center",
+            "thickness": 5,
+            "fill": "#0B0B0F"
+          }
+        },
+        {
+          "type": "ellipse",
+          "id": "kVFID",
+          "x": 0,
+          "y": 1010,
+          "name": "ripple3",
+          "opacity": 0.1,
+          "fill": "#00000000",
+          "width": 520,
+          "height": 520,
+          "stroke": {
+            "align": "center",
+            "thickness": 4,
+            "fill": "#0B0B0F"
+          }
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "UoBfz",
+      "x": 2560,
+      "y": 0,
+      "name": "KF280 · Success",
+      "clip": true,
+      "width": 1080,
+      "height": 1920,
+      "fill": "#F5F5F7",
+      "cornerRadius": 40,
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "5nsCd",
+          "x": 90,
+          "y": 160,
+          "name": "xong",
+          "fill": "#0B0B0F",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Xong.",
+          "lineHeight": 1,
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 220,
+          "fontWeight": "800",
+          "letterSpacing": -10
+        },
+        {
+          "type": "text",
+          "id": "0Sp7i",
+          "x": 90,
+          "y": 440,
+          "name": "xongSub",
+          "fill": "#6B7280",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Đã thêm khoản chi.",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 42,
+          "fontWeight": "500"
+        },
+        {
+          "type": "ellipse",
+          "id": "jY9y0",
+          "x": 330,
+          "y": 720,
+          "name": "ringO",
+          "opacity": 0.18,
+          "fill": "#00000000",
+          "width": 420,
+          "height": 420,
+          "stroke": {
+            "align": "center",
+            "thickness": 6,
+            "fill": "#10B981"
+          }
+        },
+        {
+          "type": "ellipse",
+          "id": "TBNFn",
+          "x": 380,
+          "y": 770,
+          "name": "ringM",
+          "opacity": 0.32,
+          "fill": "#00000000",
+          "width": 320,
+          "height": 320,
+          "stroke": {
+            "align": "center",
+            "thickness": 5,
+            "fill": "#10B981"
+          }
+        },
+        {
+          "type": "frame",
+          "id": "7Jyhk",
+          "x": 430,
+          "y": 820,
+          "name": "checkBg",
+          "width": 220,
+          "height": 220,
+          "fill": "#10B981",
+          "cornerRadius": 9999,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#10B98144",
+            "offset": {
+              "x": 0,
+              "y": 24
+            },
+            "blur": 48
+          },
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "ogjQx",
+              "name": "checkIcon",
+              "width": 130,
+              "height": 130,
+              "iconFontName": "check",
+              "iconFontFamily": "lucide",
+              "fill": "#FFFFFF"
+            }
+          ]
+        },
+        {
+          "type": "icon_font",
+          "id": "WDQZn",
+          "x": 300,
+          "y": 730,
+          "name": "sparkL",
+          "opacity": 0.6,
+          "width": 54,
+          "height": 54,
+          "iconFontName": "sparkles",
+          "iconFontFamily": "lucide",
+          "fill": "#10B981"
+        },
+        {
+          "type": "icon_font",
+          "id": "hupxI",
+          "x": 750,
+          "y": 790,
+          "name": "sparkR",
+          "opacity": 0.55,
+          "width": 72,
+          "height": 72,
+          "iconFontName": "sparkles",
+          "iconFontFamily": "lucide",
+          "fill": "#10B981"
+        },
+        {
+          "type": "icon_font",
+          "id": "oKUlX",
+          "x": 540,
+          "y": 680,
+          "name": "sparkT",
+          "opacity": 0.7,
+          "width": 46,
+          "height": 46,
+          "iconFontName": "sparkle",
+          "iconFontFamily": "lucide",
+          "fill": "#A8E6CF"
+        },
+        {
+          "type": "frame",
+          "id": "PKGYD",
+          "x": 80,
+          "y": 1260,
+          "name": "receipt",
+          "width": 920,
+          "height": 520,
+          "fill": "#FFFFFF",
+          "cornerRadius": 32,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1.5,
+            "fill": "#E5E7EB"
+          },
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#0B0B0F11",
+            "offset": {
+              "x": 0,
+              "y": 8
+            },
+            "blur": 32
+          },
+          "layout": "vertical",
+          "gap": 24,
+          "padding": [
+            40,
+            44
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "nhlUD",
+              "name": "rcTopRow",
+              "width": "fill_container",
+              "gap": 16,
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m8CIa",
+                  "name": "rcName",
+                  "fill": "#0B0B0F",
+                  "content": "Ăn trưa",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 58,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "gMBnZ",
+                  "name": "rcAmt",
+                  "fill": "#0B0B0F",
+                  "content": "35.000đ",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 54,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "3oqqA",
+              "name": "rcDivider",
+              "fill": "#E5E7EB",
+              "width": "fill_container",
+              "height": 1.5
+            },
+            {
+              "type": "frame",
+              "id": "FB5H1",
+              "name": "rcMeta",
+              "width": "fill_container",
+              "gap": 18,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "hT918",
+                  "name": "rcAvatar",
+                  "width": 64,
+                  "height": 64,
+                  "fill": "#0B0B0F",
+                  "cornerRadius": 9999,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "93CTp",
+                      "name": "rcAvText",
+                      "fill": "#FFFFFF",
+                      "content": "N",
+                      "fontFamily": "Be Vietnam Pro",
+                      "fontSize": 30,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "OntAV",
+                  "name": "rcMetaText",
+                  "fill": "#6B7280",
+                  "content": "nam đã trả · Chia đều 3 người",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "id": "dbqfL",
+              "name": "rcDivider2",
+              "fill": "#E5E7EB",
+              "width": "fill_container",
+              "height": 1.5
+            },
+            {
+              "type": "frame",
+              "id": "zJxOE",
+              "name": "rcBottom",
+              "width": "fill_container",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "RIuFf",
+                  "name": "rcCheckMini",
+                  "width": 32,
+                  "height": 32,
+                  "iconFontName": "badge-check",
+                  "iconFontFamily": "lucide",
+                  "fill": "#10B981"
+                },
+                {
+                  "type": "text",
+                  "id": "rB1zi",
+                  "name": "rcStatus",
+                  "fill": "#10B981",
+                  "content": "Lưu vào nhóm Cyclone · vừa xong",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 28,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Vt8nO",
+      "x": 3840,
+      "y": 0,
+      "name": "KF410 · Settlement clean",
+      "clip": true,
+      "width": 1080,
+      "height": 1920,
+      "fill": "#F5F5F7",
+      "cornerRadius": 40,
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "2hbEy",
+          "x": 90,
+          "y": 160,
+          "name": "sBefore",
+          "opacity": 0.65,
+          "fill": "#E11D48",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "6 lần chuyển khoản?",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 46,
+          "fontWeight": "500"
+        },
+        {
+          "type": "text",
+          "id": "yCVPC",
+          "x": 90,
+          "y": 230,
+          "name": "sTitle",
+          "fill": "#0B0B0F",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Chỉ cần 2.",
+          "lineHeight": 1,
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 180,
+          "fontWeight": "800",
+          "letterSpacing": -8
+        },
+        {
+          "type": "text",
+          "id": "2x1oq",
+          "x": 90,
+          "y": 450,
+          "name": "sSub",
+          "fill": "#6B7280",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Fair Pay tự gợi ý cách thanh toán tối ưu.",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 38,
+          "fontWeight": "500"
+        },
+        {
+          "type": "frame",
+          "id": "nIiQz",
+          "x": 120,
+          "y": 760,
+          "name": "avNam",
+          "width": 240,
+          "height": 240,
+          "layout": "vertical",
+          "gap": 18,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "BM6y7",
+              "name": "avNamC",
+              "width": 160,
+              "height": 160,
+              "fill": "#0B0B0F",
+              "cornerRadius": 9999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "S6QFS",
+                  "name": "avNamI",
+                  "fill": "#FFFFFF",
+                  "content": "N",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 74,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "lWGvx",
+              "name": "avNamL",
+              "fill": "#0B0B0F",
+              "content": "nam",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 34,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "QOV9p",
+          "x": 720,
+          "y": 760,
+          "name": "avHieu",
+          "width": 240,
+          "height": 240,
+          "layout": "vertical",
+          "gap": 18,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "vi9pW",
+              "name": "avHieuC",
+              "width": 160,
+              "height": 160,
+              "fill": "#FFD4B8",
+              "cornerRadius": 9999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "awtOw",
+                  "name": "avHieuI",
+                  "fill": "#0B0B0F",
+                  "content": "H",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 74,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "z8vzN",
+              "name": "avHieuL",
+              "fill": "#0B0B0F",
+              "content": "Hiếu",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 34,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "f4sXA",
+          "x": 120,
+          "y": 1340,
+          "name": "avQuyet",
+          "width": 240,
+          "height": 240,
+          "layout": "vertical",
+          "gap": 18,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "45wKm",
+              "name": "avQuyetC",
+              "width": 160,
+              "height": 160,
+              "fill": "#C7C9F5",
+              "cornerRadius": 9999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "kc7Dc",
+                  "name": "avQuyetI",
+                  "fill": "#0B0B0F",
+                  "content": "Q",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 74,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "LzRac",
+              "name": "avQuyetL",
+              "fill": "#0B0B0F",
+              "content": "Quyết",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 34,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "hboCT",
+          "x": 720,
+          "y": 1340,
+          "name": "avDung",
+          "width": 240,
+          "height": 240,
+          "layout": "vertical",
+          "gap": 18,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "L3uY9",
+              "name": "avDungC",
+              "width": 160,
+              "height": 160,
+              "fill": "#B8E8D4",
+              "cornerRadius": 9999,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IXKuK",
+                  "name": "avDungI",
+                  "fill": "#0B0B0F",
+                  "content": "D",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 74,
+                  "fontWeight": "700"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "nJTE1",
+              "name": "avDungL",
+              "fill": "#0B0B0F",
+              "content": "Dũng",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 34,
+              "fontWeight": "600"
+            }
+          ]
+        },
+        {
+          "type": "icon_font",
+          "id": "kwNnp",
+          "x": 420,
+          "y": 720,
+          "name": "arr1",
+          "width": 240,
+          "height": 240,
+          "iconFontName": "move-right",
+          "iconFontFamily": "lucide",
+          "fill": "#0B0B0F"
+        },
+        {
+          "type": "frame",
+          "id": "fkwVt",
+          "x": 340,
+          "y": 1000,
+          "name": "arr1Wrap",
+          "width": 400,
+          "height": 74,
+          "fill": "#FFFFFF",
+          "cornerRadius": 9999,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#0B0B0F"
+          },
+          "padding": [
+            10,
+            22
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "zjVJt",
+              "name": "arr1Amt",
+              "fill": "#0B0B0F",
+              "content": "150.000đ",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 42,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "icon_font",
+          "id": "Gal7A",
+          "x": 420,
+          "y": 1300,
+          "name": "arr2",
+          "width": 240,
+          "height": 240,
+          "iconFontName": "move-right",
+          "iconFontFamily": "lucide",
+          "fill": "#0B0B0F"
+        },
+        {
+          "type": "frame",
+          "id": "YnzSt",
+          "x": 340,
+          "y": 1580,
+          "name": "arr2Wrap",
+          "width": 400,
+          "height": 74,
+          "fill": "#FFFFFF",
+          "cornerRadius": 9999,
+          "stroke": {
+            "align": "inside",
+            "thickness": 2,
+            "fill": "#0B0B0F"
+          },
+          "padding": [
+            10,
+            22
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "lUT3h",
+              "name": "arr2Amt",
+              "fill": "#0B0B0F",
+              "content": "80.000đ",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 42,
+              "fontWeight": "700"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "XMLPw",
+          "x": 90,
+          "y": 1800,
+          "name": "fCaption",
+          "fill": "#9CA3AF",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Số lần chuyển khoản → tối thiểu hóa",
+          "textAlign": "center",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 30
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "xWdWp",
+      "x": 5120,
+      "y": 0,
+      "name": "KF530 · CTA + Play Store",
+      "clip": true,
+      "width": 1080,
+      "height": 1920,
+      "fill": {
+        "type": "gradient",
+        "gradientType": "linear",
+        "enabled": true,
+        "rotation": 180,
+        "size": {
+          "height": 1
+        },
+        "colors": [
+          {
+            "color": "#D9F5E5",
+            "position": 0
+          },
+          {
+            "color": "#FFFFFF",
+            "position": 0.55
+          },
+          {
+            "color": "#FFFFFF",
+            "position": 1
+          }
+        ]
+      },
+      "cornerRadius": 40,
+      "layout": "none",
+      "children": [
+        {
+          "type": "text",
+          "id": "qNzVZ",
+          "x": 90,
+          "y": 160,
+          "name": "ctaTitle",
+          "fill": "#0B0B0F",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Fair Pay",
+          "lineHeight": 1,
+          "textAlign": "center",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 200,
+          "fontWeight": "800",
+          "letterSpacing": -8
+        },
+        {
+          "type": "text",
+          "id": "Y7gBW",
+          "x": 90,
+          "y": 400,
+          "name": "ctaSub",
+          "fill": "#6B7280",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Chia tiền nhóm — nhanh, gọn, công bằng.",
+          "textAlign": "center",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 36
+        },
+        {
+          "type": "frame",
+          "id": "tT7Os",
+          "x": 60,
+          "y": 520,
+          "name": "badgeRow",
+          "width": 960,
+          "height": 80,
+          "gap": 16,
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "3JEue",
+              "name": "b1",
+              "fill": "#FFFFFF",
+              "cornerRadius": 9999,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1.5,
+                "fill": "#E5E7EB"
+              },
+              "gap": 10,
+              "padding": [
+                12,
+                20
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "87OKV",
+                  "name": "b1Icon",
+                  "width": 28,
+                  "height": 28,
+                  "iconFontName": "gift",
+                  "iconFontFamily": "lucide",
+                  "fill": "#10B981"
+                },
+                {
+                  "type": "text",
+                  "id": "5W2Uf",
+                  "name": "b1Text",
+                  "fill": "#0B0B0F",
+                  "content": "Miễn phí",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 28,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "MwxFZ",
+              "name": "b2",
+              "fill": "#FFFFFF",
+              "cornerRadius": 9999,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1.5,
+                "fill": "#E5E7EB"
+              },
+              "gap": 10,
+              "padding": [
+                12,
+                20
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "iCtct",
+                  "name": "b2Icon",
+                  "width": 28,
+                  "height": 28,
+                  "iconFontName": "shield-check",
+                  "iconFontFamily": "lucide",
+                  "fill": "#0B0B0F"
+                },
+                {
+                  "type": "text",
+                  "id": "JKR9v",
+                  "name": "b2Text",
+                  "fill": "#0B0B0F",
+                  "content": "Không quảng cáo",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 28,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "HLk3O",
+              "name": "b3",
+              "fill": "#FFFFFF",
+              "cornerRadius": 9999,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1.5,
+                "fill": "#E5E7EB"
+              },
+              "gap": 10,
+              "padding": [
+                12,
+                20
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "3ISU2",
+                  "name": "b3Icon",
+                  "width": 28,
+                  "height": 28,
+                  "iconFontName": "languages",
+                  "iconFontFamily": "lucide",
+                  "fill": "#E11D48"
+                },
+                {
+                  "type": "text",
+                  "id": "eyqv1",
+                  "name": "b3Text",
+                  "fill": "#0B0B0F",
+                  "content": "Tiếng Việt",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 28,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "0pSiU",
+          "x": 380,
+          "y": 740,
+          "name": "ctaEmblem",
+          "width": 320,
+          "height": 320,
+          "fill": {
+            "type": "gradient",
+            "gradientType": "linear",
+            "enabled": true,
+            "rotation": 135,
+            "size": {
+              "height": 1
+            },
+            "colors": [
+              {
+                "color": "#A8E6CF",
+                "position": 0
+              },
+              {
+                "color": "#4FD1A5",
+                "position": 1
+              }
+            ]
+          },
+          "cornerRadius": 72,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#10B98155",
+            "offset": {
+              "x": 0,
+              "y": 24
+            },
+            "blur": 48
+          },
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "sPTEb",
+              "name": "ctaEmblemIcon",
+              "width": 170,
+              "height": 170,
+              "iconFontName": "scroll-text",
+              "iconFontFamily": "lucide",
+              "fill": "#FFFFFF"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "hpQ8V",
+          "x": 90,
+          "y": 1140,
+          "name": "ctaCall",
+          "fill": "#0B0B0F",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "Tải về ngay",
+          "textAlign": "center",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 72,
+          "fontWeight": "700"
+        },
+        {
+          "type": "frame",
+          "id": "Xzxio",
+          "x": 200,
+          "y": 1290,
+          "name": "playStoreBadge",
+          "width": 680,
+          "height": 140,
+          "fill": "#0B0B0F",
+          "cornerRadius": 28,
+          "effect": {
+            "type": "shadow",
+            "shadowType": "outer",
+            "color": "#0B0B0F33",
+            "offset": {
+              "x": 0,
+              "y": 12
+            },
+            "blur": 32
+          },
+          "gap": 24,
+          "padding": [
+            20,
+            32
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "hK9ub",
+              "name": "psIcon",
+              "width": 70,
+              "height": 70,
+              "iconFontName": "play",
+              "iconFontFamily": "lucide",
+              "fill": "#FFFFFF"
+            },
+            {
+              "type": "frame",
+              "id": "mkE2Y",
+              "name": "psCol",
+              "layout": "vertical",
+              "gap": 2,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nQ9OE",
+                  "name": "psSmall",
+                  "fill": "#FFFFFF",
+                  "content": "TẢI XUỐNG TRÊN",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 22,
+                  "fontWeight": "500",
+                  "letterSpacing": 2
+                },
+                {
+                  "type": "text",
+                  "id": "h9ljC",
+                  "name": "psBig",
+                  "fill": "#FFFFFF",
+                  "content": "Google Play",
+                  "fontFamily": "Be Vietnam Pro",
+                  "fontSize": 50,
+                  "fontWeight": "700"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "mbuwP",
+          "x": 90,
+          "y": 1500,
+          "name": "ctaFoot",
+          "fill": "#9CA3AF",
+          "textGrowth": "fixed-width",
+          "width": 900,
+          "content": "play.google.com/store/apps/details?id=com.cyclone.fairpay",
+          "textAlign": "center",
+          "fontFamily": "Be Vietnam Pro",
+          "fontSize": 22
+        },
+        {
+          "type": "ellipse",
+          "id": "jby7x",
+          "x": 140,
+          "y": 1680,
+          "name": "dCta1",
+          "opacity": 0.5,
+          "fill": "#10B981",
+          "width": 18,
+          "height": 18
+        },
+        {
+          "type": "ellipse",
+          "id": "vwz7J",
+          "x": 920,
+          "y": 1700,
+          "name": "dCta2",
+          "opacity": 0.4,
+          "fill": "#E11D48",
+          "width": 14,
+          "height": 14
+        },
+        {
+          "type": "ellipse",
+          "id": "OZ8VI",
+          "x": 520,
+          "y": 1780,
+          "name": "dCta3",
+          "opacity": 0.3,
+          "fill": "#0B0B0F",
+          "width": 10,
+          "height": 10
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "B5uPp",
+      "x": 0,
+      "y": -32,
+      "name": "lbl090",
+      "fill": "#6B7280",
+      "content": "KF090 · 3s · Logo Reveal",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 20,
+      "fontWeight": "500"
+    },
+    {
+      "type": "text",
+      "id": "qRrnO",
+      "x": 1280,
+      "y": -32,
+      "name": "lbl200",
+      "fill": "#6B7280",
+      "content": "KF200 · 6.6s · Preset spotlight",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 20,
+      "fontWeight": "500"
+    },
+    {
+      "type": "text",
+      "id": "U2cET",
+      "x": 2560,
+      "y": -32,
+      "name": "lbl280",
+      "fill": "#6B7280",
+      "content": "KF280 · 9.3s · Success",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 20,
+      "fontWeight": "500"
+    },
+    {
+      "type": "text",
+      "id": "vkQCZ",
+      "x": 3840,
+      "y": -32,
+      "name": "lbl410",
+      "fill": "#6B7280",
+      "content": "KF410 · 13.6s · Settlement",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 20,
+      "fontWeight": "500"
+    },
+    {
+      "type": "text",
+      "id": "14FVV",
+      "x": 5120,
+      "y": -32,
+      "name": "lbl530",
+      "fill": "#6B7280",
+      "content": "KF530 · 17.6s · CTA",
+      "fontFamily": "Be Vietnam Pro",
+      "fontSize": 20,
+      "fontWeight": "500"
+    }
+  ]
+}

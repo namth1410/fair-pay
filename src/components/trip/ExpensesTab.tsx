@@ -4,18 +4,13 @@ import { Receipt } from 'lucide-react-native';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 
-import { useAppTheme } from '../../hooks/useAppTheme';
 import type { ExpenseWithSplits } from '../../services/expense.service';
 import type { GroupMember } from '../../services/group.service';
 import { groupExpensesByDay } from '../../utils/expenseGrouping';
-import {
-  AppText,
-  ConfirmDialog,
-  EmptyState,
-  ListSkeleton,
-  Money,
-  SwipeableCard,
-} from '../ui';
+import { ConfirmDialog, EmptyState, ListSkeleton } from '../ui';
+import { ExpenseDetailSheet } from './ExpenseDetailSheet';
+import { ExpenseTimelineRow } from './ExpenseTimelineRow';
+import { ExpenseTimelineSectionHeader } from './ExpenseTimelineSectionHeader';
 
 interface ExpensesTabProps {
   tripId: string;
@@ -30,8 +25,8 @@ export const ExpensesTab = React.memo(function ExpensesTab({
   tripId, tripStatus, expenses, members, isLoading,
   onDeleteExpense,
 }: ExpensesTabProps) {
-  const c = useAppTheme();
   const [deleteTarget, setDeleteTarget] = useState<ExpenseWithSplits | null>(null);
+  const [selectedExpense, setSelectedExpense] = useState<ExpenseWithSplits | null>(null);
   const isOpen = tripStatus === 'open';
 
   const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
@@ -65,20 +60,19 @@ export const ExpensesTab = React.memo(function ExpensesTab({
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <SwipeableCard
-              title={item.title}
-              subtitle={`${getMemberName(item.paid_by)} đã trả`}
+            <ExpenseTimelineRow
+              expense={item}
+              payerName={getMemberName(item.paid_by)}
+              onPress={() => setSelectedExpense(item)}
               onDelete={isOpen ? () => handleDelete(item) : undefined}
               onLongPress={isOpen ? () => handleDelete(item) : undefined}
-              trailing={<Money value={item.amount} variant="default" tone="primary" />}
             />
           )}
           renderSectionHeader={({ section }) => (
-            <View style={[styles.sectionHeader, { backgroundColor: c.background }]}>
-              <AppText variant="meta" tone="muted" weight="semibold">
-                {section.title}
-              </AppText>
-            </View>
+            <ExpenseTimelineSectionHeader
+              title={section.title}
+              isFirst={section === sections[0]}
+            />
           )}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={expenses.length === 0 ? styles.emptyContainer : styles.list}
@@ -97,6 +91,13 @@ export const ExpensesTab = React.memo(function ExpensesTab({
           if (deleteTarget) onDeleteExpense(deleteTarget.id, tripId);
         }}
       />
+
+      <ExpenseDetailSheet
+        isOpen={!!selectedExpense}
+        onOpenChange={(open) => { if (!open) setSelectedExpense(null); }}
+        expense={selectedExpense}
+        members={members}
+      />
     </View>
   );
 });
@@ -107,9 +108,4 @@ const styles = StyleSheet.create({
   addBtnWrap: { alignSelf: 'flex-start' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
-  sectionHeader: {
-    paddingTop: 10,
-    paddingBottom: 6,
-    paddingHorizontal: 4,
-  },
 });
