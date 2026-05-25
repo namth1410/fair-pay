@@ -18,11 +18,38 @@ import {
   unregisterPushToken,
 } from '../services/pushNotification.service';
 import type { UserProfile } from '../services/user.service';
+import * as authCache from '../sync/authCache';
+import type { CachedIdentity } from '../sync/authCache';
+import * as syncQueue from '../sync/syncQueue';
+
+/**
+ * Thrown khi user cố signOut nhưng sync_queue còn pending/conflict.
+ * UI catch error này → show dialog yêu cầu drain/resolve trước khi logout.
+ *
+ * Lý do block: dispatcher dùng getAuthUserId() runtime cho CREATE_TRIP /
+ * DELETE_PRESET / DELETE_NOTIFICATION → nếu A logout → B login → queue replay
+ * dưới identity B → cross-user data corruption.
+ */
+export class PendingSyncError extends Error {
+  constructor(
+    public readonly pendingCount: number,
+    public readonly conflictCount: number
+  ) {
+    super('PENDING_SYNC_QUEUE');
+    this.name = 'PendingSyncError';
+  }
+}
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   profile: UserProfile | null;
+  /**
+   * Cached identity từ login lần trước. Khi app khởi động offline + session
+   * không refresh được, AuthGate dùng cachedIdentity để cho user vào /(main)
+   * ở offline mode.
+   */
+  cachedIdentity: CachedIdentity | null;
   isLoading: boolean;
   isInitialized: boolean;
 
@@ -44,21 +71,67 @@ interface AuthState {
 // `initialize()` bị gọi lại do Fast Refresh / HMR / state reset.
 let authSubscription: { unsubscribe: () => void } | null = null;
 
+/**
+ * Save identity to local SQLite cache for offline bootstrap. Fire-and-forget.
+ * Called sau khi sign-in thành công. KHÔNG block UX nếu DB ghi fail.
+ */
+async function persistIdentityToCache(
+  session: Session | null
+): Promise<void> {
+  if (!session) return;
+  try {
+    // app_user_id = users.id (đã được trigger handle_new_user tự tạo từ auth_id).
+    // Lookup từ users table — KHÔNG fail nếu user chưa fetch xong (table empty).
+    const { data } = await supabase
+      .from('users')
+      .select('id, email, display_name, photo_url')
+      .eq('auth_id', session.user.id)
+      .maybeSingle();
+    if (!data) return;
+    await authCache.save({
+      authUserId: session.user.id,
+      appUserId: data.id,
+      email: data.email,
+      displayName: data.display_name ?? null,
+      photoUrl: data.photo_url ?? null,
+    });
+  } catch (e) {
+    if (__DEV__) console.warn('[auth] persistIdentityToCache failed:', e);
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   user: null,
   profile: null,
+  cachedIdentity: null,
   isLoading: false,
   isInitialized: false,
 
   setProfile: (profile) => set({ profile }),
 
   initialize: async () => {
+    // Load cached identity TRƯỚC khi gọi Supabase — nếu offline ngay từ đầu,
+    // app vẫn vào được /(main) với identity từ lần login trước.
+    let cached: CachedIdentity | null = null;
+    try {
+      cached = await authCache.load();
+      if (cached) set({ cachedIdentity: cached });
+    } catch (e) {
+      if (__DEV__) console.warn('[auth] load cached identity failed:', e);
+    }
+
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       set({ session, user: session?.user ?? null, isInitialized: true });
+
+      // Persist identity sau khi session resolved (online) — refresh cached
+      // identity với photo_url/display_name mới.
+      if (session) {
+        void persistIdentityToCache(session);
+      }
 
       // Listen for auth state changes (token refresh, sign out, etc.).
       // Idempotent: nếu đã subscribe thì bỏ qua để tránh duplicate listener
@@ -66,10 +139,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (!authSubscription) {
         const { data } = supabase.auth.onAuthStateChange((_event, session) => {
           set({ session, user: session?.user ?? null });
+          if (session) void persistIdentityToCache(session);
         });
         authSubscription = data.subscription;
       }
     } catch (e) {
+      // Network error → AuthGate sẽ dùng cachedIdentity
       if (__DEV__) console.warn('[auth] initialize failed:', e);
       set({ isInitialized: true });
     }
@@ -205,6 +280,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: async () => {
+    // Gate: chặn logout nếu sync_queue còn pending/conflict. Pending replay
+    // sau logout sẽ chạy dưới identity user kế tiếp (cross-user corruption).
+    // Fail-fast TRƯỚC mọi side effect (FCM unregister, Supabase signOut...).
+    const [pendingCount, conflictCount] = await Promise.all([
+      syncQueue.countPending(),
+      syncQueue.countConflicts(),
+    ]);
+    if (pendingCount > 0 || conflictCount > 0) {
+      throw new PendingSyncError(pendingCount, conflictCount);
+    }
+
     // Clear FCM token TRƯỚC khi clear session — cần auth còn active để pass RLS
     // update users.fcm_token = NULL. Sau khi signOut() Supabase, RLS sẽ block.
     await unregisterPushToken();
@@ -220,7 +306,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     await supabase.auth.signOut();
     clearAuthCache();
-    set({ session: null, user: null, profile: null });
+    void authCache.clear().catch((e) => {
+      if (__DEV__) console.warn('[auth] authCache.clear failed:', e);
+    });
+    set({ session: null, user: null, profile: null, cachedIdentity: null });
 
     // Reset cross-store state để tránh data leak khi user khác đăng nhập trên
     // cùng app instance. Lazy require để tránh circular import (các store khác

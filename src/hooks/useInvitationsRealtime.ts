@@ -19,10 +19,39 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useEffect } from 'react';
 
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import { groupInvitationRepo } from '../repositories';
 import { getAuthUserId } from '../services/auth.helper';
 import type { GroupInvitation } from '../services/group.service';
 import { useAuthStore } from '../stores/auth.store';
 import { useGroupStore } from '../stores/group.store';
+import * as syncState from '../sync/syncState';
+import type { GroupInvitationRow } from '../types/database.types';
+
+/**
+ * Persist realtime payload xuống SQLite mirror. INSERT/UPDATE → upsert,
+ * DELETE → physical delete row (Supabase realtime DELETE thường có `old` row).
+ * Errors swallow để không block UI.
+ */
+async function persistInvitationToLocal(
+  row: GroupInvitation,
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE'
+): Promise<void> {
+  try {
+    if (eventType === 'DELETE') {
+      const db = getDatabase();
+      await db.runAsync(`DELETE FROM group_invitations WHERE id = ?`, [row.id]);
+      return;
+    }
+    await groupInvitationRepo.upsertFromServer(row as unknown as GroupInvitationRow);
+    const ts =
+      (row as unknown as { updated_at?: string }).updated_at ??
+      row.created_at;
+    if (ts) await syncState.setWatermark('group_invitations', ts);
+  } catch (e) {
+    if (__DEV__) console.warn('[InvitesRT] persist local failed:', e);
+  }
+}
 
 export function useInvitationsRealtime(): void {
   const session = useAuthStore((s) => s.session);
@@ -54,11 +83,11 @@ export function useInvitationsRealtime(): void {
             (payload) => {
               const row = (payload.new ?? payload.old) as GroupInvitation;
               if (!row) return;
-              useGroupStore.getState().applyInvitationRealtime(
-                row,
-                payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
-                appUserId
-              );
+              const evt = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+              void persistInvitationToLocal(row, evt);
+              useGroupStore
+                .getState()
+                .applyInvitationRealtime(row, evt, appUserId);
             }
           )
           .subscribe((status, err) => {

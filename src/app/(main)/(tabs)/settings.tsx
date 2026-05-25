@@ -1,7 +1,10 @@
+import { router } from 'expo-router';
 import { Button, useToast } from 'heroui-native';
-import { ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
+import { AlertTriangle, ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
 import { useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+
+import { useQueueStats } from '../../../hooks/useQueueStats';
 
 import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
 import { TabHeader } from '../../../components/header/TabHeader';
@@ -10,6 +13,7 @@ import {
   Avatar,
   SettingRow,
 } from '../../../components/ui';
+import { BouncyDialog } from '../../../components/ui/BouncyDialog';
 import { FloatingLabelInput } from '../../../components/ui/floating';
 import { DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
@@ -23,7 +27,9 @@ import {
   updateSettings,
   type UserSettings,
 } from '../../../services/user.service';
-import { useAuthStore } from '../../../stores/auth.store';
+import { PendingSyncError, useAuthStore } from '../../../stores/auth.store';
+import { run as runSync } from '../../../sync/syncEngine';
+import * as syncQueue from '../../../sync/syncQueue';
 import { getErrorMessage } from '../../../utils/error';
 import { hapticLight } from '../../../utils/haptics';
 import { transitionToTheme } from '../../../utils/themeTransition';
@@ -33,6 +39,7 @@ export default function SettingsScreen() {
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
   const setProfile = useAuthStore((s) => s.setProfile);
+  const { conflictCount } = useQueueStats();
   const signOut = useAuthStore((s) => s.signOut);
   const { isDark, ...c } = useAppTheme();
   const { toast } = useToast();
@@ -41,6 +48,10 @@ export default function SettingsScreen() {
   const [newName, setNewName] = useState(profile?.display_name ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [blockedSignOut, setBlockedSignOut] = useState<{
+    pendingCount: number;
+    conflictCount: number;
+  } | null>(null);
 
   const handleSaveName = async () => {
     if (!newName.trim() || !profile) return;
@@ -103,7 +114,41 @@ export default function SettingsScreen() {
     // regain focus và trigger useFocusEffect → fetchPendingJoinRequests → assertRole
     // race với signOut đang chạy → throw "Chưa đăng nhập" (unhandled).
     // AuthGate sẽ tự redirect sang /(auth)/login khi session=null.
-    await signOut();
+    try {
+      await signOut();
+    } catch (e: unknown) {
+      if (e instanceof PendingSyncError) {
+        setBlockedSignOut({
+          pendingCount: e.pendingCount,
+          conflictCount: e.conflictCount,
+        });
+        return;
+      }
+      toast.show({
+        variant: 'danger',
+        label: 'Lỗi đăng xuất',
+        description: getErrorMessage(e),
+      });
+    }
+  };
+
+  const handleViewConflicts = () => {
+    setBlockedSignOut(null);
+    router.push('/sync-conflicts');
+  };
+
+  const handleFlushSync = async () => {
+    setBlockedSignOut(null);
+    try {
+      await syncQueue.retryAllFailed();
+      await runSync(true);
+    } catch (e: unknown) {
+      toast.show({
+        variant: 'warning',
+        label: 'Đồng bộ thất bại',
+        description: getErrorMessage(e),
+      });
+    }
   };
 
   const settings = profile?.settings || DEFAULT_SETTINGS;
@@ -278,6 +323,42 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* ── Đồng bộ ── */}
+        {conflictCount > 0 && (
+          <>
+            <AppText variant="label" tone="muted" style={styles.sectionTitle}>
+              ĐỒNG BỘ
+            </AppText>
+            <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+              <Pressable
+                onPress={() => {
+                  hapticLight();
+                  router.push('/sync-conflicts');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Xung đột đồng bộ"
+                style={({ pressed }) => [
+                  styles.feedbackRow,
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <View style={[styles.feedbackIcon, { backgroundColor: c.dangerSoft }]}>
+                  <AlertTriangle size={18} color={c.danger} />
+                </View>
+                <View style={styles.feedbackText}>
+                  <AppText variant="body" weight="medium">
+                    Xung đột đồng bộ ({conflictCount})
+                  </AppText>
+                  <AppText variant="caption" tone="muted">
+                    Có thay đổi offline cần bạn chọn cách giải quyết
+                  </AppText>
+                </View>
+                <ChevronRight size={18} color={c.muted} />
+              </Pressable>
+            </View>
+          </>
+        )}
+
         {/* ── Phản hồi ── */}
         <AppText variant="label" tone="muted" style={styles.sectionTitle}>
           PHẢN HỒI
@@ -318,6 +399,40 @@ export default function SettingsScreen() {
       </ScrollView>
 
       <FeedbackSheet isOpen={feedbackOpen} onOpenChange={setFeedbackOpen} />
+
+      <BouncyDialog
+        isOpen={blockedSignOut !== null}
+        onClose={() => setBlockedSignOut(null)}
+      >
+        <BouncyDialog.Title>Còn thao tác chưa đồng bộ</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          {blockedSignOut
+            ? blockedSignOut.conflictCount > 0 && blockedSignOut.pendingCount > 0
+              ? `Bạn có ${blockedSignOut.pendingCount} thao tác chờ đồng bộ và ${blockedSignOut.conflictCount} xung đột cần giải quyết. Vào mục Xung đột đồng bộ để xử lý trước khi đăng xuất.`
+              : blockedSignOut.conflictCount > 0
+                ? `Bạn có ${blockedSignOut.conflictCount} xung đột cần giải quyết. Vào mục Xung đột đồng bộ để xử lý trước khi đăng xuất.`
+                : `Bạn có ${blockedSignOut.pendingCount} thao tác đang chờ đồng bộ. Vui lòng đợi kết nối mạng và sync hoàn tất rồi thử đăng xuất lại.`
+            : ''}
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button
+            variant="outline"
+            size="md"
+            onPress={() => setBlockedSignOut(null)}
+          >
+            <Button.Label>Để sau</Button.Label>
+          </Button>
+          {blockedSignOut && blockedSignOut.conflictCount > 0 ? (
+            <Button variant="primary" size="md" onPress={handleViewConflicts}>
+              <Button.Label>Xem xung đột</Button.Label>
+            </Button>
+          ) : (
+            <Button variant="primary" size="md" onPress={handleFlushSync}>
+              <Button.Label>Đồng bộ ngay</Button.Label>
+            </Button>
+          )}
+        </BouncyDialog.Actions>
+      </BouncyDialog>
     </View>
   );
 }

@@ -1,6 +1,15 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import * as groupMemberRepo from '../repositories/groupMember.repo';
+import * as userRepo from '../repositories/user.repo';
+import { useAppStore } from '../stores/app.store';
+import { tryServerThenLocal } from '../sync/fallback';
+import * as syncQueue from '../sync/syncQueue';
+import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
+import { isNetworkError } from '../utils/network';
+import { generatePlaceholderInviteCode } from '../utils/inviteCode';
 import { validateEmail, validateName } from '../utils/validate';
 import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
@@ -51,54 +60,82 @@ export interface GroupWithMemberCount extends Group {
   member_count: number;
 }
 
-/** Fetch all groups the current user belongs to */
+/** Fetch all groups the current user belongs to. Fallback SQLite mirror. */
 export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
   const userId = await getAuthUserId();
   if (!userId) return [];
 
-  // Get group IDs the user is an active member of
-  const { data: memberships, error: memErr } = await supabase
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-    .is('left_at', null);
+  return tryServerThenLocal<GroupWithMemberCount[]>(
+    async () => {
+      const { data: memberships, error: memErr } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId)
+        .is('left_at', null);
 
-  if (memErr) throw memErr;
-  if (!memberships?.length) return [];
+      if (memErr) throw memErr;
+      if (!memberships?.length) return [];
 
-  const groupIds = memberships.map((m) => m.group_id);
+      const groupIds = memberships.map((m) => m.group_id);
 
-  // Fetch groups
-  const { data: groups, error: grpErr } = await supabase
-    .from('groups')
-    .select('*')
-    .in('id', groupIds)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+      const { data: groups, error: grpErr } = await supabase
+        .from('groups')
+        .select('*')
+        .in('id', groupIds)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
 
-  if (grpErr) throw grpErr;
+      if (grpErr) throw grpErr;
 
-  // Count active members per group (exclude those who left)
-  const { data: counts, error: cntErr } = await supabase
-    .from('group_members')
-    .select('group_id')
-    .in('group_id', groupIds)
-    .is('left_at', null);
+      const { data: counts, error: cntErr } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .in('group_id', groupIds)
+        .is('left_at', null);
 
-  if (cntErr) throw cntErr;
+      if (cntErr) throw cntErr;
 
-  const countMap: Record<string, number> = {};
-  counts?.forEach((c) => {
-    countMap[c.group_id] = (countMap[c.group_id] || 0) + 1;
-  });
+      const countMap: Record<string, number> = {};
+      counts?.forEach((c) => {
+        countMap[c.group_id] = (countMap[c.group_id] || 0) + 1;
+      });
 
-  return (groups || []).map((g) => ({
-    ...g,
-    member_count: countMap[g.id] || 0,
-  }));
+      return (groups || []).map((g) => ({
+        ...g,
+        member_count: countMap[g.id] || 0,
+      }));
+    },
+    async () => {
+      const db = getDatabase();
+      const rows = await db.getAllAsync<Group & { member_count: number }>(
+        `SELECT g.*, (
+            SELECT COUNT(*) FROM group_members m2
+             WHERE m2.group_id = g.id AND m2.left_at IS NULL
+          ) AS member_count
+         FROM groups g
+         INNER JOIN group_members m ON m.group_id = g.id
+        WHERE m.user_id = ?
+          AND m.left_at IS NULL
+          AND g.deleted_at IS NULL
+        ORDER BY g.created_at DESC`,
+        [userId]
+      );
+      return rows;
+    }
+  );
 }
 
-/** Create a new group — caller becomes admin */
+/**
+ * Create a new group — caller becomes admin. Offline-first (P1).
+ *
+ * RPC `create_group(p_id, p_name, p_admin_member_id, p_client_request_id,
+ * p_client_created_at)` atomic + idempotent insert groups + admin group_members.
+ * Client gen id + clientRequestId để mirror local an toàn lúc offline.
+ *
+ * invite_code: server giữ DEFAULT làm source-of-truth. Offline path sinh
+ * placeholder prefix "PEND-" → MembersTab detect và hiển thị "Sẽ hiện sau khi
+ * đồng bộ"; pullGroups overwrite bằng giá trị thật sau push.
+ */
 export async function createGroup(name: string): Promise<Group> {
   const nameErr = validateName(name, 'Tên nhóm');
   if (nameErr) throw new Error(nameErr);
@@ -106,33 +143,80 @@ export async function createGroup(name: string): Promise<Group> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  // Get user display name
-  const { data: user } = await supabase
-    .from('users')
-    .select('display_name')
-    .eq('id', userId)
-    .single();
+  const trimmedName = name.trim();
+  const groupId = globalThis.crypto.randomUUID();
+  const adminMemberId = globalThis.crypto.randomUUID();
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const clientCreatedAt = new Date().toISOString();
+  const placeholderInviteCode = generatePlaceholderInviteCode();
 
-  // Create group
-  const { data: group, error: grpErr } = await supabase
-    .from('groups')
-    .insert({ name, created_by: userId })
-    .select()
-    .single();
+  const localUser = await userRepo.getById(userId);
+  const adminDisplayName = localUser?.displayName?.trim() || 'Admin';
 
-  if (grpErr) throw grpErr;
+  const enqueueLocal = async (): Promise<Group> => {
+    const db = getDatabase();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT INTO groups
+          (id, name, created_by, invite_code, version, client_request_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+        [groupId, trimmedName, userId, placeholderInviteCode, clientRequestId, clientCreatedAt, clientCreatedAt]
+      );
+      await db.runAsync(
+        `INSERT INTO group_members
+          (id, group_id, user_id, display_name, role, is_virtual, version,
+           client_request_id, joined_at, updated_at)
+         VALUES (?, ?, ?, ?, 'admin', 0, 1, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+        [adminMemberId, groupId, userId, adminDisplayName, clientRequestId, clientCreatedAt, clientCreatedAt]
+      );
+    });
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.CREATE_GROUP,
+      entity_type: ENTITY_TYPES.GROUP,
+      entity_id: groupId,
+      client_request_id: clientRequestId,
+      payload: {
+        id: groupId,
+        name: trimmedName,
+        admin_member_id: adminMemberId,
+        client_request_id: clientRequestId,
+        client_created_at: clientCreatedAt,
+      },
+    });
+    return {
+      id: groupId,
+      name: trimmedName,
+      avatar_url: null,
+      created_by: userId,
+      invite_code: placeholderInviteCode,
+      created_at: clientCreatedAt,
+      deleted_at: null,
+    };
+  };
 
-  // Add creator as admin
-  const { error: memErr } = await supabase.from('group_members').insert({
-    group_id: group.id,
-    user_id: userId,
-    display_name: user?.display_name || 'Admin',
-    role: 'admin',
-  });
+  if (!useAppStore.getState().isOnline) {
+    return enqueueLocal();
+  }
 
-  if (memErr) throw memErr;
-
-  return group;
+  try {
+    const { data, error } = await supabase.rpc('create_group', {
+      p_id: groupId,
+      p_name: trimmedName,
+      p_admin_member_id: adminMemberId,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: clientCreatedAt,
+    });
+    if (error) throw error;
+    return data as Group;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[createGroup] network fail, queueing offline');
+      return enqueueLocal();
+    }
+    throw err;
+  }
 }
 
 /**
@@ -170,28 +254,44 @@ export interface MyPendingJoinRequest {
  * Pending join requests của user hiện tại, kèm group_name.
  * RPC SECURITY DEFINER vì non-member không SELECT được `groups.name` qua RLS.
  * Dùng ở Home để render ribbon "ĐANG CHỜ DUYỆT" — persist qua logout/login.
+ *
+ * Offline: `join_requests` không mirror local → trả `[]`. Ribbon sẽ ẩn cho tới
+ * khi online lại (acceptable: user không thể tạo join request mới khi offline).
  */
 export async function fetchMyPendingJoinRequests(): Promise<MyPendingJoinRequest[]> {
-  const { data, error } = await supabase.rpc('get_my_pending_join_requests');
-  if (error) throw error;
-  return (data as MyPendingJoinRequest[] | null) ?? [];
+  return tryServerThenLocal<MyPendingJoinRequest[]>(
+    async () => {
+      const { data, error } = await supabase.rpc('get_my_pending_join_requests');
+      if (error) throw error;
+      return (data as MyPendingJoinRequest[] | null) ?? [];
+    },
+    async () => []
+  );
 }
 
-/** F-23: Lấy danh sách join requests đang pending của một nhóm (cho Admin) */
+/**
+ * F-23: Lấy danh sách join requests đang pending của một nhóm (cho Admin).
+ * Offline: `join_requests` không mirror local → trả `[]` (admin sẽ thấy lại
+ * list khi online; offline cũng không approve/reject được).
+ */
 export async function fetchPendingJoinRequests(
   groupId: string
 ): Promise<JoinRequest[]> {
   await assertRole(groupId, ['admin']);
 
-  const { data, error } = await supabase
-    .from('join_requests')
-    .select('*')
-    .eq('group_id', groupId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true });
-
-  if (error) throw error;
-  return data || [];
+  return tryServerThenLocal<JoinRequest[]>(
+    async () => {
+      const { data, error } = await supabase
+        .from('join_requests')
+        .select('*')
+        .eq('group_id', groupId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    async () => []
+  );
 }
 
 /** F-23: Admin duyệt join request → thêm vào group_members */
@@ -271,7 +371,7 @@ export async function rejectJoinRequest(
 
 /**
  * Tạo thành viên ảo (virtual member) — không có user_id, không có auth session.
- * Chỉ admin tạo được. Cho phép trùng display_name.
+ * Chỉ admin tạo được. Cho phép trùng display_name. Offline-first: client-gen UUID + queue.
  */
 export async function addVirtualMember(
   groupId: string,
@@ -282,28 +382,81 @@ export async function addVirtualMember(
   const nameErr = validateName(displayName, 'Tên thành viên');
   if (nameErr) throw new Error(nameErr);
 
-  const { data, error } = await supabase
-    .from('group_members')
-    .insert({
+  const memberId = globalThis.crypto.randomUUID();
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const enqueueLocal = async (): Promise<GroupMember> => {
+    const db = getDatabase();
+    await db.runAsync(
+      `INSERT INTO group_members
+        (id, group_id, user_id, display_name, role, is_virtual,
+         version, client_request_id, joined_at, updated_at)
+       VALUES (?, ?, NULL, ?, 'member', 1, 1, ?, ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+      [memberId, groupId, displayName, clientRequestId, now, now]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.ADD_VIRTUAL_MEMBER,
+      entity_type: ENTITY_TYPES.GROUP_MEMBER,
+      entity_id: memberId,
+      client_request_id: clientRequestId,
+      payload: {
+        id: memberId,
+        group_id: groupId,
+        display_name: displayName,
+        client_request_id: clientRequestId,
+        client_created_at: now,
+      },
+    });
+    return {
+      id: memberId,
       group_id: groupId,
       user_id: null,
       display_name: displayName,
       role: 'member',
       is_virtual: true,
-    })
-    .select()
-    .single();
+      joined_at: now,
+      left_at: null,
+    };
+  };
 
-  if (error) throw error;
+  if (!useAppStore.getState().isOnline) {
+    return enqueueLocal();
+  }
 
-  await logAction({
-    groupId,
-    action: 'member.virtual_add',
-    targetId: data.id,
-    afterData: { display_name: displayName, is_virtual: true },
-  });
+  try {
+    const { data, error } = await supabase
+      .from('group_members')
+      .insert({
+        id: memberId,
+        group_id: groupId,
+        user_id: null,
+        display_name: displayName,
+        role: 'member',
+        is_virtual: true,
+        client_request_id: clientRequestId,
+      })
+      .select()
+      .single();
 
-  return data;
+    if (error) throw error;
+
+    await logAction({
+      groupId,
+      action: 'member.virtual_add',
+      targetId: data.id,
+      afterData: { display_name: displayName, is_virtual: true },
+    });
+
+    return data;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[addVirtualMember] network fail, queueing offline');
+      return enqueueLocal();
+    }
+    throw err;
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -381,34 +534,146 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
 export async function fetchPendingInvitations(
   groupId: string
 ): Promise<GroupInvitation[]> {
-  const { data, error } = await supabase.rpc('get_pending_invitations_for_group', {
-    p_group_id: groupId,
-  });
-  if (error) throw error;
-  return (data as GroupInvitation[] | null) ?? [];
+  return tryServerThenLocal<GroupInvitation[]>(
+    async () => {
+      const { data, error } = await supabase.rpc('get_pending_invitations_for_group', {
+        p_group_id: groupId,
+      });
+      if (error) throw error;
+      return (data as GroupInvitation[] | null) ?? [];
+    },
+    async () => {
+      // Local: JOIN group_invitations + users (invitee) để dựng shape có
+      // invited_display_name + invited_photo_url như RPC trả về.
+      const db = getDatabase();
+      const rows = await db.getAllAsync<{
+        id: string;
+        group_id: string;
+        invited_email: string;
+        invited_user_id: string;
+        invited_by: string;
+        status: 'pending' | 'accepted' | 'declined' | 'revoked';
+        created_at: string;
+        responded_at: string | null;
+        invited_display_name: string | null;
+        invited_photo_url: string | null;
+      }>(
+        `SELECT
+            inv.id,
+            inv.group_id,
+            inv.invited_email,
+            inv.invited_user_id,
+            inv.invited_by,
+            inv.status,
+            inv.created_at,
+            inv.responded_at,
+            u.display_name AS invited_display_name,
+            u.photo_url    AS invited_photo_url
+         FROM group_invitations inv
+         LEFT JOIN users u ON u.id = inv.invited_user_id
+         WHERE inv.group_id = ?
+           AND inv.status = 'pending'
+         ORDER BY inv.created_at DESC`,
+        [groupId]
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        group_id: r.group_id,
+        invited_email: r.invited_email,
+        invited_user_id: r.invited_user_id,
+        invited_by: r.invited_by,
+        status: r.status,
+        created_at: r.created_at,
+        responded_at: r.responded_at,
+        invited_display_name: r.invited_display_name ?? undefined,
+        invited_photo_url: r.invited_photo_url ?? undefined,
+      }));
+    }
+  );
 }
 
 /** User xem các invitation pending dành cho mình (Home banner + dialog confirm). */
 export async function fetchMyPendingInvitations(): Promise<MyPendingInvitation[]> {
-  const { data, error } = await supabase.rpc('get_my_pending_invitations');
-  if (error) throw error;
-  return (data as MyPendingInvitation[] | null) ?? [];
+  const userId = await getAuthUserId();
+  if (!userId) return [];
+
+  return tryServerThenLocal<MyPendingInvitation[]>(
+    async () => {
+      const { data, error } = await supabase.rpc('get_my_pending_invitations');
+      if (error) throw error;
+      return (data as MyPendingInvitation[] | null) ?? [];
+    },
+    async () => {
+      // Local: JOIN group_invitations + groups + users (inviter) từ SQLite mirror.
+      // Inviter có thể chưa pull về (users table mirror chậm hơn invitations) →
+      // fallback empty string. Group avatar có thể NULL như shape gốc.
+      const db = getDatabase();
+      const rows = await db.getAllAsync<{
+        invitation_id: string;
+        group_id: string;
+        group_name: string;
+        group_avatar_url: string | null;
+        inviter_name: string | null;
+        created_at: string;
+      }>(
+        `SELECT
+            inv.id           AS invitation_id,
+            inv.group_id     AS group_id,
+            g.name           AS group_name,
+            g.avatar_url     AS group_avatar_url,
+            u.display_name   AS inviter_name,
+            inv.created_at   AS created_at
+         FROM group_invitations inv
+         INNER JOIN groups g ON g.id = inv.group_id
+         LEFT JOIN users u ON u.id = inv.invited_by
+         WHERE inv.invited_user_id = ?
+           AND inv.status = 'pending'
+           AND g.deleted_at IS NULL
+         ORDER BY inv.created_at DESC`,
+        [userId]
+      );
+      return rows.map((r) => ({
+        invitation_id: r.invitation_id,
+        group_id: r.group_id,
+        group_name: r.group_name,
+        group_avatar_url: r.group_avatar_url,
+        inviter_name: r.inviter_name ?? '',
+        created_at: r.created_at,
+      }));
+    }
+  );
 }
 
-/** Fetch active members of a group (left_at IS NULL) */
+/** Fetch active members of a group (left_at IS NULL). Fallback SQLite mirror. */
 export async function fetchGroupMembers(
   groupId: string
 ): Promise<GroupMember[]> {
-  const { data, error } = await supabase
-    .from('group_members')
-    .select('*')
-    .eq('group_id', groupId)
-    .is('left_at', null)
-    .order('role', { ascending: true }) // admin first
-    .order('joined_at', { ascending: true });
-
-  if (error) throw error;
-  return data || [];
+  return tryServerThenLocal<GroupMember[]>(
+    async () => {
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('*')
+        .eq('group_id', groupId)
+        .is('left_at', null)
+        .order('role', { ascending: true })
+        .order('joined_at', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    async () => {
+      const db = getDatabase();
+      // SQLite is_virtual: 0|1. Service GroupMember type uses boolean → cast.
+      const rows = await db.getAllAsync<
+        Omit<GroupMember, 'is_virtual'> & { is_virtual: number }
+      >(
+        `SELECT * FROM group_members
+          WHERE group_id = ? AND left_at IS NULL
+          ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END, joined_at ASC`,
+        [groupId]
+      );
+      return rows.map((r) => ({ ...r, is_virtual: !!r.is_virtual }));
+    }
+  );
 }
 
 /** Fetch ALL members including those who left (for historical display) */
@@ -469,46 +734,93 @@ export async function updateMemberRole(
 }
 
 /** Soft-remove a member from group (admin only) — sets left_at */
+/**
+ * Soft-remove member (set left_at). Offline-first: idempotent soft-delete.
+ * Admin chỉ xóa được member (không xóa được admin — invariant 1-admin).
+ */
 export async function removeMember(memberId: string): Promise<void> {
-  const { data: target } = await supabase
-    .from('group_members')
-    .select('group_id, role')
-    .eq('id', memberId)
-    .single();
-
-  if (!target) throw new Error('Thành viên không tồn tại');
-  if (target.role === 'admin')
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{ group_id: string; role: string; left_at: string | null }>(
+    `SELECT group_id, role, left_at FROM group_members WHERE id = ?`,
+    [memberId]
+  );
+  if (!local) throw new Error('Thành viên không tồn tại');
+  if (local.role === 'admin') {
     throw new Error('Admin không thể rời/bị xóa khỏi nhóm. Hãy xóa nhóm thay thế.');
+  }
+  await assertRole(local.group_id, ['admin']);
+  if (local.left_at) return; // already removed
 
-  await assertRole(target.group_id, ['admin']);
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
 
-  const { error } = await supabase
-    .from('group_members')
-    .update({ left_at: new Date().toISOString() })
-    .eq('id', memberId);
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE group_members
+          SET left_at = COALESCE(left_at, ?), updated_at = ?
+        WHERE id = ?`,
+      [now, now, memberId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.REMOVE_MEMBER,
+      entity_type: ENTITY_TYPES.GROUP_MEMBER,
+      entity_id: memberId,
+      client_request_id: clientRequestId,
+      payload: {
+        member_id: memberId,
+        client_request_id: clientRequestId,
+        client_created_at: now,
+      },
+    });
+  };
 
-  if (error) throw error;
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('group_members')
+      .update({ left_at: now })
+      .eq('id', memberId)
+      .is('left_at', null);
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[removeMember] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 /**
  * Rename a member's display_name (admin only).
  * Áp dụng cho cả member thật và member ảo. KHÔNG đổi tên cho member đã rời.
  */
+/**
+ * Rename member (admin only). Offline-first: RPC update_member_display_name
+ * với optimistic concurrency. Audit logged server-side.
+ */
 export async function renameMember(
   memberId: string,
   newDisplayName: string
 ): Promise<void> {
-  const { data: target } = await supabase
-    .from('group_members')
-    .select('group_id, display_name, left_at')
-    .eq('id', memberId)
-    .single();
-
-  if (!target) throw new Error('Thành viên không tồn tại');
-  if (target.left_at)
-    throw new Error('Không thể đổi tên thành viên đã rời nhóm');
-
-  await assertRole(target.group_id, ['admin']);
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{
+    group_id: string;
+    display_name: string;
+    version: number;
+    left_at: string | null;
+  }>(
+    `SELECT group_id, display_name, version, left_at FROM group_members WHERE id = ?`,
+    [memberId]
+  );
+  if (!local) throw new Error('Thành viên không tồn tại');
+  if (local.left_at) throw new Error('Không thể đổi tên thành viên đã rời nhóm');
+  await assertRole(local.group_id, ['admin']);
 
   const trimmed = newDisplayName.trim();
   const nameErr = validateName(trimmed, 'Tên thành viên');
@@ -516,37 +828,126 @@ export async function renameMember(
   if (trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
     throw new Error(`Tên thành viên không được quá ${DISPLAY_NAME_MAX_LENGTH} ký tự`);
   }
-  if (trimmed === target.display_name) return; // no-op nếu trùng tên cũ
+  if (trimmed === local.display_name) return;
 
-  const { error } = await supabase
-    .from('group_members')
-    .update({ display_name: trimmed })
-    .eq('id', memberId);
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
 
-  if (error) throw error;
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE group_members
+          SET display_name = ?, version = version + 1, updated_at = ?
+        WHERE id = ?`,
+      [trimmed, now, memberId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.UPDATE_MEMBER_DISPLAY_NAME,
+      entity_type: ENTITY_TYPES.GROUP_MEMBER,
+      entity_id: memberId,
+      client_request_id: clientRequestId,
+      payload: {
+        member_id: memberId,
+        display_name: trimmed,
+        base_version: local.version,
+        client_request_id: clientRequestId,
+        client_created_at: now,
+      },
+    });
+  };
 
-  await logAction({
-    groupId: target.group_id,
-    action: 'member.rename',
-    targetId: memberId,
-    beforeData: { display_name: target.display_name },
-    afterData: { display_name: trimmed },
-  });
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('update_member_display_name', {
+      p_member_id: memberId,
+      p_display_name: trimmed,
+      p_base_version: local.version,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: now,
+    });
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[renameMember] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
-/** Update group name (admin only) */
+/**
+ * Update group name (admin only). Offline-first: dùng RPC update_group với
+ * optimistic concurrency (P3 pattern). Conflict → modal.
+ */
 export async function updateGroup(
   groupId: string,
   updates: { name?: string }
 ): Promise<void> {
   await assertRole(groupId, ['admin']);
+  if (!updates.name) return;
 
-  const { error } = await supabase
-    .from('groups')
-    .update(updates)
-    .eq('id', groupId);
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{ name: string; version: number }>(
+    `SELECT name, version FROM groups WHERE id = ?`,
+    [groupId]
+  );
+  if (!local) throw new Error('Nhóm không tồn tại');
+  const trimmed = updates.name.trim();
+  if (trimmed === local.name) return;
 
-  if (error) throw error;
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const clientCreatedAt = new Date().toISOString();
+
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE groups
+          SET name = ?, version = version + 1, updated_at = ?
+        WHERE id = ?`,
+      [trimmed, clientCreatedAt, groupId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.UPDATE_GROUP,
+      entity_type: ENTITY_TYPES.GROUP,
+      entity_id: groupId,
+      client_request_id: clientRequestId,
+      payload: {
+        group_id: groupId,
+        name: trimmed,
+        avatar_url: null,
+        base_version: local.version,
+        client_request_id: clientRequestId,
+        client_created_at: clientCreatedAt,
+      },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('update_group', {
+      p_group_id: groupId,
+      p_name: trimmed,
+      p_avatar_url: null,
+      p_base_version: local.version,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: clientCreatedAt,
+    });
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[updateGroup] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 // ── Group avatar (R2 upload pipeline) ─────────────
@@ -608,137 +1009,123 @@ export async function removeGroupAvatar(groupId: string): Promise<void> {
   await invokeAvatarFunction('group-avatar-remove', { groupId });
 }
 
-/** Soft delete group (admin only) */
+/** Soft delete group (admin only). Offline-first: idempotent. */
 export async function deleteGroup(groupId: string): Promise<void> {
   await assertRole(groupId, ['admin']);
 
-  const { error } = await supabase
-    .from('groups')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', groupId);
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
 
-  if (error) throw error;
+  const enqueueLocal = async (): Promise<void> => {
+    const db = getDatabase();
+    await db.runAsync(
+      `UPDATE groups
+          SET deleted_at = COALESCE(deleted_at, ?), updated_at = ?
+        WHERE id = ?`,
+      [now, now, groupId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.DELETE_GROUP,
+      entity_type: ENTITY_TYPES.GROUP,
+      entity_id: groupId,
+      client_request_id: clientRequestId,
+      payload: {
+        group_id: groupId,
+        client_request_id: clientRequestId,
+        client_created_at: now,
+      },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('groups')
+      .update({ deleted_at: now })
+      .eq('id', groupId)
+      .is('deleted_at', null);
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[deleteGroup] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
+}
+
+interface BalanceInput {
+  memberIdByGroup: Record<string, string>;
+  trips: { id: string; group_id: string }[];
+  allMembers: { id: string; group_id: string; display_name: string }[];
+  expenses: {
+    id: string;
+    trip_id: string;
+    paid_by: string;
+    amount: number;
+    splits: { member_id: string; amount: number }[];
+  }[];
+  payments: {
+    trip_id: string;
+    from_member_id: string;
+    to_member_id: string;
+    amount: number;
+  }[];
 }
 
 /**
- * F-22 / BR-10: Tính số dư của user trên tất cả chuyến đang mở.
- * Trả về: tổng balance + balance riêng từng group.
- * Dùng 4 queries song song — không thêm query N+1.
+ * Pure compute: pre-index + iterate trips → tính balance của user trong từng group.
+ * Tách riêng để server path (Supabase fetch) + local path (SQLite) dùng chung.
  */
-export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
-  const userId = await getAuthUserId();
-  if (!userId) return { total: 0, groupBalances: {} };
-
-  // Query 1: group_member records của user (memberId per group)
-  const { data: memberships } = await supabase
-    .from('group_members')
-    .select('id, group_id')
-    .eq('user_id', userId)
-    .is('left_at', null);
-
-  if (!memberships?.length) return { total: 0, groupBalances: {} };
-
-  const memberIdByGroup: Record<string, string> = {};
-  const groupIds: string[] = [];
-  memberships.forEach((m) => {
-    memberIdByGroup[m.group_id] = m.id;
-    groupIds.push(m.group_id);
-  });
-
-  // Query 2–4: song song
-  const [tripsRes, allMembersRes] = await Promise.all([
-    supabase
-      .from('trips')
-      .select('id, group_id')
-      .in('group_id', groupIds)
-      .eq('status', 'open')
-      .is('deleted_at', null),
-    supabase
-      .from('group_members')
-      .select('id, group_id, display_name')
-      .in('group_id', groupIds)
-      .is('left_at', null),
-  ]);
-
-  const trips = tripsRes.data || [];
-  if (!trips.length) return { total: 0, groupBalances: {} };
-
-  const tripIds = trips.map((t) => t.id);
-
-  // Query 3–4: expenses + payments (song song)
-  const [expensesRes, paymentsRes] = await Promise.all([
-    supabase
-      .from('expenses')
-      .select('trip_id, paid_by, amount, expense_splits(member_id, amount)')
-      .in('trip_id', tripIds)
-      .is('deleted_at', null),
-    supabase
-      .from('payments')
-      .select('trip_id, from_member_id, to_member_id, amount')
-      .in('trip_id', tripIds)
-      .is('deleted_at', null),
-  ]);
-
-  const expenses = expensesRes.data || [];
-  const payments = paymentsRes.data || [];
-  const allMembers = allMembersRes.data || [];
-
-  // Pre-index by trip_id / group_id for O(1) lookup instead of O(N) filter per trip
-  const expensesByTrip = new Map<string, typeof expenses>();
-  for (const e of expenses) {
-    const key = e.trip_id as string;
-    const arr = expensesByTrip.get(key) || [];
+function aggregateBalanceSummary(input: BalanceInput): BalanceSummary {
+  const expensesByTrip = new Map<string, BalanceInput['expenses']>();
+  for (const e of input.expenses) {
+    const arr = expensesByTrip.get(e.trip_id) || [];
     arr.push(e);
-    expensesByTrip.set(key, arr);
+    expensesByTrip.set(e.trip_id, arr);
   }
-  const paymentsByTrip = new Map<string, typeof payments>();
-  for (const p of payments) {
-    const key = p.trip_id as string;
-    const arr = paymentsByTrip.get(key) || [];
+  const paymentsByTrip = new Map<string, BalanceInput['payments']>();
+  for (const p of input.payments) {
+    const arr = paymentsByTrip.get(p.trip_id) || [];
     arr.push(p);
-    paymentsByTrip.set(key, arr);
+    paymentsByTrip.set(p.trip_id, arr);
   }
-  const membersByGroup = new Map<string, typeof allMembers>();
-  for (const m of allMembers) {
-    const key = m.group_id as string;
-    const arr = membersByGroup.get(key) || [];
+  const membersByGroup = new Map<string, BalanceInput['allMembers']>();
+  for (const m of input.allMembers) {
+    const arr = membersByGroup.get(m.group_id) || [];
     arr.push(m);
-    membersByGroup.set(key, arr);
+    membersByGroup.set(m.group_id, arr);
   }
 
-  // Tính balance per group
   const groupBalances: Record<string, number> = {};
-
-  for (const trip of trips) {
+  for (const trip of input.trips) {
     const tripExpenses = expensesByTrip.get(trip.id) || [];
     const tripPayments = paymentsByTrip.get(trip.id) || [];
     const tripMembers = membersByGroup.get(trip.group_id) || [];
 
     const expenseData: ExpenseData[] = tripExpenses.map((e) => ({
-      paidBy: e.paid_by as string,
-      amount: e.amount as number,
-      splits: ((e.expense_splits as { member_id: string; amount: number }[]) || []).map((s) => ({
-        memberId: s.member_id,
-        amount: s.amount,
-      })),
+      paidBy: e.paid_by,
+      amount: e.amount,
+      splits: e.splits.map((s) => ({ memberId: s.member_id, amount: s.amount })),
     }));
-
     const paymentData: PaymentData[] = tripPayments.map((p) => ({
-      fromMemberId: p.from_member_id as string,
-      toMemberId: p.to_member_id as string,
-      amount: p.amount as number,
+      fromMemberId: p.from_member_id,
+      toMemberId: p.to_member_id,
+      amount: p.amount,
     }));
-
     const memberList = tripMembers.map((m) => ({
-      id: m.id as string,
-      displayName: m.display_name as string,
+      id: m.id,
+      displayName: m.display_name,
     }));
 
     const balances = computeBalancesPure(memberList, expenseData, paymentData);
-
-    const userMemberId = memberIdByGroup[trip.group_id];
+    const userMemberId = input.memberIdByGroup[trip.group_id];
     const myBalance = balances.find((b) => b.memberId === userMemberId)?.balance ?? 0;
-
     groupBalances[trip.group_id] = (groupBalances[trip.group_id] ?? 0) + myBalance;
   }
 
@@ -746,10 +1133,197 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
   return { total, groupBalances };
 }
 
+/**
+ * F-22 / BR-10: Tính số dư của user trên tất cả chuyến đang mở.
+ * Trả về: tổng balance + balance riêng từng group.
+ * Online: 4 queries song song qua Supabase. Offline: same shape từ SQLite mirror.
+ */
+export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
+  const userId = await getAuthUserId();
+  if (!userId) return { total: 0, groupBalances: {} };
+
+  return tryServerThenLocal<BalanceSummary>(
+    async () => {
+      // Query 1: group_member records của user (memberId per group)
+      const { data: memberships, error: memErr } = await supabase
+        .from('group_members')
+        .select('id, group_id')
+        .eq('user_id', userId)
+        .is('left_at', null);
+      if (memErr) throw memErr;
+      if (!memberships?.length) return { total: 0, groupBalances: {} };
+
+      const memberIdByGroup: Record<string, string> = {};
+      const groupIds: string[] = [];
+      memberships.forEach((m) => {
+        memberIdByGroup[m.group_id] = m.id;
+        groupIds.push(m.group_id);
+      });
+
+      // Query 2 + 3 song song: open trips + all active members per group
+      const [tripsRes, allMembersRes] = await Promise.all([
+        supabase
+          .from('trips')
+          .select('id, group_id')
+          .in('group_id', groupIds)
+          .eq('status', 'open')
+          .is('deleted_at', null),
+        supabase
+          .from('group_members')
+          .select('id, group_id, display_name')
+          .in('group_id', groupIds)
+          .is('left_at', null),
+      ]);
+      if (tripsRes.error) throw tripsRes.error;
+      if (allMembersRes.error) throw allMembersRes.error;
+
+      const trips = tripsRes.data || [];
+      if (!trips.length) return { total: 0, groupBalances: {} };
+      const tripIds = trips.map((t) => t.id);
+
+      // Query 4 + 5 song song: expenses (với nested splits) + payments
+      const [expensesRes, paymentsRes] = await Promise.all([
+        supabase
+          .from('expenses')
+          .select('id, trip_id, paid_by, amount, expense_splits(member_id, amount)')
+          .in('trip_id', tripIds)
+          .is('deleted_at', null),
+        supabase
+          .from('payments')
+          .select('trip_id, from_member_id, to_member_id, amount')
+          .in('trip_id', tripIds)
+          .is('deleted_at', null),
+      ]);
+      if (expensesRes.error) throw expensesRes.error;
+      if (paymentsRes.error) throw paymentsRes.error;
+
+      const expenses = (expensesRes.data || []).map((e) => ({
+        id: e.id as string,
+        trip_id: e.trip_id as string,
+        paid_by: e.paid_by as string,
+        amount: e.amount as number,
+        splits:
+          ((e.expense_splits as { member_id: string; amount: number }[]) || []).map(
+            (s) => ({ member_id: s.member_id, amount: s.amount })
+          ),
+      }));
+
+      return aggregateBalanceSummary({
+        memberIdByGroup,
+        trips: trips.map((t) => ({ id: t.id as string, group_id: t.group_id as string })),
+        allMembers: (allMembersRes.data || []).map((m) => ({
+          id: m.id as string,
+          group_id: m.group_id as string,
+          display_name: m.display_name as string,
+        })),
+        expenses,
+        payments: (paymentsRes.data || []).map((p) => ({
+          trip_id: p.trip_id as string,
+          from_member_id: p.from_member_id as string,
+          to_member_id: p.to_member_id as string,
+          amount: p.amount as number,
+        })),
+      });
+    },
+    async () => {
+      const db = getDatabase();
+      const memberships = await db.getAllAsync<{ id: string; group_id: string }>(
+        `SELECT id, group_id FROM group_members
+          WHERE user_id = ? AND left_at IS NULL`,
+        [userId]
+      );
+      if (!memberships.length) return { total: 0, groupBalances: {} };
+
+      const memberIdByGroup: Record<string, string> = {};
+      const groupIds: string[] = [];
+      memberships.forEach((m) => {
+        memberIdByGroup[m.group_id] = m.id;
+        groupIds.push(m.group_id);
+      });
+
+      const groupPh = groupIds.map(() => '?').join(',');
+      const [trips, allMembers] = await Promise.all([
+        db.getAllAsync<{ id: string; group_id: string }>(
+          `SELECT id, group_id FROM trips
+            WHERE group_id IN (${groupPh})
+              AND status = 'open'
+              AND deleted_at IS NULL`,
+          groupIds
+        ),
+        db.getAllAsync<{ id: string; group_id: string; display_name: string }>(
+          `SELECT id, group_id, display_name FROM group_members
+            WHERE group_id IN (${groupPh}) AND left_at IS NULL`,
+          groupIds
+        ),
+      ]);
+      if (!trips.length) return { total: 0, groupBalances: {} };
+
+      const tripIds = trips.map((t) => t.id);
+      const tripPh = tripIds.map(() => '?').join(',');
+
+      const [expenseRows, splitRows, payments] = await Promise.all([
+        db.getAllAsync<{ id: string; trip_id: string; paid_by: string; amount: number }>(
+          `SELECT id, trip_id, paid_by, amount FROM expenses
+            WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
+          tripIds
+        ),
+        db.getAllAsync<{ expense_id: string; member_id: string; amount: number }>(
+          `SELECT s.expense_id, s.member_id, s.amount
+             FROM expense_splits s
+             INNER JOIN expenses e ON e.id = s.expense_id
+            WHERE e.trip_id IN (${tripPh}) AND e.deleted_at IS NULL`,
+          tripIds
+        ),
+        db.getAllAsync<{
+          trip_id: string;
+          from_member_id: string;
+          to_member_id: string;
+          amount: number;
+        }>(
+          `SELECT trip_id, from_member_id, to_member_id, amount FROM payments
+            WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
+          tripIds
+        ),
+      ]);
+
+      // Group splits by expense_id (server returned nested expense_splits qua join)
+      const splitsByExpense = new Map<string, { member_id: string; amount: number }[]>();
+      for (const s of splitRows) {
+        const arr = splitsByExpense.get(s.expense_id) || [];
+        arr.push({ member_id: s.member_id, amount: s.amount });
+        splitsByExpense.set(s.expense_id, arr);
+      }
+      const expenses = expenseRows.map((e) => ({
+        id: e.id,
+        trip_id: e.trip_id,
+        paid_by: e.paid_by,
+        amount: e.amount,
+        splits: splitsByExpense.get(e.id) || [],
+      }));
+
+      return aggregateBalanceSummary({
+        memberIdByGroup,
+        trips,
+        allMembers,
+        expenses,
+        payments,
+      });
+    }
+  );
+}
+
 // ── Helpers ─────────────────────────────────
 export type Role = 'admin' | 'member';
 
-/** Assert that the current user has one of the allowed roles in the group */
+/**
+ * Assert user has one of `allowed` roles. Local-only — đọc role từ SQLite mirror,
+ * KHÔNG gọi server. Đây là UX layer fail-fast; server `is_admin()`/`is_member()`
+ * SECURITY DEFINER ở mỗi RPC mới là security thật sự.
+ *
+ * Assumption: admin role STATIC (1 admin/nhóm, không tự rời/bị xóa).
+ * Revisit khi thêm Transfer Admin: cần đảm bảo local mirror sync kịp hoặc
+ * refresh local check on online.
+ */
 export async function assertRole(
   groupId: string,
   allowed: Role[]
@@ -757,15 +1331,8 @@ export async function assertRole(
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const { data } = await supabase
-    .from('group_members')
-    .select('role')
-    .eq('group_id', groupId)
-    .eq('user_id', userId)
-    .is('left_at', null)
-    .single();
-
-  if (!data || !allowed.includes(data.role as Role)) {
+  const role = await groupMemberRepo.getRole(groupId, userId);
+  if (!role || !allowed.includes(role)) {
     throw new Error('Bạn không có quyền thực hiện hành động này');
   }
 }

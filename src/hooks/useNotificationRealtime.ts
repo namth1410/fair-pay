@@ -23,10 +23,12 @@ import { useToast } from 'heroui-native';
 import { useEffect, useRef } from 'react';
 
 import { supabase } from '../config/supabase';
+import { notificationRepo } from '../repositories';
 import { getAuthUserId } from '../services/auth.helper';
 import type { Notification } from '../services/notification.service';
 import { useAuthStore } from '../stores/auth.store';
 import { useNotificationStore } from '../stores/notification.store';
+import * as syncState from '../sync/syncState';
 import type { NotificationType } from '../utils/notificationFormat';
 import { routeNotification } from '../utils/notificationRouter';
 
@@ -69,7 +71,28 @@ export function useNotificationRealtime(): void {
         const appUserId = await getAuthUserId();
         if (cancelled || !appUserId) return;
 
+        const persistToLocal = async (row: Notification) => {
+          // Sync xuống SQLite mirror để offline-first restore. Fire-and-forget
+          // — KHÔNG block UI nếu DB ghi fail.
+          try {
+            await notificationRepo.upsertFromServer(
+              row as unknown as Parameters<
+                typeof notificationRepo.upsertFromServer
+              >[0]
+            );
+            // Advance watermark theo updated_at để pull tiếp theo không re-fetch row này.
+            const ts =
+              (row as unknown as { updated_at?: string }).updated_at ??
+              row.created_at;
+            if (ts) await syncState.setWatermark('notifications', ts);
+          } catch (e) {
+            if (__DEV__) console.warn('[NotifRT] persist local failed:', e);
+          }
+        };
+
         const handleInsert = (row: Notification) => {
+          void persistToLocal(row);
+
           const store = useNotificationStore.getState();
           // Skip if already present (e.g., a fetchNotifications race put it in
           // before realtime delivered).
@@ -91,6 +114,8 @@ export function useNotificationRealtime(): void {
         };
 
         const handleUpdate = (row: Notification) => {
+          void persistToLocal(row);
+
           // Dedup UPDATE: row sẵn có được mutate (push target_ids, tăng count,
           // refresh created_at, đổi title). KHÔNG show toast (tránh spam) và
           // KHÔNG tăng unread (vẫn unread sẵn). `applyUpdate` sẽ prepend nếu

@@ -1,5 +1,11 @@
 import { NOTIF_PAGE_SIZE } from '../config/constants';
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import { useAppStore } from '../stores/app.store';
+import { tryServerThenLocal } from '../sync/fallback';
+import * as syncQueue from '../sync/syncQueue';
+import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
+import { isNetworkError } from '../utils/network';
 import {
   formatNotificationTitle,
   getSettingKeyForType,
@@ -155,84 +161,261 @@ export async function fetchNotifications(opts?: {
   const limit = opts?.limit ?? NOTIF_PAGE_SIZE;
   const filter = opts?.filter;
 
-  let query = supabase
-    .from('notifications')
-    .select('*, actor:actor_id(display_name, photo_url), group:group_id(name)')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  return tryServerThenLocal<Notification[]>(
+    async () => {
+      let query = supabase
+        .from('notifications')
+        .select('*, actor:actor_id(display_name, photo_url), group:group_id(name)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-  if (opts?.cursor) {
-    query = query.lt('created_at', opts.cursor);
-  }
-  if (filter?.scope === 'unread') {
-    query = query.is('read_at', null);
-  }
-  if (filter?.groupIds && filter.groupIds.length > 0) {
-    query = query.in('group_id', filter.groupIds);
-  }
+      if (opts?.cursor) {
+        query = query.lt('created_at', opts.cursor);
+      }
+      if (filter?.scope === 'unread') {
+        query = query.is('read_at', null);
+      }
+      if (filter?.groupIds && filter.groupIds.length > 0) {
+        query = query.in('group_id', filter.groupIds);
+      }
 
-  const { data, error } = await query;
-  if (error) throw error;
+      const { data, error } = await query;
+      if (error) throw error;
 
-  type Row = Notification & {
-    actor: { display_name: string; photo_url: string | null } | null;
-    group: { name: string } | null;
-  };
+      type Row = Notification & {
+        actor: { display_name: string; photo_url: string | null } | null;
+        group: { name: string } | null;
+      };
 
-  return (data as Row[]).map((r) => ({
-    ...r,
-    actor_name: r.actor?.display_name,
-    actor_photo_url: r.actor?.photo_url ?? null,
-    group_name: r.group?.name,
-  }));
+      return (data as Row[]).map((r) => ({
+        ...r,
+        actor_name: r.actor?.display_name,
+        actor_photo_url: r.actor?.photo_url ?? null,
+        group_name: r.group?.name,
+      }));
+    },
+    async () => {
+      // Local fallback: SQLite mirror đã có notifications. Actor/group name
+      // join từ users/groups local.
+      const db = getDatabase();
+      const where: string[] = ['n.user_id = ?'];
+      const args: (string | number)[] = [userId];
+      if (opts?.cursor) {
+        where.push('n.created_at < ?');
+        args.push(opts.cursor);
+      }
+      if (filter?.scope === 'unread') {
+        where.push('n.read_at IS NULL');
+      }
+      if (filter?.groupIds && filter.groupIds.length > 0) {
+        where.push(
+          `n.group_id IN (${filter.groupIds.map(() => '?').join(',')})`
+        );
+        args.push(...filter.groupIds);
+      }
+      args.push(limit);
+
+      const rows = await db.getAllAsync<
+        Notification & {
+          actor_name: string | null;
+          actor_photo_url: string | null;
+          group_name: string | null;
+          data: string | object;
+        }
+      >(
+        `SELECT n.*,
+                u.display_name AS actor_name,
+                u.photo_url AS actor_photo_url,
+                g.name AS group_name
+           FROM notifications n
+           LEFT JOIN users u ON u.id = n.actor_id
+           LEFT JOIN groups g ON g.id = n.group_id
+          WHERE ${where.join(' AND ')}
+          ORDER BY n.created_at DESC
+          LIMIT ?`,
+        args
+      );
+      return rows.map((r) => ({
+        ...r,
+        data:
+          typeof r.data === 'string'
+            ? (JSON.parse(r.data || '{}') as Record<string, unknown>)
+            : r.data,
+      })) as Notification[];
+    }
+  );
 }
 
-/** Đếm số notif chưa đọc của user hiện tại (badge). */
+/** Đếm số notif chưa đọc của user hiện tại (badge). Fallback SQLite. */
 export async function getUnreadCount(): Promise<number> {
   const userId = await getAuthUserId();
   if (!userId) return 0;
-  const { count } = await supabase
-    .from('notifications')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .is('read_at', null);
-  return count ?? 0;
+  return tryServerThenLocal<number>(
+    async () => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .is('read_at', null);
+      return count ?? 0;
+    },
+    async () => {
+      const db = getDatabase();
+      const row = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) AS c FROM notifications
+          WHERE user_id = ? AND read_at IS NULL`,
+        [userId]
+      );
+      return row?.c ?? 0;
+    }
+  );
 }
 
 export async function markAsRead(ids: string[]): Promise<void> {
   if (!ids.length) return;
   const userId = await getAuthUserId();
   if (!userId) return;
-  const { error } = await supabase
-    .from('notifications')
-    .update({ read_at: new Date().toISOString() })
-    .in('id', ids)
-    .eq('user_id', userId)
-    .is('read_at', null);
-  if (error) throw error;
+
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const enqueueLocal = async (): Promise<void> => {
+    const db = getDatabase();
+    const placeholders = ids.map(() => '?').join(',');
+    await db.runAsync(
+      `UPDATE notifications
+          SET read_at = COALESCE(read_at, ?)
+        WHERE id IN (${placeholders}) AND user_id = ?`,
+      [now, ...ids, userId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.MARK_NOTIFICATION_READ,
+      entity_type: ENTITY_TYPES.NOTIFICATION,
+      entity_id: ids.join('|'),
+      client_request_id: clientRequestId,
+      payload: { notification_ids: ids, client_request_id: clientRequestId },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: now })
+      .in('id', ids)
+      .eq('user_id', userId)
+      .is('read_at', null);
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[markAsRead] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function markAllAsRead(): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
-  const { error } = await supabase
-    .from('notifications')
-    .update({ read_at: new Date().toISOString() })
-    .eq('user_id', userId)
-    .is('read_at', null);
-  if (error) throw error;
+
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const enqueueLocal = async (): Promise<void> => {
+    const db = getDatabase();
+    // Local: mark all unread of this user. Lấy IDs để gửi RPC.
+    const rows = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM notifications WHERE user_id = ? AND read_at IS NULL`,
+      [userId]
+    );
+    if (rows.length === 0) return;
+    await db.runAsync(
+      `UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL`,
+      [now, userId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.MARK_NOTIFICATION_READ,
+      entity_type: ENTITY_TYPES.NOTIFICATION,
+      entity_id: 'all',
+      client_request_id: clientRequestId,
+      payload: {
+        notification_ids: rows.map((r) => r.id),
+        client_request_id: clientRequestId,
+      },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: now })
+      .eq('user_id', userId)
+      .is('read_at', null);
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[markAllAsRead] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
+/**
+ * Delete notification (hard delete — user gesture). Offline-first: queue.
+ * Local: DELETE row ngay; queue replay sẽ DELETE server-side.
+ */
 export async function deleteNotification(id: string): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
-  const { error } = await supabase
-    .from('notifications')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', userId);
-  if (error) throw error;
+
+  const clientRequestId = globalThis.crypto.randomUUID();
+
+  const enqueueLocal = async (): Promise<void> => {
+    const db = getDatabase();
+    await db.runAsync(
+      `DELETE FROM notifications WHERE id = ? AND user_id = ?`,
+      [id, userId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.DELETE_NOTIFICATION,
+      entity_type: ENTITY_TYPES.NOTIFICATION,
+      entity_id: id,
+      client_request_id: clientRequestId,
+      payload: { notification_id: id, client_request_id: clientRequestId },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[deleteNotification] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 // ── High-level helpers gọi từ service mutation ─────────────────────────────────

@@ -1,4 +1,6 @@
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import { tryServerThenLocal } from '../sync/fallback';
 import { getAuthUserId } from './auth.helper';
 
 export interface AuditLog {
@@ -37,33 +39,65 @@ export function getActionLabel(action: string): string {
   return ACTION_LABELS[action] || action;
 }
 
-/** Fetch audit logs for a trip */
+/** Fetch audit logs for a trip — fallback SQLite mirror với JOIN users. */
 export async function fetchAuditLogs(tripId: string): Promise<AuditLog[]> {
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .select('*')
-    .eq('trip_id', tripId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  return tryServerThenLocal<AuditLog[]>(
+    async () => {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('trip_id', tripId)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-  if (error) throw error;
+      if (error) throw error;
+      if (!data?.length) return [];
 
-  // Enrich with actor names
-  if (!data?.length) return [];
+      const actorIds = [...new Set(data.map((l) => l.actor_id))];
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, display_name')
+        .in('id', actorIds);
 
-  const actorIds = [...new Set(data.map((l) => l.actor_id))];
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, display_name')
-    .in('id', actorIds);
+      const nameMap: Record<string, string> = {};
+      users?.forEach((u) => (nameMap[u.id] = u.display_name));
 
-  const nameMap: Record<string, string> = {};
-  users?.forEach((u) => (nameMap[u.id] = u.display_name));
-
-  return data.map((log) => ({
-    ...log,
-    actor_name: nameMap[log.actor_id] || 'Ẩn danh',
-  }));
+      return data.map((log) => ({
+        ...log,
+        actor_name: nameMap[log.actor_id] || 'Ẩn danh',
+      }));
+    },
+    async () => {
+      const db = getDatabase();
+      // SQLite trả before_data/after_data as TEXT; service AuditLog expects object.
+      type RawRow = Omit<AuditLog, 'before_data' | 'after_data'> & {
+        before_data: string | null;
+        after_data: string | null;
+        actor_display_name: string | null;
+      };
+      const rows = await db.getAllAsync<RawRow>(
+        `SELECT a.*, u.display_name AS actor_display_name
+           FROM audit_logs a
+           LEFT JOIN users u ON u.id = a.actor_id
+          WHERE a.trip_id = ?
+          ORDER BY COALESCE(a.client_created_at, a.created_at) DESC
+          LIMIT 50`,
+        [tripId]
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        group_id: r.group_id,
+        trip_id: r.trip_id,
+        action: r.action,
+        actor_id: r.actor_id,
+        target_id: r.target_id,
+        before_data: r.before_data ? JSON.parse(r.before_data) : null,
+        after_data: r.after_data ? JSON.parse(r.after_data) : null,
+        created_at: r.created_at,
+        actor_name: r.actor_display_name || 'Ẩn danh',
+      }));
+    }
+  );
 }
 
 /**

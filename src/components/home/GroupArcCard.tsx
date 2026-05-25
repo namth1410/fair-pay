@@ -170,8 +170,8 @@ export const GroupArcCard = memo(function GroupArcCard({
       onPressActive();
       return;
     }
-    if (Math.abs(p) > 1.6) {
-      // Card đang ẩn xa — không xử lý.
+    if (Math.abs(p) > 2.2) {
+      // Card nằm ngoài VISIBLE_SLOTS (~2.1 mỗi phía) — clipped, không xử lý.
       return;
     }
     hapticLight();

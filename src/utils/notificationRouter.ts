@@ -154,6 +154,8 @@ export function dispatchNotificationRefetch(
         if (tripId && tripState.currentTripId === tripId) {
           fireAndForget(tripState.loadBalances(tripId));
         }
+        // Refresh group balance summary (Home card có thể thay đổi).
+        fireAndForget(groupState.loadBalanceSummary());
         break;
       }
 

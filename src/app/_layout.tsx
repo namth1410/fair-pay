@@ -1,3 +1,4 @@
+import '../polyfills/crypto';
 import '../../global.css';
 
 import {
@@ -21,6 +22,7 @@ import { CameraCaptureHost } from '../components/common/CameraCaptureHost';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { OfflineBanner } from '../components/common/OfflineBanner';
 import { SplashScene } from '../components/common/SplashScene';
+import { ConflictResolverModal } from '../components/sync/ConflictResolverModal';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { LightningTransitionProvider } from '../contexts/LightningTransition';
 import { MorphTransitionProvider } from '../contexts/MorphTransition';
@@ -34,7 +36,10 @@ import {
 } from '../services/pushNotification.service';
 import { fetchCurrentUser } from '../services/user.service';
 import { useAppStore } from '../stores/app.store';
+import { sweepStagedOrphans } from '../sync/imageStaging';
+import { SyncBridge } from '../sync/SyncBridge';
 import { useAuthStore } from '../stores/auth.store';
+import { initNetworkSync } from '../utils/networkSync';
 import { dispatchNotificationRefetch,getDeepLinkForNotification } from '../utils/notificationRouter';
 import { bootstrapPreferences, getDarkMode } from '../utils/userPreferences';
 
@@ -92,9 +97,13 @@ let __splashShown = false;
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
+  const cachedIdentity = useAuthStore((s) => s.cachedIdentity);
   const isInitialized = useAuthStore((s) => s.isInitialized);
   const segments = useSegments();
   const router = useRouter();
+
+  // Đã đăng nhập (online) HOẶC có cached identity (offline restore).
+  const isAuthed = !!session || !!cachedIdentity;
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -104,21 +113,21 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // user can finish updating their password before we redirect them to main.
     const inResetPassword = (segments as string[]).includes('reset-password');
 
-    if (!session && !inAuthGroup) {
+    if (!isAuthed && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup && !inResetPassword) {
+    } else if (isAuthed && inAuthGroup && !inResetPassword) {
       router.replace('/(main)');
     } else {
       SplashScreen.hideAsync();
     }
-  }, [session, isInitialized, segments]);
+  }, [isAuthed, isInitialized, segments]);
 
   if (!isInitialized) return null;
 
   const inAuthGroup = segments[0] === '(auth)';
   const inResetPassword = (segments as string[]).includes('reset-password');
-  if (!session && !inAuthGroup) return null;
-  if (session && inAuthGroup && !inResetPassword) return null;
+  if (!isAuthed && !inAuthGroup) return null;
+  if (isAuthed && inAuthGroup && !inResetPassword) return null;
 
   return <>{children}</>;
 }
@@ -180,9 +189,18 @@ export default function RootLayout() {
       // the Supabase round-trip on first paint.
       await bootstrapPreferences();
       Uniwind.setTheme(getDarkMode());
+      // Sync isOnline với current network state TRƯỚC khi DB init + SyncBridge
+      // mount, để service đầu tiên (vd createGroup) đọc cờ chính xác khi cold
+      // start offline. `addEventListener` ko phát current state nên cần fetch.
+      await initNetworkSync();
       try {
         await initDatabase();
         setDatabaseReady(true);
+        // Dọn pending image uploads mồ côi (addExpense fail sau stage, app
+        // crash giữa stage và write, hoặc rows kẹt retry_count >= MAX).
+        sweepStagedOrphans().catch((e) => {
+          if (__DEV__) console.warn('[Boot] sweepStagedOrphans failed', e);
+        });
       } catch (err) {
         console.error('[Boot] DB init failed:', err);
       }
@@ -215,6 +233,8 @@ export default function RootLayout() {
                 </AuthGate>
                 <NotificationRealtimeBridge />
                 <PushTapBridge />
+                <SyncBridge />
+                <ConflictResolverModal />
               </LightningTransitionProvider>
             </MorphTransitionProvider>
             <ThemeTransitionOverlay />

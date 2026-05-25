@@ -5,6 +5,7 @@ import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { Trip } from '../../services/trip.service';
+import { useTripStore } from '../../stores/trip.store';
 import { CreateTripSheet } from '../trip/CreateTripSheet';
 import {
   AppCard,
@@ -20,20 +21,26 @@ interface TripsTabProps {
   groupId: string;
   onTripPress: (tripId: string) => void;
   onToggleStatus: (trip: Trip) => void;
+  onTripLongPress?: (trip: Trip) => void;
   onCreateSuccess?: (name: string) => void;
 }
 
 export const TripsTab = React.memo(function TripsTab({
-  trips, isLoading, isAdmin, groupId, onTripPress, onToggleStatus, onCreateSuccess,
+  trips, isLoading, isAdmin, groupId, onTripPress, onToggleStatus, onTripLongPress, onCreateSuccess,
 }: TripsTabProps) {
   const c = useAppTheme();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const pinnedTripIds = useTripStore((s) => s.pinnedTripIds);
 
-  const renderTrip = ({ item }: { item: Trip }) => (
+  const renderTrip = ({ item }: { item: Trip }) => {
+    const isPinned = pinnedTripIds.has(item.id);
+    const statusLabel = item.status === 'open' ? 'Đang mở' : 'Đã đóng';
+    return (
     <AppCard
       title={item.name}
-      subtitle={item.status === 'open' ? 'Đang mở' : 'Đã đóng'}
+      subtitle={isPinned ? `📌 ${statusLabel}` : statusLabel}
       onPress={() => onTripPress(item.id)}
+      onLongPress={onTripLongPress ? () => onTripLongPress(item) : undefined}
       leading={
         <View style={[styles.iconWrap, { backgroundColor: c.primarySoft }]}>
           <MapPin size={20} color={c.foreground} strokeWidth={1.75} />
@@ -54,7 +61,8 @@ export const TripsTab = React.memo(function TripsTab({
         ) : undefined
       }
     />
-  );
+    );
+  };
 
   return (
     <>

@@ -1,5 +1,5 @@
 import { Button } from 'heroui-native';
-import { Share2 } from 'lucide-react-native';
+import { Clock, Share2 } from 'lucide-react-native';
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
@@ -9,6 +9,7 @@ import type {
   GroupMember,
   JoinRequest,
 } from '../../services/group.service';
+import { isPendingInviteCode } from '../../utils/inviteCode';
 import { AppCard, AppText, Avatar, GradientHero } from '../ui';
 
 type Role = 'admin' | 'member';
@@ -107,25 +108,42 @@ export const MembersTab = React.memo(function MembersTab({
 
   return (
     <>
-      {/* Invite banner — gradient pink */}
-      <Pressable
-        onPress={onShare}
-        accessibilityRole="button"
-        accessibilityLabel="Chia sẻ mã mời"
-        style={styles.inviteBanner}
-      >
-        <GradientHero fromColor={c.accentSoft} toColor={c.tint} gradientDirection="horizontal" style={styles.inviteBannerGradient}>
-          <View style={styles.inviteInner}>
-            <View style={styles.inviteText}>
-              <AppText variant="meta" tone="muted">Mã mời</AppText>
-              <AppText variant="title" weight="bold" tone="primary" style={styles.inviteCode}>
-                {inviteCode}
-              </AppText>
-            </View>
-            <Share2 size={22} color={c.primaryStrong} />
-          </View>
-        </GradientHero>
-      </Pressable>
+      {/* Invite banner — gradient pink. Khi nhóm còn pending sync, hiện placeholder
+          UI thay mã thật + vô hiệu Share để tránh user share code giả. */}
+      {(() => {
+        const isPending = isPendingInviteCode(inviteCode);
+        return (
+          <Pressable
+            onPress={isPending ? undefined : onShare}
+            disabled={isPending}
+            accessibilityRole="button"
+            accessibilityLabel={isPending ? 'Mã mời sẽ hiện sau khi đồng bộ' : 'Chia sẻ mã mời'}
+            style={styles.inviteBanner}
+          >
+            <GradientHero fromColor={c.accentSoft} toColor={c.tint} gradientDirection="horizontal" style={styles.inviteBannerGradient}>
+              <View style={styles.inviteInner}>
+                <View style={styles.inviteText}>
+                  <AppText variant="meta" tone="muted">Mã mời</AppText>
+                  {isPending ? (
+                    <AppText variant="body" weight="semibold" tone="muted">
+                      Sẽ hiện sau khi đồng bộ
+                    </AppText>
+                  ) : (
+                    <AppText variant="title" weight="bold" tone="primary" style={styles.inviteCode}>
+                      {inviteCode}
+                    </AppText>
+                  )}
+                </View>
+                {isPending ? (
+                  <Clock size={22} color={c.muted} />
+                ) : (
+                  <Share2 size={22} color={c.primaryStrong} />
+                )}
+              </View>
+            </GradientHero>
+          </Pressable>
+        );
+      })()}
 
       {/* Admin-only: thêm thành viên (mời email / thành viên ảo) */}
       {isAdmin && (

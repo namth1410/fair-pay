@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CircleCheck, Info } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -51,7 +51,7 @@ export default function TripDetailScreen() {
 
   const {
     trips, currentExpenses, currentPayments, balances, settlements, auditLogs,
-    isLoadingExpenses,
+    isLoadingExpenses, currentTripId,
     removeExpense,
     addPayment, removePayment,
     loadBalances, loadAuditLogs,
@@ -196,6 +196,19 @@ export default function TripDetailScreen() {
   const showMyRow = !!explanation && explanation.lines.length > 0;
   const { label: myLabel, tone: myTone } = describeBalance(myBalance);
 
+  // Hero palette theo dấu balance — đỏ (nợ) / xanh (được nợ) / neutral (cân bằng).
+  // Blob bottom-center (u_c2) giữ nguyên base soft để text meta + myBalance row
+  // luôn nằm trên vùng soft, đảm bảo contrast.
+  const heroPalette = useMemo<{ base: string; colors: [string, string, string] }>(() => {
+    if (myBalance < 0) {
+      return { base: c.dangerSoft, colors: [c.danger, c.surface, c.dangerSoft] };
+    }
+    if (myBalance > 0) {
+      return { base: c.successSoft, colors: [c.success, c.surface, c.successSoft] };
+    }
+    return { base: c.tint, colors: [c.accentSoft, c.primarySoft, c.warmAccent] };
+  }, [myBalance, c.dangerSoft, c.danger, c.successSoft, c.success, c.surface, c.tint, c.accentSoft, c.primarySoft, c.warmAccent]);
+
   useEffect(() => {
     if (!tripId) return;
     // loadBalances populate expenses + payments + members + balances + settlements
@@ -216,14 +229,26 @@ export default function TripDetailScreen() {
 
   if (!tripId) return null;
 
+  // Guard: cache trong store có thể là data của trip vừa unmount trước → render
+  // loading cho tới khi loadBalances populate xong cho tripId này.
+  const isHydrating = currentTripId !== tripId || !trip;
+  if (isHydrating) {
+    return (
+      <View style={[styles.container, styles.hydrating, { backgroundColor: c.background }]}>
+        <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
+        <ActivityIndicator size="large" color={c.tint} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
 
       {/* Summary hero — animated mesh gradient (Skia) */}
       <SkiaMeshGradient
-        baseColor={c.tint}
-        colors={[c.accentSoft, c.primarySoft, c.warmAccent]}
+        baseColor={heroPalette.base}
+        colors={heroPalette.colors}
         speed={0.9}
         style={styles.heroWrap}
       >
@@ -333,6 +358,7 @@ function describeBalance(b: number): { label: string; tone: 'success' | 'danger'
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  hydrating: { justifyContent: 'center', alignItems: 'center' },
   tabViewport: { flex: 1, overflow: 'hidden' },
   tabRow: { flex: 1, flexDirection: 'row' },
   heroWrap: {

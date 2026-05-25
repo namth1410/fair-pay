@@ -17,23 +17,145 @@ npm run lint          # ESLint check
 
 ```
 src/
-├── services/         # Business logic — gọi Supabase, trả về typed data
-│   └── auth.helper.ts  # Shared getAuthUserId() với 30s cache
+├── services/         # Business logic — gọi Supabase + fallback SQLite local
+│   └── auth.helper.ts  # Shared getAuthUserId() với 30s cache + offline cache fallback
+├── repositories/     # Read-only repos đọc SQLite local mirror (12 entities)
+├── sync/             # Sync engine + push/pull worker + conflict bus + image upload defer
 ├── stores/           # Zustand stores — gọi services, quản lý state
 ├── utils/            # Hàm thuần — balance, settlement, split, validate
-├── types/            # database.types.ts — TypeScript mirrors SQLite schema
+├── types/            # database.types.ts — TypeScript mirrors SQLite + Supabase schema
 ├── config/           # constants, supabase client, theme, fonts
-├── hooks/            # useAppTheme (trả về { isDark, ...colors })
-├── db/               # SQLite schema, database init, migrations
+├── hooks/            # useAppTheme, useQueueStats (pending + conflict count)
+├── db/               # SQLite schema v3, database init, migrations
 ├── components/
 │   ├── common/       # ErrorBoundary, CreateJoinSheet, OfflineBanner, PresetFormModal
+│   ├── sync/         # ConflictResolverModal — listen conflictBus
 │   ├── trip/         # ExpensesTab, BalancesTab, SettlementTab, HistoryTab
 │   └── ui/           # AppCard, AppText, AppTextField, Money, ChipPicker, etc.
 ├── app/
 │   ├── (auth)/       # login.tsx, register.tsx, forgot-password.tsx, reset-password.tsx
-│   └── (main)/       # index.tsx, settings.tsx, presets.tsx, groups/[id].tsx, trips/[id].tsx
+│   └── (main)/       # index.tsx, settings.tsx, presets.tsx, groups/[id].tsx,
+│                     # trips/[id].tsx, sync-conflicts.tsx (Conflict Inbox)
 └── __tests__/        # balance.test.ts, settlement.test.ts, split.test.ts
 ```
+
+## Offline-first architecture
+
+### Mô hình storage: Write-through queue
+Server (Supabase) là source of truth. SQLite local là mirror cho read offline +
+queue cho write offline. Khi online: write trực tiếp lên server, fallback queue
+khi network fail. Khi offline: write SQLite + enqueue ngay.
+
+### Pipeline sync
+```
+UI → Service (online check) ─┬─→ Server (RPC/INSERT) ─→ Success
+                              └─→ enqueue + write SQLite (offline path)
+                                          ↓
+                                    SyncEngine.run()
+                                          ↓
+                                   PullAll → PushQueue → PullAll
+                                                ↓
+                              ConflictBus.emit → ConflictResolverModal
+```
+
+### 9 sync pattern cho 21 mutation
+- **P1 Append-only create**: client UUID + `client_request_id` UNIQUE — UPSERT safe replay.
+  `createExpense`, `createPayment`, `createTrip`, `createPreset`, `addVirtualMember`.
+- **P2 Soft-delete idempotent**: `SET deleted_at = COALESCE(deleted_at, now())`.
+  `deleteExpense`, `deletePayment`, `deleteGroup`, `removeMember`, `deletePreset`,
+  `clearTrip`, `deleteTrip`.
+- **P3 Optimistic concurrency (version)**: client gửi `base_version`, server check,
+  mismatch → RPC raise `P0410` → conflict modal. `updateGroup`, `updateTripName`,
+  `renameMember`, `updateDisplayName`, `updatePreset`.
+- **P4 State machine**: `close_trip`/`reopen_trip` — idempotent server-side (no-op nếu đã
+  ở trạng thái target).
+- **P5 LWW theo `updated_at`**: `updateSettings` — server check `current.updated_at >
+  base_updated_at` → conflict modal.
+- **P7 Idempotent set**: `pinTrip`, `unpinTrip`, `reorderPinnedTrips`, `markAsRead`,
+  `markAllAsRead`, `deleteNotification`.
+
+### Phân lớp file
+- **Repositories** (`src/repositories/`): 12 file đọc SQLite local. Mỗi entity có
+  `getById()`, `listByX()`, `upsertFromServer()` (sync engine pull gọi).
+- **Sync engine** (`src/sync/`):
+  - `syncEngine.ts` — orchestrator. Triggers: bootstrap, online transition, foreground.
+  - `pullWorker.ts` — delta pull per-table theo watermark `updated_at`.
+  - `pushWorker.ts` + `pushDispatcher.ts` — replay queue, map op_type → RPC.
+  - `syncQueue.ts` — CRUD `sync_queue` table (status, retry, conflict).
+  - `syncState.ts` — watermark per-table cho delta pull.
+  - `conflictBus.ts` — emit P0410 events to ConflictResolverModal.
+  - `resolveConflict.ts` — keepMine/keepTheirs/defer actions.
+  - `authCache.ts` — `_auth_cache` table cho offline bootstrap.
+  - `imageStaging.ts` + `imageUploadWorker.ts` — defer image upload R2.
+  - `fallback.ts` — `tryServerThenLocal` cho read fallback.
+  - `writeFallback.ts` — `tryServerOrQueue` + `isNetworkError` helper.
+  - `SyncBridge.tsx` — wire run() vào session/online/AppState triggers.
+
+### Migrations SQL (foundation)
+3 migrations + 1 security hardening đã apply lên Supabase main:
+- `20260521100000_offline_first_version_columns.sql` — thêm `version` + `updated_at` +
+  `client_request_id` + trigger `bump_version_and_updated_at()` cho 11 bảng mutable.
+- `20260521100100_expense_presets_soft_delete.sql` — preset soft-delete + partial unique
+  index thêm `AND deleted_at IS NULL`.
+- `20260521100200_optimistic_concurrency_rpcs.sql` — 9 RPC mới với optimistic concurrency:
+  `update_group`, `update_trip_name`, `update_member_display_name`,
+  `update_user_display_name`, `update_preset`, `close_trip`, `reopen_trip`,
+  `update_user_settings`, `delete_payment`.
+- `20260521xxxxxx_offline_first_security_hardening` — `SET search_path` cho 2 trigger
+  funcs + `REVOKE EXECUTE ... FROM anon` cho 9 RPC mới.
+
+### Conflict resolution UI
+- Modal hiện khi sync engine catch `P0410` → emit `ConflictEvent` → mount-time listener
+  hiện modal. 3 action:
+  - **Giữ của tôi** — resubmit queue với `base_version = server.version` (force overwrite).
+  - **Giữ của họ** — discard queue + UPDATE local mirror với server data.
+  - **Xem sau** — đóng modal, item ở `/sync-conflicts` (Conflict Inbox).
+- Route `(main)/sync-conflicts.tsx` list mọi queue item `status='conflict'`. Entry
+  điểm trong Settings hiện badge count nếu > 0.
+
+### Login offline
+- Identity cache trong `_auth_cache` SQLite row (single row, id=1).
+- `useAuthStore.initialize()` load cached identity TRƯỚC khi Supabase getSession() →
+  AuthGate accept `session || cachedIdentity` → user vào /(main) khi offline first-boot.
+- `getAuthUserId()` fall back vào `_auth_cache` khi `supabase.auth.getUser()` fail
+  hoặc trả null.
+- Sign-in success → `persistIdentityToCache()` fire-and-forget. Sign-out → `authCache.clear()`.
+
+### Image defer upload
+- ExpenseFormScreen: online → upload R2 ngay; offline → `stageExpenseImage()` copy
+  ảnh compressed vào `documentDirectory/pending_images/<expense_id>.jpg` + register
+  `pending_image_uploads` row.
+- `imageUploadWorker.uploadPending()` chạy sau `pushPending` trong `syncEngine.run()`:
+  - Check expense đã có trên server qua client_request_id (skip nếu pending).
+  - presign + `FileSystem.uploadAsync` PUT lên R2 + commit Edge Function.
+  - UPDATE `expenses.image_url` với R2 URL + cleanup local file + remove pending row.
+- Local fail (file missing/expense deleted) → mark dead, dọn row.
+- Worker dùng `expo-file-system/legacy` cho `documentDirectory` + `uploadAsync` API
+  (SDK 55 new `File` class chưa cover upload).
+
+### Sync triggers
+SyncBridge (mounted ở `_layout`) wire `syncEngine.run()` vào 3 sự kiện:
+1. Session active (sau initialize)
+2. NetInfo transition offline → online
+3. AppState background → active
+
+Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
+
+### Quan trọng khi viết code mới
+- **Read offline**: services có fallback qua `tryServerThenLocal(serverFn, localFn)`.
+  Khi thêm fetch mới, viết kèm local query (SQLite shape khớp service type vì cùng
+  snake_case).
+- **Write offline**: pattern trong `createExpense` / `updateGroup`:
+  1. Lookup local entity để check authz + lấy `base_version` (nếu P3)
+  2. Define `enqueueLocal()` — write SQLite + `syncQueue.enqueue()`
+  3. `if (!isOnline) return enqueueLocal()`
+  4. try server RPC; catch `isNetworkError(err)` → fall back to `enqueueLocal`
+- **Mỗi op_type mới**: phải thêm handler trong `pushDispatcher.ts` (case switch theo
+  `OP_TYPES`).
+- **Trigger sync**: KHÔNG gọi `syncEngine.run()` thủ công từ UI — SyncBridge tự handle.
+- **Cảnh báo về dispatcher import circular**: tránh import từ `services/*` trong
+  `pushDispatcher.ts` ở module-load time. Dùng `await import()` lazy (vd
+  `getAuthUserId` chỗ CREATE_TRIP, DELETE_NOTIFICATION).
 
 ## Quy tắc quan trọng
 

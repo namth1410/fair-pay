@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAppStore } from '../../stores/app.store';
 import { AppText } from '../ui';
 import { CAPSULE_HEIGHT, CAPSULE_MARGIN_H } from './headerConstants';
 import { useHeaderSlots } from './headerSlots';
@@ -18,6 +19,7 @@ export function GlassCapsuleHeader(props: NativeStackHeaderProps) {
   const { route, back } = props;
   const c = useAppTheme();
   const insets = useSafeAreaInsets();
+  const bannerVisible = useAppStore((s) => s.bannerVisible);
 
   const title = resolveTitle(props);
   const hasBack = Boolean(back);
@@ -28,7 +30,9 @@ export function GlassCapsuleHeader(props: NativeStackHeaderProps) {
       style={[
         styles.root,
         {
-          paddingTop: insets.top,
+          // Banner cover status bar area khi visible → bỏ insets.top để header
+          // không trông cao bất thường.
+          paddingTop: bannerVisible ? 0 : insets.top,
           backgroundColor: c.background,
           borderBottomColor: c.divider,
         },

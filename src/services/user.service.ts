@@ -1,5 +1,10 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import { useAppStore } from '../stores/app.store';
+import * as syncQueue from '../sync/syncQueue';
+import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
+import { isNetworkError } from '../utils/network';
 import { getAuthUserId } from './auth.helper';
 
 export interface UserProfile {
@@ -76,7 +81,10 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
   };
 }
 
-/** Update display name */
+/**
+ * Update display name. Offline-first: dùng RPC update_user_display_name với
+ * optimistic concurrency (P3 pattern). Conflict → modal.
+ */
 export async function updateDisplayName(name: string): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
@@ -87,34 +95,122 @@ export async function updateDisplayName(name: string): Promise<void> {
     throw new Error(`Tên không được quá ${DISPLAY_NAME_MAX_LENGTH} ký tự`);
   }
 
-  const { error } = await supabase
-    .from('users')
-    .update({ display_name: trimmed })
-    .eq('id', userId);
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{ version: number; display_name: string }>(
+    `SELECT version, display_name FROM users WHERE id = ?`,
+    [userId]
+  );
+  if (!local) throw new Error('Hồ sơ không tồn tại');
+  if (trimmed === local.display_name) return;
 
-  if (error) throw error;
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
 
-  // Auth metadata is secondary — DB is source of truth
-  try {
-    await supabase.auth.updateUser({
-      data: { display_name: trimmed },
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE users
+          SET display_name = ?, version = version + 1, updated_at = ?
+        WHERE id = ?`,
+      [trimmed, now, userId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.UPDATE_USER_DISPLAY_NAME,
+      entity_type: ENTITY_TYPES.USER,
+      entity_id: userId,
+      client_request_id: clientRequestId,
+      payload: {
+        display_name: trimmed,
+        base_version: local.version,
+        client_request_id: clientRequestId,
+      },
     });
-  } catch {
-    console.warn('[User] Auth metadata update failed, DB is source of truth');
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('update_user_display_name', {
+      p_display_name: trimmed,
+      p_base_version: local.version,
+      p_client_request_id: clientRequestId,
+    });
+    if (error) throw error;
+
+    // Auth metadata is secondary — DB is source of truth. Best-effort.
+    try {
+      await supabase.auth.updateUser({ data: { display_name: trimmed } });
+    } catch {
+      console.warn('[User] Auth metadata update failed, DB is source of truth');
+    }
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[updateDisplayName] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
   }
 }
 
-/** Update user settings (notification preferences, dark mode, etc.) */
+/**
+ * Update user settings. Offline-first: LWW theo updated_at (P5 pattern).
+ * 2 device offline sửa cùng settings → device sau sync sẽ conflict modal.
+ */
 export async function updateSettings(settings: UserSettings): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const { error } = await supabase
-    .from('users')
-    .update({ settings })
-    .eq('id', userId);
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{ updated_at: string }>(
+    `SELECT updated_at FROM users WHERE id = ?`,
+    [userId]
+  );
+  if (!local) throw new Error('Hồ sơ không tồn tại');
 
-  if (error) throw error;
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE users SET settings = ?, updated_at = ? WHERE id = ?`,
+      [JSON.stringify(settings), now, userId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.UPDATE_USER_SETTINGS,
+      entity_type: ENTITY_TYPES.USER,
+      entity_id: userId,
+      client_request_id: clientRequestId,
+      payload: {
+        settings: settings as unknown as Record<string, unknown>,
+        base_updated_at: local.updated_at,
+        client_request_id: clientRequestId,
+      },
+    });
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
+
+  try {
+    const { error } = await supabase.rpc('update_user_settings', {
+      p_settings: settings,
+      p_base_updated_at: local.updated_at,
+      p_client_request_id: clientRequestId,
+    });
+    if (error) throw error;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[updateSettings] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 /** Update FCM token for push notifications. Pass `null` to clear on logout. */

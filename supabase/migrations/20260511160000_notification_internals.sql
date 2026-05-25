@@ -46,6 +46,7 @@ CREATE OR REPLACE FUNCTION public._format_dedup_title(
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
+SET search_path = public, pg_temp
 AS $$
   SELECT CASE
     WHEN p_count <= 1 THEN p_original_title

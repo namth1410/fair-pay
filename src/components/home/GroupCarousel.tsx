@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
@@ -71,8 +71,17 @@ export function GroupCarousel({ groups, groupBalances }: GroupCarouselProps) {
   const dotIndex =
     total > 0 ? ((roundedIndex % total) + total) % total : 0;
 
+  // Pressable nested trong GestureDetector trên Android đôi khi fire onPress
+  // 2 lần (RNGH + RN responder race) → router.push chạy 2 lần → stack 2 entries
+  // → back phải 2 lần. Single-flight guard 500ms chặn double-push, đủ phủ
+  // transition animation (~350ms) mà không cản tap chuyển group bình thường.
+  const isPushingRef = useRef(false);
+
   const handlePressActive = useCallback(
     (groupId: string) => {
+      if (isPushingRef.current) return;
+      isPushingRef.current = true;
+      setTimeout(() => { isPushingRef.current = false; }, 500);
       router.push(`/(main)/groups/${groupId}`);
     },
     [router],

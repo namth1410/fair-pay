@@ -1,9 +1,17 @@
 import { supabase } from '../config/supabase';
+import { getDatabase } from '../db/database';
+import * as groupMemberRepo from '../repositories/groupMember.repo';
+import * as tripRepo from '../repositories/trip.repo';
+import * as userRepo from '../repositories/user.repo';
+import { useAppStore } from '../stores/app.store';
+import { tryServerThenLocal } from '../sync/fallback';
+import * as syncQueue from '../sync/syncQueue';
+import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
+import { isNetworkError } from '../utils/network';
+import { formatNotificationTitle } from '../utils/notificationFormat';
 import { validatePositiveAmount } from '../utils/validate';
-import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
 import { assertRole } from './group.service';
-import { notifyPaymentRecorded } from './notification.service';
 
 export interface Payment {
   id: string;
@@ -15,7 +23,10 @@ export interface Payment {
   note: string | null;
   recorded_by: string;
   date: string;
+  version: number;
+  client_request_id: string | null;
   created_at: string;
+  updated_at: string;
   deleted_at: string | null;
 }
 
@@ -28,17 +39,30 @@ export interface Settlement {
   generated_at: string;
 }
 
-/** Fetch payments for a trip */
+/** Fetch payments for a trip — fallback SQLite mirror. */
 export async function fetchPayments(tripId: string): Promise<Payment[]> {
-  const { data, error } = await supabase
-    .from('payments')
-    .select('*')
-    .eq('trip_id', tripId)
-    .is('deleted_at', null)
-    .order('date', { ascending: false });
-
-  if (error) throw error;
-  return data || [];
+  return tryServerThenLocal<Payment[]>(
+    async () => {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('trip_id', tripId)
+        .is('deleted_at', null)
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    async () => {
+      const db = getDatabase();
+      const rows = await db.getAllAsync<Payment>(
+        `SELECT * FROM payments
+          WHERE trip_id = ? AND deleted_at IS NULL
+          ORDER BY date DESC`,
+        [tripId]
+      );
+      return rows;
+    }
+  );
 }
 
 /** Record a payment — BR-03: free-form, not bound to algorithm */
@@ -60,118 +84,216 @@ export async function createPayment(params: {
 
   await assertRole(params.groupId, ['admin', 'member']);
 
-  // Verify trip thuộc đúng group + chưa đóng
-  const { data: trip, error: tripErr } = await supabase
-    .from('trips')
-    .select('group_id, status')
-    .eq('id', params.tripId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (tripErr) throw tripErr;
-  if (!trip || trip.group_id !== params.groupId) {
-    throw new Error('Chuyến không thuộc nhóm này');
-  }
-  if (trip.status === 'closed') {
+  // UX fail-fast cho closed trip — tránh enqueue rồi server reject `trip_closed` → dead.
+  // RPC `create_payment` validate đầy đủ (trip_not_found / trip_not_in_group / member_not_in_group)
+  // nên KHÔNG cần verify thêm ở client. IDs đến từ UI control nên invalid case cực hiếm.
+  const trip = await tripRepo.getById(params.tripId);
+  if (trip?.status === 'closed') {
     throw new Error('Chuyến đã đóng, không thể ghi nhận thanh toán');
-  }
-
-  // Verify cả from và to đều là member của group (chống cross-group injection)
-  const { data: members } = await supabase
-    .from('group_members')
-    .select('id')
-    .in('id', [params.fromMemberId, params.toMemberId])
-    .eq('group_id', params.groupId);
-  if (!members || members.length !== 2) {
-    throw new Error('Người trả/người nhận không thuộc nhóm này');
   }
 
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const { data, error } = await supabase
-    .from('payments')
-    .insert({
+  const paymentId = globalThis.crypto.randomUUID();
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const clientCreatedAt = new Date().toISOString();
+  const date = params.date || clientCreatedAt;
+  const note = params.note || null;
+
+  // Capture actor + member names từ SQLite local để format notification title.
+  // Offline-safe: cả 2 path online/offline đều dùng cùng title, dispatcher replay sẽ
+  // pass thẳng cho RPC create_payment (yêu cầu p_title_for_payer + p_title_for_receiver + p_actor_name).
+  const actor = await userRepo.getById(userId);
+  const actorName = actor?.displayName || 'Thành viên';
+  const fromMember = await groupMemberRepo.getById(params.fromMemberId);
+  const toMember = await groupMemberRepo.getById(params.toMemberId);
+  const fromName = fromMember?.displayName || '';
+  const toName = toMember?.displayName || '';
+  const titleForPayer = formatNotificationTitle({
+    type: 'payment.recorded',
+    actorName,
+    fromName,
+    toName,
+    amount: params.amount,
+  });
+  const titleForReceiver = formatNotificationTitle({
+    type: 'payment.received',
+    actorName,
+    fromName,
+    toName,
+    amount: params.amount,
+  });
+
+  const enqueueLocal = async (): Promise<Payment> => {
+    const db = getDatabase();
+    await db.runAsync(
+      `INSERT INTO payments
+        (id, trip_id, group_id, from_member_id, to_member_id, amount, note,
+         recorded_by, date, version, client_request_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+      [
+        paymentId,
+        params.tripId,
+        params.groupId,
+        params.fromMemberId,
+        params.toMemberId,
+        params.amount,
+        note,
+        userId,
+        date,
+        clientRequestId,
+        clientCreatedAt,
+        clientCreatedAt,
+      ]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.CREATE_PAYMENT,
+      entity_type: ENTITY_TYPES.PAYMENT,
+      entity_id: paymentId,
+      client_request_id: clientRequestId,
+      payload: {
+        id: paymentId,
+        trip_id: params.tripId,
+        group_id: params.groupId,
+        from_member_id: params.fromMemberId,
+        to_member_id: params.toMemberId,
+        amount: params.amount,
+        note,
+        date,
+        client_request_id: clientRequestId,
+        client_created_at: clientCreatedAt,
+        title_for_payer: titleForPayer,
+        title_for_receiver: titleForReceiver,
+        actor_name: actorName,
+      },
+    });
+    return {
+      id: paymentId,
       trip_id: params.tripId,
       group_id: params.groupId,
       from_member_id: params.fromMemberId,
       to_member_id: params.toMemberId,
       amount: params.amount,
-      note: params.note || null,
-      date: params.date || new Date().toISOString(),
+      note,
       recorded_by: userId,
-    })
-    .select()
-    .single();
+      date,
+      version: 1,
+      client_request_id: clientRequestId,
+      created_at: clientCreatedAt,
+      updated_at: clientCreatedAt,
+      deleted_at: null,
+    };
+  };
 
-  if (error) throw error;
+  if (!useAppStore.getState().isOnline) {
+    return enqueueLocal();
+  }
 
-  // Audit + notify (best-effort)
-  const { data: actor } = await supabase
-    .from('users')
-    .select('display_name')
-    .eq('id', userId)
-    .maybeSingle();
-  const actorName = actor?.display_name || 'Thành viên';
-  await Promise.all([
-    logAction({
-      groupId: params.groupId,
-      tripId: params.tripId,
-      action: 'payment.create',
-      targetId: data.id,
-      afterData: {
-        from_member_id: params.fromMemberId,
-        to_member_id: params.toMemberId,
-        amount: params.amount,
-      },
-    }),
-    notifyPaymentRecorded({
-      groupId: params.groupId,
-      tripId: params.tripId,
-      actorId: userId,
-      actorName,
-      paymentId: data.id,
-      fromMemberId: params.fromMemberId,
-      toMemberId: params.toMemberId,
-      amount: params.amount,
-    }),
-  ]);
+  try {
+    const { data, error } = await supabase
+      .rpc('create_payment', {
+        p_id: paymentId,
+        p_trip_id: params.tripId,
+        p_group_id: params.groupId,
+        p_from_member_id: params.fromMemberId,
+        p_to_member_id: params.toMemberId,
+        p_amount: params.amount,
+        p_note: note,
+        p_date: date,
+        p_client_request_id: clientRequestId,
+        p_title_for_payer: titleForPayer,
+        p_title_for_receiver: titleForReceiver,
+        p_actor_name: actorName,
+      })
+      .single<Payment>();
 
-  return data;
+    if (error) throw error;
+    if (!data) throw new Error('Ghi nhận thanh toán thất bại');
+    return data;
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[createPayment] network fail, queueing offline');
+      return enqueueLocal();
+    }
+    throw err;
+  }
 }
 
-/** Soft delete payment — admin only */
+/**
+ * Soft delete payment — admin only. Offline-first: idempotent qua delete_payment RPC.
+ * Server-side RPC COALESCE(deleted_at, now()) đảm bảo replay 2 lần safe.
+ */
 export async function deletePayment(paymentId: string): Promise<void> {
-  const { data: payment, error: fetchErr } = await supabase
-    .from('payments')
-    .select('group_id, trip_id, from_member_id, to_member_id, amount, trips!inner(status)')
-    .eq('id', paymentId)
-    .single();
-  if (fetchErr || !payment) throw new Error('Thanh toán không tồn tại');
-  const tripStatus = (payment.trips as unknown as { status: string }).status;
-  if (tripStatus === 'closed') {
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const clientCreatedAt = new Date().toISOString();
+
+  // Lookup local payment để check trip status + group authz.
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{
+    group_id: string;
+    trip_id: string;
+    from_member_id: string;
+    to_member_id: string;
+    amount: number;
+    trip_status: string;
+  }>(
+    `SELECT p.group_id, p.trip_id, p.from_member_id, p.to_member_id, p.amount,
+            t.status AS trip_status
+       FROM payments p
+       INNER JOIN trips t ON t.id = p.trip_id
+      WHERE p.id = ?`,
+    [paymentId]
+  );
+  if (!local) throw new Error('Thanh toán không tồn tại');
+  if (local.trip_status === 'closed') {
     throw new Error('cannot_modify_closed_trip');
   }
-  await assertRole(payment.group_id, ['admin']);
+  await assertRole(local.group_id, ['admin']);
 
-  const { error } = await supabase
-    .from('payments')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', paymentId);
+  const enqueueLocal = async (): Promise<void> => {
+    await db.runAsync(
+      `UPDATE payments
+          SET deleted_at = COALESCE(deleted_at, ?)
+        WHERE id = ?`,
+      [clientCreatedAt, paymentId]
+    );
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.DELETE_PAYMENT,
+      entity_type: ENTITY_TYPES.PAYMENT,
+      entity_id: paymentId,
+      client_request_id: clientRequestId,
+      payload: {
+        payment_id: paymentId,
+        client_request_id: clientRequestId,
+        client_created_at: clientCreatedAt,
+      },
+    });
+  };
 
-  if (error) throw error;
+  if (!useAppStore.getState().isOnline) {
+    await enqueueLocal();
+    return;
+  }
 
-  // Audit (best-effort) — payment.delete không có recipient notify
-  await logAction({
-    groupId: payment.group_id,
-    tripId: payment.trip_id,
-    action: 'payment.delete',
-    targetId: paymentId,
-    beforeData: {
-      from_member_id: payment.from_member_id,
-      to_member_id: payment.to_member_id,
-      amount: payment.amount,
-    },
-  });
+  try {
+    const { error } = await supabase.rpc('delete_payment', {
+      p_payment_id: paymentId,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: clientCreatedAt,
+    });
+    if (error) throw error;
+
+    // Audit logged by RPC server-side. Notify không cần — payment.delete không phát notify.
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[deletePayment] network fail, queueing offline');
+      await enqueueLocal();
+      return;
+    }
+    throw err;
+  }
 }
 
 // Re-export from utils for backward compatibility

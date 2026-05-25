@@ -2,7 +2,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { Button, useToast } from 'heroui-native';
 import { Pencil } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -19,6 +19,7 @@ import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
+import { TripActionSheet } from '../../../components/trip/TripActionSheet';
 import { Avatar, BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
@@ -32,6 +33,7 @@ import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
 import { getErrorMessage } from '../../../utils/error';
+import { isPendingInviteCode } from '../../../utils/inviteCode';
 
 type Tab = 'trips' | 'members' | 'settings';
 type Role = 'admin' | 'member';
@@ -62,7 +64,7 @@ export default function GroupDetailScreen() {
   // Selectors gộp qua useShallow — chỉ re-render khi shape của object subscribe đổi,
   // tránh re-render theo các field không liên quan (vd `balanceSummary`).
   const {
-    groups, currentGroupMembers, pendingJoinRequests,
+    groups, currentGroupMembers, currentGroupId, pendingJoinRequests,
     pendingInvitations, isLoadingPendingInvitations,
     loadMembers, loadPendingRequests, loadPendingInvitations,
     approveRequest, rejectRequest, revokeInvite,
@@ -71,6 +73,7 @@ export default function GroupDetailScreen() {
     useShallow((s) => ({
       groups: s.groups,
       currentGroupMembers: s.currentGroupMembers,
+      currentGroupId: s.currentGroupId,
       pendingJoinRequests: s.pendingJoinRequests,
       pendingInvitations: s.pendingInvitations,
       isLoadingPendingInvitations: s.isLoadingPendingInvitations,
@@ -103,6 +106,7 @@ export default function GroupDetailScreen() {
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
   const [tripToToggle, setTripToToggle] = useState<Trip | null>(null);
+  const [selectedTripForAction, setSelectedTripForAction] = useState<Trip | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -198,6 +202,14 @@ export default function GroupDetailScreen() {
 
   const handleShare = async () => {
     if (!group || sharingRef.current) return;
+    if (isPendingInviteCode(group.invite_code)) {
+      toast.show({
+        variant: 'warning',
+        label: 'Mã mời đang đợi đồng bộ',
+        description: 'Khi nhóm sync xong với server, mã mời thật sẽ xuất hiện và có thể chia sẻ.',
+      });
+      return;
+    }
     sharingRef.current = true;
     try {
       await Share.share({
@@ -318,6 +330,20 @@ export default function GroupDetailScreen() {
     }
   };
 
+  if (!id) return null;
+
+  // Guard: cache trong store có thể là data của group vừa unmount trước → render
+  // loading cho tới khi loadMembers/loadTrips populate xong cho group hiện tại.
+  const isHydrating = currentGroupId !== id || !group;
+  if (isHydrating) {
+    return (
+      <View style={[styles.container, styles.hydrating, { backgroundColor: c.background }]}>
+        <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
+        <ActivityIndicator size="large" color={c.tint} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: c.background }]}>
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
@@ -383,6 +409,7 @@ export default function GroupDetailScreen() {
                 groupId={id ?? ''}
                 onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
                 onToggleStatus={handleToggleTripRequest}
+                onTripLongPress={setSelectedTripForAction}
                 onCreateSuccess={(name) =>
                   toast.show({ variant: 'success', label: 'Đã tạo chuyến đi', description: name })
                 }
@@ -503,6 +530,12 @@ export default function GroupDetailScreen() {
         </BouncyDialog.Actions>
       </BouncyDialog>
 
+      <TripActionSheet
+        trip={selectedTripForAction}
+        isOpen={selectedTripForAction !== null}
+        onOpenChange={(open) => { if (!open) setSelectedTripForAction(null); }}
+      />
+
       <BouncyDialog
         isOpen={deleteGroupOpen}
         onClose={() => setDeleteGroupOpen(false)}
@@ -526,6 +559,7 @@ export default function GroupDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  hydrating: { justifyContent: 'center', alignItems: 'center' },
   tabViewport: { flex: 1, overflow: 'hidden' },
   tabRow: { flex: 1, flexDirection: 'row' },
   settingsContent: { padding: 16, gap: 16 },

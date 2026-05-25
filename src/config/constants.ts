@@ -33,6 +33,9 @@ export const DISPLAY_NAME_MAX_LENGTH = 30;
 // Trip
 export const TRIP_NAME_MAX_LENGTH = 50;
 
+// Pinned trips (home shortcut)
+export const MAX_PINNED_TRIPS = 2;
+
 // Sync
 export const SYNC_RETRY_MAX = 3;
 export const SYNC_CLEANUP_AFTER_HOURS = 24;

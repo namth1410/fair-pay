@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import * as Crypto from 'expo-crypto';
 import { router, Stack, useNavigation } from 'expo-router';
 import { Button, Switch, useToast } from 'heroui-native';
 import { ChevronLeft, ImagePlus, MapPin, X } from 'lucide-react-native';
@@ -18,14 +18,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
-import {
-  removeExpenseImage,
-  requestExpenseImageUploadUrl,
-} from '../../services/expenseImage.service';
 import type { ExpensePreset } from '../../services/preset.service';
 import { useGroupStore } from '../../stores/group.store';
 import { getPresetsForContext, usePresetStore } from '../../stores/preset.store';
 import { useTripStore } from '../../stores/trip.store';
+import { cancelStaged, stageExpenseImage } from '../../sync/imageStaging';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { hapticSuccess } from '../../utils/haptics';
@@ -112,7 +109,10 @@ export function ExpenseFormScreen({
     undefined,
   );
 
-  const [presetId] = useState<string | undefined>(presetExpenseId);
+  // Mọi expense (kể cả tạo mới từ trip detail) đều có ID trước khi presign upload.
+  // QuickAddActionSheet đã pre-gen + truyền qua URL (presetExpenseId); nếu route khác vào
+  // form mà không có sẵn → tự sinh ở đây để image upload không bị skip.
+  const [expenseId] = useState<string>(() => presetExpenseId ?? Crypto.randomUUID());
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(
     initialImage ?? null,
   );
@@ -362,36 +362,22 @@ export function ExpenseFormScreen({
       const submittedTitle = title.trim();
       const submittedAmount = amount;
 
+      // Local-first cho mọi flow: luôn stage ảnh vào local FileSystem +
+      // pending_image_uploads. imageUploadWorker sẽ upload R2 ngầm sau khi
+      // expense đã push lên server thành công.
       let imageUrl: string | null = null;
-      let uploadedExpenseId: string | undefined = presetId;
-      if (pendingImage && presetId) {
+      if (pendingImage) {
         const compressed = await compressForUpload(
           pendingImage.uri,
           pendingImage.width,
           pendingImage.height,
         );
-        const presign = await requestExpenseImageUploadUrl(
-          presetId,
-          currentTripId,
-          compressed.sizeBytes,
-        );
-        const file = new File(compressed.uri);
-        const arrayBuffer = await file.arrayBuffer();
-        const putRes = await fetch(presign.uploadUrl, {
-          method: 'PUT',
-          body: arrayBuffer,
-          headers: { 'Content-Type': 'image/jpeg' },
-        });
-        if (!putRes.ok) {
-          throw new Error(`Tải ảnh thất bại (${putRes.status})`);
-        }
-        imageUrl = presign.publicUrl;
-        uploadedExpenseId = presetId;
+        imageUrl = await stageExpenseImage(expenseId, compressed.uri);
       }
 
       try {
         await addExpense({
-          id: uploadedExpenseId,
+          id: expenseId,
           tripId: currentTripId,
           groupId: currentGroupId,
           title: submittedTitle,
@@ -404,8 +390,8 @@ export function ExpenseFormScreen({
           date: date.toISOString(),
         });
       } catch (insertErr) {
-        if (imageUrl && uploadedExpenseId) {
-          removeExpenseImage(uploadedExpenseId).catch(() => {});
+        if (pendingImage) {
+          cancelStaged(expenseId).catch(() => {});
         }
         throw insertErr;
       }
@@ -461,7 +447,7 @@ export function ExpenseFormScreen({
     savePreset,
     addPreset,
     pendingImage,
-    presetId,
+    expenseId,
     presetConflict,
   ]);
 

@@ -39,16 +39,18 @@ export function ExpenseTimelineSectionHeader({ title, isFirst }: Props) {
         />
       </View>
       <View style={styles.content}>
-        <AppText variant="body" weight="bold">
-          {title}
-        </AppText>
+        <View style={[styles.chip, { backgroundColor: c.primary }]}>
+          <AppText variant="meta" weight="bold" tone="inverse">
+            {title.toUpperCase()}
+          </AppText>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', marginTop: 10 },
+  row: { flexDirection: 'row', marginTop: 14 },
   axisCol: { width: AXIS_WIDTH, position: 'relative' },
   lineTop: {
     position: 'absolute',
@@ -75,8 +77,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
     paddingHorizontal: 4,
+    alignItems: 'flex-start',
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
   },
 });

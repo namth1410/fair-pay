@@ -22,12 +22,19 @@ import {
   closeTrip,
   createTrip,
   deleteTrip,
+  fetchAllUserTripsWithGroup,
+  fetchPinnedTrips,
   fetchTrips,
+  pinTrip,
   reopenTrip,
+  reorderPinnedTrips,
   type Trip,
+  unpinTrip,
   updateTripName,
 } from '../services/trip.service';
+import type { TripWithGroup } from '../types/database.types';
 import type { SplitResult } from '../utils/split';
+import { useGroupStore } from './group.store';
 
 interface BalanceEntry {
   memberId: string;
@@ -74,6 +81,17 @@ interface TripState {
   clearCurrentTrip: (tripId: string) => Promise<void>;
   deleteCurrentTrip: (tripId: string, groupId: string) => Promise<void>;
 
+  // Pinned trips (home shortcut)
+  pinnedTrips: TripWithGroup[];
+  pinnedTripIds: Set<string>;
+  isLoadingPinnedTrips: boolean;
+  allUserTrips: TripWithGroup[] | null;
+  isLoadingAllUserTrips: boolean;
+  loadPinnedTrips: () => Promise<void>;
+  togglePin: (tripId: string) => Promise<void>;
+  loadAllUserTrips: () => Promise<void>;
+  reorderPinnedTripsLocal: (orderedTripIds: [string, string]) => Promise<void>;
+
   loadExpenses: (tripId: string) => Promise<void>;
   addExpense: (params: {
     id?: string;
@@ -119,14 +137,27 @@ export const useTripStore = create<TripState>((set, get) => ({
   isLoadingExpenses: false,
   currentTripId: null,
   currentTripsGroupId: null,
+  pinnedTrips: [],
+  pinnedTripIds: new Set<string>(),
+  isLoadingPinnedTrips: false,
+  allUserTrips: null,
+  isLoadingAllUserTrips: false,
 
   loadTrips: async (groupId) => {
-    set({ isLoadingTrips: true, currentTripsGroupId: groupId });
+    const isSwitchingGroup = get().currentTripsGroupId !== groupId;
+    set({
+      isLoadingTrips: true,
+      currentTripsGroupId: groupId,
+      ...(isSwitchingGroup && { trips: [] }),
+    });
     try {
       const trips = await fetchTrips(groupId);
+      if (get().currentTripsGroupId !== groupId) return;
       set({ trips });
     } finally {
-      set({ isLoadingTrips: false });
+      if (get().currentTripsGroupId === groupId) {
+        set({ isLoadingTrips: false });
+      }
     }
   },
 
@@ -161,10 +192,14 @@ export const useTripStore = create<TripState>((set, get) => ({
     const trip = get().trips.find((t) => t.id === tripId);
     // Sau RPC mass-soft-delete: cache cũ stale → loadBalances full fetch
     // (populate cả expenses + payments + members lại).
+    // loadBalanceSummary: home group card đọc balanceSummary.groupBalances[groupId];
+    // realtime notification trip.cleared cũng gọi, nhưng async best-effort →
+    // gọi đồng bộ ở đây để tránh stale khi user navigate home ngay.
     await Promise.all([
       get().loadBalances(tripId),
       get().loadAuditLogs(tripId),
       trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
+      useGroupStore.getState().loadBalanceSummary(),
     ]);
   },
 
@@ -184,8 +219,10 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   addExpense: async (params) => {
-    // Audit + notify được service `createExpense` xử lý nội bộ (CLAUDE.md §Notifications).
-    await createExpense({
+    // Local-first: createExpense ghi SQLite local + enqueue + trigger sync ngầm.
+    // UI append optimistic vào currentExpenses để hiện expense ngay sau khi
+    // user navigate back, không phải đợi server round-trip.
+    const expense = await createExpense({
       id: params.id,
       tripId: params.tripId,
       groupId: params.groupId,
@@ -198,10 +235,20 @@ export const useTripStore = create<TripState>((set, get) => ({
       imageUrl: params.imageUrl,
       date: params.date,
     });
-    await Promise.all([
-      get().loadExpenses(params.tripId),
-      get().loadAuditLogs(params.tripId),
-    ]);
+    const payer = get().currentAllMembers.find((m) => m.id === params.paidByMemberId);
+    const optimistic: ExpenseWithSplits = {
+      ...expense,
+      expense_splits: params.splits.map((s) => ({
+        id: globalThis.crypto.randomUUID(),
+        expense_id: expense.id,
+        member_id: s.memberId,
+        amount: s.amount,
+      })),
+      payer_name: payer?.displayName,
+    };
+    set((state) => ({
+      currentExpenses: [optimistic, ...state.currentExpenses],
+    }));
     get().recomputeBalances();
   },
 
@@ -241,9 +288,24 @@ export const useTripStore = create<TripState>((set, get) => ({
     // Initial fetch (mount trip detail) hoặc post-RPC mass-delete: populate cache đầy đủ.
     // Toggle isLoadingExpenses để ExpensesTab hiện skeleton — tránh phải gọi
     // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
-    set({ isLoadingExpenses: true, currentTripId: tripId });
+    // Khi đổi trip: clear cache cũ TRƯỚC fetch để screen detail không render data trip
+    // trước. Race-guard sau await tránh fetch chậm ghi đè data của trip mới.
+    const isSwitchingTrip = get().currentTripId !== tripId;
+    set({
+      isLoadingExpenses: true,
+      currentTripId: tripId,
+      ...(isSwitchingTrip && {
+        currentExpenses: [],
+        currentPayments: [],
+        currentAllMembers: [],
+        balances: [],
+        settlements: [],
+        auditLogs: [],
+      }),
+    });
     try {
       const data = await fetchTripBalanceData(tripId);
+      if (get().currentTripId !== tripId) return;
       if (!data) {
         set({ currentExpenses: [], currentPayments: [], currentAllMembers: [], balances: [], settlements: [] });
         return;
@@ -258,13 +320,16 @@ export const useTripStore = create<TripState>((set, get) => ({
         settlements,
       });
     } finally {
-      set({ isLoadingExpenses: false });
+      if (get().currentTripId === tripId) {
+        set({ isLoadingExpenses: false });
+      }
     }
   },
 
   loadAuditLogs: async (tripId) => {
     try {
       const logs = await fetchAuditLogs(tripId);
+      if (get().currentTripId !== tripId) return;
       set({ auditLogs: logs });
     } catch (e) {
       if (__DEV__) console.warn('[AuditLogs] Fetch failed:', e);
@@ -290,6 +355,83 @@ export const useTripStore = create<TripState>((set, get) => ({
     set({ balances, settlements });
   },
 
+  loadPinnedTrips: async () => {
+    set({ isLoadingPinnedTrips: true });
+    try {
+      const pinned = await fetchPinnedTrips();
+      set({
+        pinnedTrips: pinned,
+        pinnedTripIds: new Set(pinned.map((t) => t.id)),
+      });
+    } catch (e) {
+      if (__DEV__) console.warn('[PinnedTrips] Fetch failed:', e);
+    } finally {
+      set({ isLoadingPinnedTrips: false });
+    }
+  },
+
+  togglePin: async (tripId) => {
+    const { pinnedTripIds, pinnedTrips } = get();
+    const wasPinned = pinnedTripIds.has(tripId);
+    // Optimistic update
+    const nextIds = new Set(pinnedTripIds);
+    if (wasPinned) {
+      nextIds.delete(tripId);
+      set({
+        pinnedTripIds: nextIds,
+        pinnedTrips: pinnedTrips.filter((t) => t.id !== tripId),
+      });
+    } else {
+      nextIds.add(tripId);
+      set({ pinnedTripIds: nextIds });
+    }
+
+    try {
+      if (wasPinned) {
+        await unpinTrip(tripId);
+      } else {
+        await pinTrip(tripId);
+      }
+      // Refetch để đồng bộ position (đặc biệt sau unpin có thể compact pos 1 → 0)
+      await get().loadPinnedTrips();
+    } catch (e) {
+      // Rollback
+      set({ pinnedTripIds: pinnedTripIds, pinnedTrips });
+      throw e;
+    }
+  },
+
+  loadAllUserTrips: async () => {
+    set({ isLoadingAllUserTrips: true });
+    try {
+      const trips = await fetchAllUserTripsWithGroup();
+      set({ allUserTrips: trips });
+    } catch (e) {
+      if (__DEV__) console.warn('[AllUserTrips] Fetch failed:', e);
+    } finally {
+      set({ isLoadingAllUserTrips: false });
+    }
+  },
+
+  reorderPinnedTripsLocal: async (orderedTripIds) => {
+    const { pinnedTrips } = get();
+    const [idA, idB] = orderedTripIds;
+    const tripA = pinnedTrips.find((t) => t.id === idA);
+    const tripB = pinnedTrips.find((t) => t.id === idB);
+    if (!tripA || !tripB) return;
+
+    // Optimistic swap
+    set({ pinnedTrips: [tripA, tripB] });
+
+    try {
+      await reorderPinnedTrips(orderedTripIds);
+    } catch (e) {
+      // Revert
+      set({ pinnedTrips });
+      throw e;
+    }
+  },
+
   reset: () =>
     set({
       trips: [],
@@ -303,5 +445,10 @@ export const useTripStore = create<TripState>((set, get) => ({
       isLoadingExpenses: false,
       currentTripId: null,
       currentTripsGroupId: null,
+      pinnedTrips: [],
+      pinnedTripIds: new Set<string>(),
+      isLoadingPinnedTrips: false,
+      allUserTrips: null,
+      isLoadingAllUserTrips: false,
     }),
 }));

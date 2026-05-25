@@ -18,6 +18,8 @@ import { GroupRow } from '../../../components/home/GroupRow';
 import { HeroDebt } from '../../../components/home/HeroDebt';
 import { HomeViewToggle } from '../../../components/home/HomeViewToggle';
 import { PendingRibbon } from '../../../components/home/PendingRibbon';
+import { PinnedTripsSection } from '../../../components/home/PinnedTripsSection';
+import { PinPickerSheet } from '../../../components/home/PinPickerSheet';
 import { SectionHeader } from '../../../components/home/SectionHeader';
 import {
   AnimatedEntrance,
@@ -25,9 +27,11 @@ import {
   ListSkeleton,
 } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
+import { useAppStore } from '../../../stores/app.store';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
+import { useTripStore } from '../../../stores/trip.store';
 import { useUIStore } from '../../../stores/ui.store';
 import { hapticLight } from '../../../utils/haptics';
 import { setHomeViewMode, useHomeViewMode } from '../../../utils/userPreferences';
@@ -37,6 +41,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const c = useAppTheme();
   const insets = useSafeAreaInsets();
+  const bannerVisible = useAppStore((s) => s.bannerVisible);
   const viewMode = useHomeViewMode();
 
   const { groups, balanceSummary, isLoading, loadGroups, myPendingJoinRequests } =
@@ -83,11 +88,17 @@ export default function HomeScreen() {
   // Refresh unread badge mỗi lần home screen focus (polling on focus —
   // không setInterval để tránh drain pin).
   const refreshUnreadCount = useNotificationStore((s) => s.refreshUnreadCount);
+  const loadPinnedTrips = useTripStore((s) => s.loadPinnedTrips);
+  const loadBalanceSummary = useGroupStore((s) => s.loadBalanceSummary);
   useFocusEffect(
     useCallback(() => {
       refreshUnreadCount();
-    }, [refreshUnreadCount])
+      loadPinnedTrips();
+      loadBalanceSummary();
+    }, [refreshUnreadCount, loadPinnedTrips, loadBalanceSummary])
   );
+
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
 
   const handleViewModeChange = useCallback(
     (mode: 'list' | 'carousel' | 'arc') => {
@@ -159,7 +170,12 @@ export default function HomeScreen() {
     <View
       style={[
         styles.container,
-        { backgroundColor: c.background, paddingTop: insets.top },
+        {
+          backgroundColor: c.background,
+          // Banner đã cover status bar area khi visible → bỏ insets.top để
+          // tránh whitespace redundant dưới banner.
+          paddingTop: bannerVisible ? 0 : insets.top,
+        },
       ]}
     >
       {showSkeleton ? (
@@ -193,6 +209,9 @@ export default function HomeScreen() {
               }
             />
           ))}
+          {showHero && (
+            <PinnedTripsSection onManagePress={() => setPinPickerOpen(true)} />
+          )}
           {showHero && (
             <SectionHeader
               title="NHÓM CỦA BẠN"
@@ -237,6 +256,11 @@ export default function HomeScreen() {
       <CreateJoinSheet
         isOpen={createJoinOpen}
         onOpenChange={setCreateJoinOpen}
+      />
+
+      <PinPickerSheet
+        isOpen={pinPickerOpen}
+        onOpenChange={setPinPickerOpen}
       />
 
       <WelcomeDialog isOpen={showWelcome} onClose={handleDismissWelcome} />

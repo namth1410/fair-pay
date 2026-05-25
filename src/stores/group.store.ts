@@ -153,13 +153,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   loadMembers: async (groupId) => {
+    // Khi đổi group: clear toàn bộ data của group cũ (members + pending) TRƯỚC fetch
+    // để screen detail không render data group trước. Race-guard sau await tránh
+    // fetch chậm ghi đè data của group mới.
+    const isSwitchingGroup = get().currentGroupId !== groupId;
+    if (isSwitchingGroup) {
+      set({
+        currentGroupId: groupId,
+        currentGroupMembers: [],
+        pendingJoinRequests: [],
+        pendingInvitations: [],
+      });
+    }
     const members = await fetchGroupMembers(groupId);
-    set({ currentGroupMembers: members, currentGroupId: groupId });
+    if (get().currentGroupId !== groupId) return;
+    set({ currentGroupMembers: members });
   },
 
   loadPendingRequests: async (groupId) => {
     const requests = await fetchPendingJoinRequests(groupId);
-    set({ pendingJoinRequests: requests, currentGroupId: groupId });
+    if (get().currentGroupId !== groupId) return;
+    set({ pendingJoinRequests: requests });
   },
 
   approveRequest: async (requestId, groupId) => {

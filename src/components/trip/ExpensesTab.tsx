@@ -29,7 +29,15 @@ export const ExpensesTab = React.memo(function ExpensesTab({
   const [selectedExpense, setSelectedExpense] = useState<ExpenseWithSplits | null>(null);
   const isOpen = tripStatus === 'open';
 
-  const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
+  const memberNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of members) map.set(m.id, m.display_name || '?');
+    return map;
+  }, [members]);
+
+  const handlePress = useCallback((expense: ExpenseWithSplits) => {
+    setSelectedExpense(expense);
+  }, []);
 
   const handleDelete = useCallback((expense: ExpenseWithSplits) => {
     setDeleteTarget(expense);
@@ -39,7 +47,40 @@ export const ExpensesTab = React.memo(function ExpensesTab({
     router.push(`/trips/${tripId}/expenses/new`);
   }, [tripId]);
 
-  const sections = useMemo(() => groupExpensesByDay(expenses), [expenses]);
+  const sections = useMemo(() => {
+    const raw = groupExpensesByDay(expenses);
+    let idx = 0;
+    return raw.map((s) => ({
+      ...s,
+      data: s.data.map((item) => ({ item, zigIdx: idx++ })),
+    }));
+  }, [expenses]);
+
+  const firstSection = sections[0];
+
+  const renderItem = useCallback(
+    ({ item: { item, zigIdx } }: { item: { item: ExpenseWithSplits; zigIdx: number } }) => (
+      <ExpenseTimelineRow
+        expense={item}
+        payerName={memberNameById.get(item.paid_by) || '?'}
+        zigIdx={zigIdx}
+        onPress={handlePress}
+        onDelete={isOpen ? handleDelete : undefined}
+        onLongPress={isOpen ? handleDelete : undefined}
+      />
+    ),
+    [memberNameById, handlePress, handleDelete, isOpen],
+  );
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: { title: string } }) => (
+      <ExpenseTimelineSectionHeader
+        title={section.title}
+        isFirst={section === firstSection}
+      />
+    ),
+    [firstSection],
+  );
 
   return (
     <View style={styles.tabContent}>
@@ -58,22 +99,9 @@ export const ExpensesTab = React.memo(function ExpensesTab({
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ExpenseTimelineRow
-              expense={item}
-              payerName={getMemberName(item.paid_by)}
-              onPress={() => setSelectedExpense(item)}
-              onDelete={isOpen ? () => handleDelete(item) : undefined}
-              onLongPress={isOpen ? () => handleDelete(item) : undefined}
-            />
-          )}
-          renderSectionHeader={({ section }) => (
-            <ExpenseTimelineSectionHeader
-              title={section.title}
-              isFirst={section === sections[0]}
-            />
-          )}
+          keyExtractor={({ item }) => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={expenses.length === 0 ? styles.emptyContainer : styles.list}
           ListEmptyComponent={<EmptyState icon={Receipt} title="Chưa có khoản chi nào" />}

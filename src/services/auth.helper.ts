@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { supabase } from '../config/supabase';
+import * as authCache from '../sync/authCache';
 
 let cached: { userId: string; ts: number } | null = null;
 const TTL = 30_000; // 30s cache — avoids redundant lookups within the same user action
@@ -12,29 +13,47 @@ const RESET_COOLDOWN_MS = 60_000;
  * Resolve Supabase auth UUID → app-level users.id.
  * Cached for 30s to reduce round-trips when multiple services
  * are called in sequence (e.g. createExpense + logAction).
+ *
+ * Offline fallback: nếu supabase.auth.getUser() throw (network) hoặc trả null
+ * vì session expired, dùng cached identity từ _auth_cache (Phase 4 offline boot).
  */
 export async function getAuthUserId(): Promise<string | null> {
   if (cached && Date.now() - cached.ts < TTL) return cached.userId;
 
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) {
-    cached = null;
-    return null;
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    if (authUser) {
+      const { data } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', authUser.id)
+        .single();
+      const userId = data?.id ?? null;
+      if (userId) {
+        cached = { userId, ts: Date.now() };
+        return userId;
+      }
+    }
+  } catch (e) {
+    // Network error → tiếp tục fall back xuống cache
+    if (__DEV__) console.warn('[auth] getUser failed, trying cache:', e);
   }
 
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', authUser.id)
-    .single();
-
-  const userId = data?.id ?? null;
-  if (userId) {
-    cached = { userId, ts: Date.now() };
+  // Fallback: cached identity từ _auth_cache (offline restore)
+  try {
+    const identity = await authCache.load();
+    if (identity) {
+      cached = { userId: identity.appUserId, ts: Date.now() };
+      return identity.appUserId;
+    }
+  } catch (e) {
+    if (__DEV__) console.warn('[auth] authCache.load failed:', e);
   }
-  return userId;
+
+  cached = null;
+  return null;
 }
 
 /** Clear cached user ID — call on logout */
