@@ -1,4 +1,4 @@
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Wallet } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
 import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
@@ -6,8 +6,8 @@ import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
-import { getErrorMessage } from '../../utils/error';
 import { hapticSuccess } from '../../utils/haptics';
+import { showError, showSuccess, showValidationError } from '../../utils/toast';
 import { AppCard, AppText, ChipPicker, ConfirmDialog, DismissKeyboardView, EmptyState, FormReveal, Money, MoneyChipsDock, SwipeableCard } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
@@ -50,7 +50,6 @@ export const SettlementTab = React.memo(function SettlementTab({
 }: SettlementTabProps) {
   const isOpen = tripStatus === 'open';
   const c = useAppTheme();
-  const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
   const [payFrom, setPayFrom] = useState('');
@@ -69,11 +68,11 @@ export const SettlementTab = React.memo(function SettlementTab({
     if (!payFrom || !payTo || !payAmountStr.trim()) return;
     const amount = parseInt(payAmountStr, 10);
     if (isNaN(amount) || amount <= 0) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: 'Số tiền phải lớn hơn 0' });
+      showValidationError('Lỗi', 'Số tiền phải lớn hơn 0');
       return;
     }
     if (payFrom === payTo) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: 'Người trả và người nhận không được giống nhau' });
+      showValidationError('Lỗi', 'Người trả và người nhận không được giống nhau');
       return;
     }
     Keyboard.dismiss();
@@ -85,15 +84,15 @@ export const SettlementTab = React.memo(function SettlementTab({
         amount, note: payNote.trim() || undefined,
       });
       hapticSuccess();
-      toast.show({ variant: 'success', label: 'Đã ghi nhận thanh toán' });
+      showSuccess('Đã ghi nhận thanh toán');
       setPayAmountStr(''); setPayNote('');
       setShowForm(false);
     } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     } finally {
       setBusy(false);
     }
-  }, [busy, payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment, toast]);
+  }, [busy, payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment]);
 
   return (
     <View style={styles.flex}>
@@ -207,7 +206,7 @@ export const SettlementTab = React.memo(function SettlementTab({
             try {
               await onDeletePayment(deleteTarget.id, tripId);
             } catch (e: unknown) {
-              toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+              showError(e);
             }
           }
         }}

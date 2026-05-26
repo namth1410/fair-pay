@@ -6,7 +6,6 @@
 // Mounted ở _layout làm sibling Slot — không cần route prop.
 
 import { useRouter } from 'expo-router';
-import { useToast } from 'heroui-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
@@ -15,7 +14,7 @@ import * as conflictBus from '../../sync/conflictBus';
 import type { ConflictEvent } from '../../sync/conflictBus';
 import * as resolveConflict from '../../sync/resolveConflict';
 import { run as runSync } from '../../sync/syncEngine';
-import { getErrorMessage } from '../../utils/error';
+import { showError } from '../../utils/toast';
 import { AppText } from '../ui/AppText';
 
 // Mapping entity_type → version field name dùng cho keepMine resubmit.
@@ -100,7 +99,6 @@ function describeEvent(event: ConflictEvent): {
 export function ConflictResolverModal() {
   const c = useAppTheme();
   const router = useRouter();
-  const { toast } = useToast();
   const [event, setEvent] = useState<ConflictEvent | null>(null);
   const [busy, setBusy] = useState(false);
   // eventRef mirror state để subscribe callback (deps []) đọc được giá trị
@@ -143,11 +141,7 @@ export function ConflictResolverModal() {
       // Trigger push ngay
       void runSync(true).catch(() => undefined);
     } catch (e) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không lưu được lựa chọn',
-        description: getErrorMessage(e),
-      });
+      showError(e, 'Không lưu được lựa chọn');
     } finally {
       setBusy(false);
     }
@@ -160,11 +154,7 @@ export function ConflictResolverModal() {
       await resolveConflict.keepTheirs(event.queueItem, event.serverData);
       close();
     } catch (e) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không áp dụng được',
-        description: getErrorMessage(e),
-      });
+      showError(e, 'Không áp dụng được');
     } finally {
       setBusy(false);
     }

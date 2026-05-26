@@ -1,6 +1,6 @@
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
-import { BottomSheet, useToast } from 'heroui-native';
+import { BottomSheet } from 'heroui-native';
 import { Check, CheckCheck } from 'lucide-react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,8 +26,8 @@ import {
 import type { Notification } from '../../../services/notification.service';
 import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
-import { getErrorMessage } from '../../../utils/error';
 import { hapticLight } from '../../../utils/haptics';
+import { showError, showSuccess, showWarning } from '../../../utils/toast';
 
 type Bucket = 'today' | 'yesterday' | 'this_week' | 'older';
 const BUCKET_LABEL: Record<Bucket, string> = {
@@ -64,7 +64,6 @@ function groupBySection(items: Notification[]) {
 
 export default function NotificationsScreen() {
   const c = useAppTheme();
-  const { toast } = useToast();
   const navigation = useNavigation();
 
   const items = useNotificationStore((s) => s.items);
@@ -98,9 +97,9 @@ export default function NotificationsScreen() {
       }
       lastRefreshRef.current = now;
       refresh().catch((e) => {
-        toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+        showError(e);
       });
-    }, [refresh, refreshUnreadCount, toast])
+    }, [refresh, refreshUnreadCount])
   );
 
   useEffect(() => {
@@ -119,7 +118,7 @@ export default function NotificationsScreen() {
             onPress={async () => {
               hapticLight();
               await markAllAsRead();
-              toast.show({ variant: 'success', label: 'Đã đánh dấu tất cả đã đọc' });
+              showSuccess('Đã đánh dấu tất cả đã đọc');
             }}
             accessibilityRole="button"
             accessibilityLabel="Đánh dấu tất cả đã đọc"
@@ -133,7 +132,7 @@ export default function NotificationsScreen() {
           </Pressable>
         ) : null,
     });
-  }, [navigation, unreadCount, markAllAsRead, toast, c.foreground]);
+  }, [navigation, unreadCount, markAllAsRead, c.foreground]);
 
   const sections = useMemo(() => groupBySection(items), [items]);
 
@@ -206,11 +205,10 @@ export default function NotificationsScreen() {
         if (inv) {
           setConfirmInvitation(inv);
         } else {
-          toast.show({
-            variant: 'warning',
-            label: 'Lời mời không còn hiệu lực',
-            description: 'Có thể đã bị thu hồi hoặc bạn đã trả lời ở thiết bị khác.',
-          });
+          showWarning(
+            'Lời mời không còn hiệu lực',
+            'Có thể đã bị thu hồi hoặc bạn đã trả lời ở thiết bị khác.'
+          );
         }
         return;
       }
@@ -220,7 +218,7 @@ export default function NotificationsScreen() {
       if (tripId) router.push(`/trips/${tripId}`);
       else if (groupId) router.push(`/groups/${groupId}`);
     },
-    [markAsRead, toast]
+    [markAsRead]
   );
 
   const handleDeleteById = useCallback(

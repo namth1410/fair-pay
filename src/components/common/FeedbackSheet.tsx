@@ -1,5 +1,5 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
 
@@ -11,6 +11,7 @@ import {
   submitFeedback,
 } from '../../services/feedback.service';
 import { getErrorMessage } from '../../utils/error';
+import { showSuccess } from '../../utils/toast';
 import { AppText, DismissKeyboardView } from '../ui';
 import { FloatingBottomSheetInput } from '../ui/floating';
 
@@ -21,7 +22,6 @@ interface FeedbackSheetProps {
 
 export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
 
   const messageRef = useRef('');
   const [resetKey, setResetKey] = useState(0);
@@ -54,11 +54,7 @@ export function FeedbackSheet({ isOpen, onOpenChange }: FeedbackSheetProps) {
     try {
       await submitFeedback(messageRef.current);
       onOpenChange(false);
-      toast.show({
-        variant: 'success',
-        label: 'Đã gửi góp ý',
-        description: 'Cảm ơn bạn rất nhiều!',
-      });
+      showSuccess('Đã gửi góp ý', 'Cảm ơn bạn rất nhiều!');
     } catch (e: unknown) {
       setFormError(getErrorMessage(e));
     } finally {

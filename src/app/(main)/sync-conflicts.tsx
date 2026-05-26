@@ -4,7 +4,6 @@
 // Mở từ Settings hoặc từ ConflictResolverModal "Xem tất cả".
 
 import { Stack } from 'expo-router';
-import { useToast } from 'heroui-native';
 import { CheckCircle2 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
@@ -19,7 +18,7 @@ import * as resolveConflict from '../../sync/resolveConflict';
 import { run as runSync } from '../../sync/syncEngine';
 import * as syncQueue from '../../sync/syncQueue';
 import type { SyncQueueRow } from '../../types/database.types';
-import { getErrorMessage } from '../../utils/error';
+import { showError } from '../../utils/toast';
 
 const OP_LABELS: Record<string, string> = {
   update_group: 'Đổi tên nhóm',
@@ -43,7 +42,6 @@ function versionFieldFor(opType: string): 'version' | 'updated_at' {
 
 export default function SyncConflictsScreen() {
   const c = useAppTheme();
-  const { toast } = useToast();
   const bannerVisible = useAppStore((s) => s.bannerVisible);
   const [items, setItems] = useState<SyncQueueRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,11 +72,7 @@ export default function SyncConflictsScreen() {
       await refresh();
       void runSync(true).catch(() => undefined);
     } catch (e) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không lưu được lựa chọn',
-        description: getErrorMessage(e),
-      });
+      showError(e, 'Không lưu được lựa chọn');
     } finally {
       setBusyId(null);
     }
@@ -93,11 +87,7 @@ export default function SyncConflictsScreen() {
       await resolveConflict.keepTheirs(item, serverData);
       await refresh();
     } catch (e) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không áp dụng được',
-        description: getErrorMessage(e),
-      });
+      showError(e, 'Không áp dụng được');
     } finally {
       setBusyId(null);
     }

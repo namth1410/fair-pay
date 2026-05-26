@@ -1,5 +1,5 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { BottomSheet, useToast } from 'heroui-native';
+import { BottomSheet } from 'heroui-native';
 import { Check, MapPin, Pin } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
@@ -8,8 +8,8 @@ import { MAX_PINNED_TRIPS } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useTripStore } from '../../stores/trip.store';
 import type { TripWithGroup } from '../../types/database.types';
-import { getErrorMessage } from '../../utils/error';
 import { hapticLight } from '../../utils/haptics';
+import { showError, showWarning } from '../../utils/toast';
 import { AppText } from '../ui';
 
 interface PinPickerSheetProps {
@@ -21,7 +21,6 @@ const SNAP_POINTS = ['70%', '90%'];
 
 export function PinPickerSheet({ isOpen, onOpenChange }: PinPickerSheetProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
 
   const allUserTrips = useTripStore((s) => s.allUserTrips);
   const isLoadingAllTrips = useTripStore((s) => s.isLoadingAllUserTrips);
@@ -55,11 +54,10 @@ export function PinPickerSheet({ isOpen, onOpenChange }: PinPickerSheetProps) {
   const handleRowPress = async (trip: TripWithGroup) => {
     const isPinned = pinnedTripIds.has(trip.id);
     if (!isPinned && pinnedCount >= MAX_PINNED_TRIPS) {
-      toast.show({
-        variant: 'warning',
-        label: 'Đã ghim tối đa 2 chuyến đi',
-        description: 'Bỏ ghim 1 chuyến trước khi thêm chuyến mới.',
-      });
+      showWarning(
+        'Đã ghim tối đa 2 chuyến đi',
+        'Bỏ ghim 1 chuyến trước khi thêm chuyến mới.'
+      );
       return;
     }
     if (pendingIds.has(trip.id)) return;
@@ -68,11 +66,7 @@ export function PinPickerSheet({ isOpen, onOpenChange }: PinPickerSheetProps) {
       await togglePin(trip.id);
       hapticLight();
     } catch (err) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không thể thực hiện',
-        description: getErrorMessage(err),
-      });
+      showError(err, 'Không thể thực hiện');
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev);

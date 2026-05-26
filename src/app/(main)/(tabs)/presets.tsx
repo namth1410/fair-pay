@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { MapPin, Pencil, Trash2, Zap } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -21,11 +21,10 @@ import { type ExpensePreset, isFullPreset } from '../../../services/preset.servi
 import { fetchAllUserTrips, type Trip } from '../../../services/trip.service';
 import { usePresetStore } from '../../../stores/preset.store';
 import { useUIStore } from '../../../stores/ui.store';
-import { getErrorMessage } from '../../../utils/error';
+import { showError, showSuccess } from '../../../utils/toast';
 
 export default function PresetsScreen() {
   const c = useAppTheme();
-  const { toast } = useToast();
   const { presets, loading, loadPresets, removePreset } = usePresetStore();
   const presetsAddRequestSeq = useUIStore((s) => s.presetsAddRequestSeq);
 
@@ -35,10 +34,10 @@ export default function PresetsScreen() {
 
   useEffect(() => {
     loadPresets().catch((e) => {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     });
     fetchAllUserTrips().then(setTrips).catch(() => {});
-  }, [loadPresets, toast]);
+  }, [loadPresets]);
 
   const tripNameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -64,10 +63,10 @@ export default function PresetsScreen() {
     setDeleting(true);
     try {
       await removePreset(toDelete.id);
-      toast.show({ variant: 'success', label: 'Đã xóa preset', description: toDelete.title });
+      showSuccess('Đã xóa preset', toDelete.title);
       setToDelete(null);
     } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     } finally {
       setDeleting(false);
     }

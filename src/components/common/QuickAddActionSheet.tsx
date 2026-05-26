@@ -1,7 +1,7 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { Camera, ImageIcon, MapPin, Pencil, Plus, Zap } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -19,6 +19,7 @@ import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
 import { formatVND } from '../../utils/format';
 import { type AvatarSource, pickImage } from '../../utils/imageProcessing';
+import { showError, showSuccess, showWarning } from '../../utils/toast';
 import { AppText, BouncyDialog } from '../ui';
 
 interface QuickAddActionSheetProps {
@@ -33,7 +34,6 @@ export function QuickAddActionSheet({
   onOpenChange,
 }: QuickAddActionSheetProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const [state, setState] = useState<SheetState>({ kind: 'choose' });
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -163,19 +163,15 @@ export function QuickAddActionSheet({
         applied.warnings.length > 0
           ? applied.warnings.join(' · ')
           : `${confirmPreset.title} · ${formatVND(confirmPreset.amount)}`;
-      toast.show({
-        variant: applied.warnings.length > 0 ? 'warning' : 'success',
-        label: 'Đã tạo khoản chi',
-        description: desc,
-      });
+      if (applied.warnings.length > 0) {
+        showWarning('Đã tạo khoản chi', desc);
+      } else {
+        showSuccess('Đã tạo khoản chi', desc);
+      }
       setConfirmPreset(null);
       onOpenChange(false);
     } catch (err) {
-      toast.show({
-        variant: 'danger',
-        label: 'Lỗi tạo khoản chi',
-        description: getErrorMessage(err),
-      });
+      showError(err, 'Lỗi tạo khoản chi');
     } finally {
       setSubmitting(false);
     }

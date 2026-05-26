@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { AlertTriangle, ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
 import { useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -33,6 +33,7 @@ import * as syncQueue from '../../../sync/syncQueue';
 import { getErrorMessage } from '../../../utils/error';
 import { hapticLight } from '../../../utils/haptics';
 import { transitionToTheme } from '../../../utils/themeTransition';
+import { showError, showWarning } from '../../../utils/toast';
 import { persistPreferencesCache } from '../../../utils/userPreferences';
 
 export default function SettingsScreen() {
@@ -42,7 +43,6 @@ export default function SettingsScreen() {
   const { conflictCount } = useQueueStats();
   const signOut = useAuthStore((s) => s.signOut);
   const { isDark, ...c } = useAppTheme();
-  const { toast } = useToast();
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState(profile?.display_name ?? '');
@@ -62,7 +62,7 @@ export default function SettingsScreen() {
       setProfile({ ...profile, display_name: newName.trim() });
       setIsEditingName(false);
     } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     } finally {
       setIsSaving(false);
     }
@@ -76,7 +76,7 @@ export default function SettingsScreen() {
 
     if (!profile) {
       if (key !== 'dark_mode') {
-        toast.show({ variant: 'warning', label: 'Chưa sẵn sàng', description: 'Hồ sơ chưa tải xong, vui lòng thử lại.' });
+        showWarning('Chưa sẵn sàng', 'Hồ sơ chưa tải xong, vui lòng thử lại.');
       }
       return;
     }
@@ -105,7 +105,7 @@ export default function SettingsScreen() {
       if (key === 'dark_mode') {
         transitionToTheme(prevSettings.dark_mode);
       }
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     }
   };
 
@@ -124,11 +124,7 @@ export default function SettingsScreen() {
         });
         return;
       }
-      toast.show({
-        variant: 'danger',
-        label: 'Lỗi đăng xuất',
-        description: getErrorMessage(e),
-      });
+      showError(e, 'Lỗi đăng xuất');
     }
   };
 
@@ -143,11 +139,7 @@ export default function SettingsScreen() {
       await syncQueue.retryAllFailed();
       await runSync(true);
     } catch (e: unknown) {
-      toast.show({
-        variant: 'warning',
-        label: 'Đồng bộ thất bại',
-        description: getErrorMessage(e),
-      });
+      showWarning('Đồng bộ thất bại', getErrorMessage(e));
     }
   };
 

@@ -1,4 +1,4 @@
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import {
   ChevronRight,
   CircleCheck,
@@ -12,8 +12,8 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { Trip } from '../../services/trip.service';
 import { useTripStore } from '../../stores/trip.store';
-import { getErrorMessage } from '../../utils/error';
 import { hapticHeavy, hapticLight } from '../../utils/haptics';
+import { showError, showSuccess } from '../../utils/toast';
 import { AppCard, AppText, BouncyDialog } from '../ui';
 import { RenameTripSheet } from './RenameTripSheet';
 
@@ -31,7 +31,6 @@ export const TripManagementTab = React.memo(function TripManagementTab({
   onDeleted,
 }: TripManagementTabProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const toggleTripStatus = useTripStore((s) => s.toggleTripStatus);
   const clearCurrentTrip = useTripStore((s) => s.clearCurrentTrip);
   const deleteCurrentTrip = useTripStore((s) => s.deleteCurrentTrip);
@@ -55,10 +54,10 @@ export const TripManagementTab = React.memo(function TripManagementTab({
     try {
       await toggleTripStatus(trip);
       hapticLight();
-      toast.show({ variant: 'success', label: 'Đã hoàn thành chuyến đi' });
+      showSuccess('Đã hoàn thành chuyến đi');
       setPending(null);
     } catch (e) {
-      toast.show({ variant: 'danger', label: getErrorMessage(e) });
+      showError(e);
     } finally {
       setBusyAction(null);
     }
@@ -70,10 +69,10 @@ export const TripManagementTab = React.memo(function TripManagementTab({
     try {
       await toggleTripStatus(trip);
       hapticLight();
-      toast.show({ variant: 'success', label: 'Đã mở lại chuyến đi' });
+      showSuccess('Đã mở lại chuyến đi');
       setPending(null);
     } catch (e) {
-      toast.show({ variant: 'danger', label: getErrorMessage(e) });
+      showError(e);
     } finally {
       setBusyAction(null);
     }
@@ -85,10 +84,10 @@ export const TripManagementTab = React.memo(function TripManagementTab({
     try {
       await clearCurrentTrip(trip.id);
       hapticHeavy();
-      toast.show({ variant: 'success', label: 'Đã reset chuyến đi' });
+      showSuccess('Đã reset chuyến đi');
       setPending(null);
     } catch (e) {
-      toast.show({ variant: 'danger', label: getErrorMessage(e) });
+      showError(e);
     } finally {
       setBusyAction(null);
     }
@@ -100,10 +99,10 @@ export const TripManagementTab = React.memo(function TripManagementTab({
     try {
       await deleteCurrentTrip(trip.id, trip.group_id);
       hapticHeavy();
-      toast.show({ variant: 'success', label: 'Đã xóa chuyến đi' });
+      showSuccess('Đã xóa chuyến đi');
       onDeleted();
     } catch (e) {
-      toast.show({ variant: 'danger', label: getErrorMessage(e) });
+      showError(e);
       setBusyAction(null);
     }
   };
@@ -175,7 +174,7 @@ export const TripManagementTab = React.memo(function TripManagementTab({
         onOpenChange={setRenameOpen}
         tripId={trip.id}
         currentName={trip.name}
-        onSuccess={() => toast.show({ variant: 'success', label: 'Đã đổi tên chuyến đi' })}
+        onSuccess={() => showSuccess('Đã đổi tên chuyến đi')}
       />
 
       <BouncyDialog

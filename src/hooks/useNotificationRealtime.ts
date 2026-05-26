@@ -19,8 +19,7 @@
  */
 
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { useToast } from 'heroui-native';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 
 import { supabase } from '../config/supabase';
 import { notificationRepo } from '../repositories';
@@ -31,34 +30,29 @@ import { useNotificationStore } from '../stores/notification.store';
 import * as syncState from '../sync/syncState';
 import type { NotificationType } from '../utils/notificationFormat';
 import { routeNotification } from '../utils/notificationRouter';
+import { showInfo, showSuccess, showWarning } from '../utils/toast';
 
-// heroui-native ToastVariant = 'default' | 'accent' | 'success' | 'warning' | 'danger'
-type ToastVariant = 'default' | 'accent' | 'success' | 'warning' | 'danger';
-
-function variantForType(type: string): ToastVariant {
+function showToastForType(type: string, label: string, description?: string) {
   const t = type as NotificationType;
+  const opts = description ? { description } : undefined;
   switch (t) {
     case 'member.join_approved':
-      return 'success';
+      showSuccess(label, opts);
+      return;
     case 'member.join_rejected':
     case 'expense.deleted':
     case 'trip.deleted':
-      return 'warning';
+      showWarning(label, opts);
+      return;
     default:
-      // 'accent' = colored highlight (vs 'default' grey) — better signal for an
-      // unsolicited push event that the user should notice.
-      return 'accent';
+      // Info circle (blue) — better signal for an unsolicited event the user
+      // should notice, without implying error/warning.
+      showInfo(label, opts);
   }
 }
 
 export function useNotificationRealtime(): void {
   const session = useAuthStore((s) => s.session);
-  const { toast } = useToast();
-
-  // Toast object can change identity on rerenders; keep ref fresh so the
-  // subscription handler (created once per session) always uses the latest.
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
 
   useEffect(() => {
     if (!session) return;
@@ -101,11 +95,7 @@ export function useNotificationRealtime(): void {
 
           // In-app toast — title đã render VN sẵn ở server.
           try {
-            toastRef.current.show({
-              variant: variantForType(row.type),
-              label: row.title,
-              description: row.body ?? undefined,
-            });
+            showToastForType(row.type, row.title, row.body ?? undefined);
           } catch (e) {
             if (__DEV__) console.warn('[NotifRT] toast failed:', e);
           }

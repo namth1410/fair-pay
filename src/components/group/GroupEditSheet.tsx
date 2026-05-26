@@ -1,6 +1,6 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { File } from 'expo-file-system';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, StyleSheet, View } from 'react-native';
 
@@ -12,6 +12,7 @@ import {
 } from '../../services/group.service';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
+import { showSuccess } from '../../utils/toast';
 import { type AvatarSource, pickAndProcessAvatar, type ProcessedAvatar } from '../../utils/imageProcessing';
 import { validateName } from '../../utils/validate';
 import { AppText, Avatar, DismissKeyboardView } from '../ui';
@@ -64,7 +65,6 @@ export function GroupEditSheet({
   currentAvatarUrl,
 }: GroupEditSheetProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const setGroupAvatar = useGroupStore((s) => s.setGroupAvatar);
   const editGroupName = useGroupStore((s) => s.editGroupName);
 
@@ -114,7 +114,7 @@ export function GroupEditSheet({
     setNameError(null);
     try {
       await editGroupName(groupId, next);
-      toast.show({ variant: 'success', label: 'Đã đổi tên nhóm' });
+      showSuccess('Đã đổi tên nhóm');
       onOpenChange(false);
     } catch (e: unknown) {
       setNameError(getErrorMessage(e));
@@ -160,7 +160,7 @@ export function GroupEditSheet({
       }
       const result = await commitGroupAvatar(groupId, presign.fileKey);
       setGroupAvatar(groupId, result.avatar_url);
-      toast.show({ variant: 'success', label: 'Đã đổi ảnh nhóm' });
+      showSuccess('Đã đổi ảnh nhóm');
       onOpenChange(false);
     } catch (err) {
       setAvatarError(mapUploadError(err));
@@ -174,7 +174,7 @@ export function GroupEditSheet({
     try {
       await removeGroupAvatar(groupId);
       setGroupAvatar(groupId, null);
-      toast.show({ variant: 'success', label: 'Đã xóa ảnh nhóm' });
+      showSuccess('Đã xóa ảnh nhóm');
       onOpenChange(false);
     } catch (err) {
       setAvatarError(mapUploadError(err));

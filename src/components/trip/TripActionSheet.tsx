@@ -1,5 +1,5 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { Pin, PinOff } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -8,8 +8,8 @@ import { MAX_PINNED_TRIPS } from '../../config/constants';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { Trip } from '../../services/trip.service';
 import { useTripStore } from '../../stores/trip.store';
-import { getErrorMessage } from '../../utils/error';
 import { hapticLight } from '../../utils/haptics';
+import { showError, showSuccess } from '../../utils/toast';
 import { AppText } from '../ui';
 
 interface TripActionSheetProps {
@@ -20,7 +20,6 @@ interface TripActionSheetProps {
 
 export function TripActionSheet({ trip, isOpen, onOpenChange }: TripActionSheetProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const togglePin = useTripStore((s) => s.togglePin);
   const pinnedTripIds = useTripStore((s) => s.pinnedTripIds);
   const pinnedCount = useTripStore((s) => s.pinnedTrips.length);
@@ -36,17 +35,10 @@ export function TripActionSheet({ trip, isOpen, onOpenChange }: TripActionSheetP
     try {
       await togglePin(trip.id);
       hapticLight();
-      toast.show({
-        variant: 'success',
-        label: isPinned ? 'Đã bỏ ghim' : 'Đã ghim chuyến đi',
-      });
+      showSuccess(isPinned ? 'Đã bỏ ghim' : 'Đã ghim chuyến đi');
       onOpenChange(false);
     } catch (err) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không thể thực hiện',
-        description: getErrorMessage(err),
-      });
+      showError(err, 'Không thể thực hiện');
     } finally {
       setSubmitting(false);
     }

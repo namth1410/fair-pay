@@ -1,11 +1,13 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useAppStore } from '../../stores/app.store';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
+import { showSuccess } from '../../utils/toast';
 import { validateEmail } from '../../utils/validate';
 import { AppText, DismissKeyboardView, SectionTabs } from '../ui';
 import { FloatingBottomSheetInput } from '../ui/floating';
@@ -31,7 +33,7 @@ export function AddMemberSheet({
 }: AddMemberSheetProps) {
   const c = useAppTheme();
   const { addVirtualMember, inviteMember } = useGroupStore();
-  const { toast } = useToast();
+  const isOnline = useAppStore((s) => s.isOnline);
 
   const [mode, setMode] = useState<Mode>('email');
   const valueRef = useRef('');
@@ -68,6 +70,7 @@ export function AddMemberSheet({
   const handleSubmit = async () => {
     const trimmed = valueRef.current.trim();
     if (!trimmed || busy) return;
+    if (mode === 'email' && !isOnline) return;
     Keyboard.dismiss();
     setFormError('');
 
@@ -86,11 +89,7 @@ export function AddMemberSheet({
         await inviteMember(groupId, normalized);
         onOpenChange(false);
         onInvited?.(normalized);
-        toast.show({
-          variant: 'success',
-          label: 'Đã gửi lời mời',
-          description: normalized,
-        });
+        showSuccess('Đã gửi lời mời', normalized);
       } else {
         await addVirtualMember(groupId, trimmed);
         onOpenChange(false);
@@ -111,6 +110,7 @@ export function AddMemberSheet({
   };
 
   const isEmail = mode === 'email';
+  const emailDisabledOffline = isEmail && !isOnline;
   const submitLabel = (() => {
     if (isEmail) return busy ? 'Đang gửi...' : 'Gửi lời mời';
     return busy ? 'Đang tạo...' : 'Tạo thành viên';
@@ -164,9 +164,17 @@ export function AddMemberSheet({
                     accessibilityLabel={
                       isEmail ? 'Email người được mời' : 'Tên thành viên ảo'
                     }
-                    editable={!busy}
+                    editable={!busy && !emailDisabledOffline}
                     surfaceColor={c.surface}
                   />
+
+                  {emailDisabledOffline ? (
+                    <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                      <AppText variant="caption" tone="danger">
+                        Cần kết nối mạng để mời bằng email.
+                      </AppText>
+                    </View>
+                  ) : null}
 
                   {formError ? (
                     <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
@@ -180,7 +188,7 @@ export function AddMemberSheet({
                     variant="primary"
                     size="lg"
                     onPress={handleSubmit}
-                    isDisabled={busy || !hasContent}
+                    isDisabled={busy || !hasContent || emailDisabledOffline}
                   >
                     <Button.Label>{submitLabel}</Button.Label>
                   </Button>

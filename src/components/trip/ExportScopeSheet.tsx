@@ -1,5 +1,5 @@
 import { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
-import { BottomSheet, Button, useToast } from 'heroui-native';
+import { BottomSheet, Button } from 'heroui-native';
 import { Check, FileDown, UsersRound } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
@@ -14,6 +14,7 @@ import type { GroupMember } from '../../services/group.service';
 import { getErrorMessage } from '../../utils/error';
 import type { TripExportData } from '../../utils/exportHtml';
 import { hapticLight } from '../../utils/haptics';
+import { showWarning, showValidationError } from '../../utils/toast';
 import { AppText, SectionTabs } from '../ui';
 
 type Mode = 'group' | 'person';
@@ -34,7 +35,6 @@ export function ExportScopeSheet({
 }: ExportScopeSheetProps) {
   const c = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { toast } = useToast();
 
   const [mode, setMode] = useState<Mode>('group');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -61,20 +61,15 @@ export function ExportScopeSheet({
       const data = getExportData();
       const shared = await exportTripPdfAndShare(data, scope);
       if (!shared) {
-        toast.show({
-          variant: 'warning',
-          label: 'Không thể chia sẻ',
-          description: 'Thiết bị không hỗ trợ chia sẻ file. Đã tạo PDF tạm.',
-        });
+        showWarning(
+          'Không thể chia sẻ',
+          'Thiết bị không hỗ trợ chia sẻ file. Đã tạo PDF tạm.'
+        );
       }
       hapticLight();
       onOpenChange(false);
     } catch (e: unknown) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không tạo được PDF',
-        description: getErrorMessage(e),
-      });
+      showValidationError('Không tạo được PDF', getErrorMessage(e));
     } finally {
       setBusy(false);
     }

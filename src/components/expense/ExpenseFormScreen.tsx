@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import { router, Stack, useNavigation } from 'expo-router';
-import { Button, Switch, useToast } from 'heroui-native';
+import { Button, Switch } from 'heroui-native';
 import { ChevronLeft, ImagePlus, MapPin, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,6 +26,7 @@ import { cancelStaged, stageExpenseImage } from '../../sync/imageStaging';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { hapticSuccess } from '../../utils/haptics';
+import { showError, showSuccess } from '../../utils/toast';
 import {
   type AvatarSource,
   compressForUpload,
@@ -87,7 +88,6 @@ export function ExpenseFormScreen({
   applyPresetId,
 }: ExpenseFormScreenProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const navigation = useNavigation();
 
   const trips = useTripStore((s) => s.trips);
@@ -291,9 +291,9 @@ export function ExpenseFormScreen({
         sizeBytes: picked.sizeBytes,
       });
     } catch (e) {
-      toast.show({ variant: 'danger', label: 'Lỗi chọn ảnh', description: getErrorMessage(e) });
+      showError(e, 'Lỗi chọn ảnh');
     }
-  }, [toast]);
+  }, []);
 
   const handleApplyPreset = useCallback(
     (preset: ExpensePreset) => {
@@ -397,11 +397,7 @@ export function ExpenseFormScreen({
       }
 
       hapticSuccess();
-      toast.show({
-        variant: 'success',
-        label: 'Đã thêm khoản chi',
-        description: submittedTitle,
-      });
+      showSuccess('Đã thêm khoản chi', submittedTitle);
       submittedRef.current = true;
       if (savePreset && !globalTitlesSet.has(submittedTitle)) {
         try {
@@ -409,17 +405,9 @@ export function ExpenseFormScreen({
             title: submittedTitle,
             amount: submittedAmount,
           });
-          toast.show({
-            variant: 'success',
-            label: 'Đã lưu preset',
-            description: submittedTitle,
-          });
+          showSuccess('Đã lưu preset', submittedTitle);
         } catch (e: unknown) {
-          toast.show({
-            variant: 'danger',
-            label: 'Lỗi lưu preset',
-            description: getErrorMessage(e),
-          });
+          showError(e, 'Lỗi lưu preset');
         }
       }
       router.back();
@@ -442,7 +430,6 @@ export function ExpenseFormScreen({
     currentTripId,
     currentGroupId,
     addExpense,
-    toast,
     globalTitlesSet,
     savePreset,
     addPreset,

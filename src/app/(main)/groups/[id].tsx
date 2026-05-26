@@ -1,5 +1,5 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Pencil } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -32,8 +32,8 @@ import type { Trip } from '../../../services/trip.service';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
-import { getErrorMessage } from '../../../utils/error';
 import { isPendingInviteCode } from '../../../utils/inviteCode';
+import { showError, showSuccess, showWarning } from '../../../utils/toast';
 
 type Tab = 'trips' | 'members' | 'settings';
 type Role = 'admin' | 'member';
@@ -58,7 +58,6 @@ export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const c = useAppTheme();
-  const { toast } = useToast();
   const { width: W } = useWindowDimensions();
 
   // Selectors gộp qua useShallow — chỉ re-render khi shape của object subscribe đổi,
@@ -203,11 +202,10 @@ export default function GroupDetailScreen() {
   const handleShare = async () => {
     if (!group || sharingRef.current) return;
     if (isPendingInviteCode(group.invite_code)) {
-      toast.show({
-        variant: 'warning',
-        label: 'Mã mời đang đợi đồng bộ',
-        description: 'Khi nhóm sync xong với server, mã mời thật sẽ xuất hiện và có thể chia sẻ.',
-      });
+      showWarning(
+        'Mã mời đang đợi đồng bộ',
+        'Khi nhóm sync xong với server, mã mời thật sẽ xuất hiện và có thể chia sẻ.'
+      );
       return;
     }
     sharingRef.current = true;
@@ -230,9 +228,9 @@ export default function GroupDetailScreen() {
       onConfirm: async () => {
         try {
           await kickMember(member.id, id!);
-          toast.show({ variant: 'success', label: 'Đã xóa thành viên' });
+          showSuccess('Đã xóa thành viên');
         } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+          showError(e);
         }
       },
     });
@@ -248,9 +246,9 @@ export default function GroupDetailScreen() {
       onConfirm: async () => {
         try {
           await approveRequest(req.id, id!);
-          toast.show({ variant: 'success', label: 'Đã duyệt yêu cầu' });
+          showSuccess('Đã duyệt yêu cầu');
         } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+          showError(e);
         }
       },
     });
@@ -266,9 +264,9 @@ export default function GroupDetailScreen() {
       onConfirm: async () => {
         try {
           await rejectRequest(req.id, id!);
-          toast.show({ variant: 'success', label: 'Đã từ chối yêu cầu' });
+          showSuccess('Đã từ chối yêu cầu');
         } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+          showError(e);
         }
       },
     });
@@ -287,9 +285,9 @@ export default function GroupDetailScreen() {
         setRevokingInvitationId(inv.id);
         try {
           await revokeInvite(inv.id, id);
-          toast.show({ variant: 'success', label: 'Đã thu hồi lời mời' });
+          showSuccess('Đã thu hồi lời mời');
         } catch (e: unknown) {
-          toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+          showError(e);
         } finally {
           setRevokingInvitationId(null);
         }
@@ -305,14 +303,13 @@ export default function GroupDetailScreen() {
     setToggleBusy(true);
     try {
       await toggleTripStatus(trip);
-      toast.show({
-        variant: 'success',
-        label: trip.status === 'open' ? 'Đã đóng chuyến' : 'Đã mở lại chuyến',
-        description: trip.name,
-      });
+      showSuccess(
+        trip.status === 'open' ? 'Đã đóng chuyến' : 'Đã mở lại chuyến',
+        trip.name
+      );
       setTripToToggle(null);
     } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     } finally {
       setToggleBusy(false);
     }
@@ -326,7 +323,7 @@ export default function GroupDetailScreen() {
       await removeGroup(id!);
       router.back();
     } catch (e: unknown) {
-      toast.show({ variant: 'danger', label: 'Lỗi', description: getErrorMessage(e) });
+      showError(e);
     }
   };
 
@@ -410,9 +407,7 @@ export default function GroupDetailScreen() {
                 onTripPress={(tripId) => router.push(`/(main)/trips/${tripId}`)}
                 onToggleStatus={handleToggleTripRequest}
                 onTripLongPress={setSelectedTripForAction}
-                onCreateSuccess={(name) =>
-                  toast.show({ variant: 'success', label: 'Đã tạo chuyến đi', description: name })
-                }
+                onCreateSuccess={(name) => showSuccess('Đã tạo chuyến đi', name)}
               />
             </View>
             <View style={{ width: W }}>
@@ -465,13 +460,7 @@ export default function GroupDetailScreen() {
           isOpen={addMemberOpen}
           onOpenChange={setAddMemberOpen}
           groupId={id}
-          onVirtualAdded={(name) =>
-            toast.show({
-              variant: 'success',
-              label: 'Đã thêm thành viên ảo',
-              description: name,
-            })
-          }
+          onVirtualAdded={(name) => showSuccess('Đã thêm thành viên ảo', name)}
         />
       ) : null}
 
@@ -482,9 +471,7 @@ export default function GroupDetailScreen() {
           memberId={memberToRename?.id ?? ''}
           currentName={memberToRename?.display_name ?? ''}
           groupId={id}
-          onSuccess={() =>
-            toast.show({ variant: 'success', label: 'Đã đổi tên thành viên' })
-          }
+          onSuccess={() => showSuccess('Đã đổi tên thành viên')}
         />
       ) : null}
 

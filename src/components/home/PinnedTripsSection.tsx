@@ -1,4 +1,4 @@
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Pin, Plus } from 'lucide-react-native';
 import { memo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -15,6 +15,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
 import { hapticLight, hapticMedium } from '../../utils/haptics';
+import { showValidationError } from '../../utils/toast';
 import { AppText } from '../ui';
 import { PinnedTripCard } from './PinnedTripCard';
 import { SectionHeader } from './SectionHeader';
@@ -103,7 +104,6 @@ export const PinnedTripsSection = memo(function PinnedTripsSection({
  */
 const DraggablePair = memo(function DraggablePair() {
   const { width: screenWidth } = useWindowDimensions();
-  const { toast } = useToast();
   const pinnedTrips = useTripStore((s) => s.pinnedTrips);
   const reorderPinnedTripsLocal = useTripStore((s) => s.reorderPinnedTripsLocal);
 
@@ -121,11 +121,7 @@ const DraggablePair = memo(function DraggablePair() {
     try {
       await reorderPinnedTripsLocal([b.id, a.id]);
     } catch (e) {
-      toast.show({
-        variant: 'danger',
-        label: 'Không hoán đổi được',
-        description: getErrorMessage(e),
-      });
+      showValidationError('Không hoán đổi được', getErrorMessage(e));
     }
   };
 

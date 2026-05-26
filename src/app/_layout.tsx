@@ -24,6 +24,7 @@ import { OfflineBanner } from '../components/common/OfflineBanner';
 import { SplashScene } from '../components/common/SplashScene';
 import { ConflictResolverModal } from '../components/sync/ConflictResolverModal';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
+import { ToastBridge } from '../components/ui/toast';
 import { LightningTransitionProvider } from '../contexts/LightningTransition';
 import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
@@ -225,6 +226,7 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <HeroUINativeProvider>
             <StatusBar style={isDark ? 'light' : 'dark'} />
+            <ToastBridge />
             <OfflineBanner />
             <MorphTransitionProvider>
               <LightningTransitionProvider>

@@ -1,5 +1,5 @@
 import { router, Stack } from 'expo-router';
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { Check, ChevronLeft } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -16,6 +16,7 @@ import { usePresetStore } from '../../stores/preset.store';
 import type { PresetSplitEntry } from '../../types/database.types';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
+import { showSuccess } from '../../utils/toast';
 import { AppText, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
@@ -41,7 +42,6 @@ const SPLIT_OPTIONS: { key: SplitOpt; label: string }[] = [
 
 export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
   const c = useAppTheme();
-  const { toast } = useToast();
   const { addPreset, editPreset, presets, loaded: presetsLoaded } = usePresetStore();
   const groups = useGroupStore((s) => s.groups);
   const loadGroups = useGroupStore((s) => s.loadGroups);
@@ -344,10 +344,10 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
       };
       if (isEdit && preset) {
         await editPreset(preset.id, params);
-        toast.show({ variant: 'success', label: 'Đã cập nhật preset', description: trimmed });
+        showSuccess('Đã cập nhật preset', trimmed);
       } else {
         await addPreset(params);
-        toast.show({ variant: 'success', label: 'Đã thêm preset', description: trimmed });
+        showSuccess('Đã thêm preset', trimmed);
       }
       router.back();
     } catch (e: unknown) {

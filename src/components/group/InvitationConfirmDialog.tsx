@@ -1,11 +1,11 @@
 import { useRouter } from 'expo-router';
-import { Button, useToast } from 'heroui-native';
+import { Button } from 'heroui-native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { MyPendingInvitation } from '../../services/group.service';
 import { useGroupStore } from '../../stores/group.store';
-import { getErrorMessage } from '../../utils/error';
+import { showError, showInfo, showSuccess, showWarning } from '../../utils/toast';
 import { AppText, Avatar, BouncyDialog } from '../ui';
 
 interface InvitationConfirmDialogProps {
@@ -18,7 +18,6 @@ export function InvitationConfirmDialog({
   onClose,
 }: InvitationConfirmDialogProps) {
   const router = useRouter();
-  const { toast } = useToast();
   const respondToInvitationAction = useGroupStore((s) => s.respondToInvitationAction);
 
   const [acceptingBusy, setAcceptingBusy] = useState(false);
@@ -35,33 +34,22 @@ export function InvitationConfirmDialog({
       const result = await respondToInvitationAction(invitation.invitation_id, action);
       onClose();
       if (action === 'accept') {
-        toast.show({
-          variant: 'success',
-          label: `Đã vào nhóm ${result.group_name}`,
-        });
+        showSuccess(`Đã vào nhóm ${result.group_name}`);
         router.push(`/(main)/groups/${result.group_id}`);
       } else {
-        toast.show({
-          variant: 'accent',
-          label: 'Đã từ chối lời mời',
-        });
+        showInfo('Đã từ chối lời mời');
       }
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e ?? '');
       // Race: admin revoked / user already responded từ device khác
       if (raw.includes('invitation_not_pending') || raw.includes('invitation_not_found')) {
-        toast.show({
-          variant: 'warning',
-          label: 'Lời mời đã được xử lý',
-          description: 'Có thể đã bị thu hồi hoặc trả lời ở thiết bị khác.',
-        });
+        showWarning(
+          'Lời mời đã được xử lý',
+          'Có thể đã bị thu hồi hoặc trả lời ở thiết bị khác.'
+        );
         onClose();
       } else {
-        toast.show({
-          variant: 'danger',
-          label: 'Lỗi',
-          description: getErrorMessage(e),
-        });
+        showError(e);
       }
     } finally {
       setAcceptingBusy(false);
