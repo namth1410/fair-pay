@@ -320,24 +320,28 @@ export async function markAsRead(ids: string[]): Promise<void> {
   }
 }
 
-export async function markAllAsRead(): Promise<void> {
+export async function markAllAsRead(opts?: { groupIds?: string[] }): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;
 
   const clientRequestId = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
+  const groupIds = opts?.groupIds?.length ? opts.groupIds : null;
 
   const enqueueLocal = async (): Promise<void> => {
     const db = getDatabase();
-    // Local: mark all unread of this user. Lấy IDs để gửi RPC.
+    const groupFilter = groupIds
+      ? ` AND group_id IN (${groupIds.map(() => '?').join(',')})`
+      : '';
+    const selectArgs: (string | number)[] = groupIds ? [userId, ...groupIds] : [userId];
     const rows = await db.getAllAsync<{ id: string }>(
-      `SELECT id FROM notifications WHERE user_id = ? AND read_at IS NULL`,
-      [userId]
+      `SELECT id FROM notifications WHERE user_id = ? AND read_at IS NULL${groupFilter}`,
+      selectArgs
     );
     if (rows.length === 0) return;
     await db.runAsync(
-      `UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL`,
-      [now, userId]
+      `UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL${groupFilter}`,
+      [now, ...selectArgs]
     );
     await syncQueue.enqueue({
       op_type: OP_TYPES.MARK_NOTIFICATION_READ,
@@ -356,11 +360,15 @@ export async function markAllAsRead(): Promise<void> {
     return;
   }
   try {
-    const { error } = await supabase
+    let query = supabase
       .from('notifications')
       .update({ read_at: now })
       .eq('user_id', userId)
       .is('read_at', null);
+    if (groupIds) {
+      query = query.in('group_id', groupIds);
+    }
+    const { error } = await query;
     if (error) throw error;
   } catch (err) {
     if (isNetworkError(err)) {

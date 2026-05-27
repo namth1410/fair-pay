@@ -42,8 +42,8 @@ export default function TabsLayout() {
         swipeEnabled={!carouselTouching}
       >
         <ReanimatedTabs.Screen name="index" />
-        <ReanimatedTabs.Screen name="notifications" />
         <ReanimatedTabs.Screen name="presets" />
+        <ReanimatedTabs.Screen name="notifications" />
         <ReanimatedTabs.Screen name="settings" />
       </ReanimatedTabs>
 

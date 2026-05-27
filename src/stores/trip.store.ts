@@ -24,6 +24,7 @@ import {
   deleteTrip,
   fetchAllUserTripsWithGroup,
   fetchPinnedTrips,
+  fetchTripById,
   fetchTrips,
   pinTrip,
   reopenTrip,
@@ -52,6 +53,12 @@ interface SettlementEntry {
 
 interface TripState {
   trips: Trip[];
+  /**
+   * Trip metadata của trip đang xem (detail screen). Populate qua loadBalances —
+   * fix cho entry-point bypass group detail (pinned card, deep link, notification)
+   * vì `trips` array chỉ load qua loadTrips(groupId) ở group detail screen.
+   */
+  currentTrip: Trip | null;
   currentExpenses: ExpenseWithSplits[];
   currentPayments: Payment[];
   /**
@@ -127,6 +134,7 @@ interface TripState {
 
 export const useTripStore = create<TripState>((set, get) => ({
   trips: [],
+  currentTrip: null,
   currentExpenses: [],
   currentPayments: [],
   currentAllMembers: [],
@@ -290,11 +298,15 @@ export const useTripStore = create<TripState>((set, get) => ({
     // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
     // Khi đổi trip: clear cache cũ TRƯỚC fetch để screen detail không render data trip
     // trước. Race-guard sau await tránh fetch chậm ghi đè data của trip mới.
+    // Fetch trip metadata song song (fetchTripById) để hydrate currentTrip cho entry-point
+    // bypass group detail (pinned card, deep link, notification) — `trips` array chỉ load
+    // ở group detail nên detail screen sẽ kẹt loading nếu chỉ dựa vào nó.
     const isSwitchingTrip = get().currentTripId !== tripId;
     set({
       isLoadingExpenses: true,
       currentTripId: tripId,
       ...(isSwitchingTrip && {
+        currentTrip: null,
         currentExpenses: [],
         currentPayments: [],
         currentAllMembers: [],
@@ -304,15 +316,26 @@ export const useTripStore = create<TripState>((set, get) => ({
       }),
     });
     try {
-      const data = await fetchTripBalanceData(tripId);
+      const [data, trip] = await Promise.all([
+        fetchTripBalanceData(tripId),
+        fetchTripById(tripId),
+      ]);
       if (get().currentTripId !== tripId) return;
       if (!data) {
-        set({ currentExpenses: [], currentPayments: [], currentAllMembers: [], balances: [], settlements: [] });
+        set({
+          currentTrip: trip,
+          currentExpenses: [],
+          currentPayments: [],
+          currentAllMembers: [],
+          balances: [],
+          settlements: [],
+        });
         return;
       }
       const balances = computeTripBalances(data.members, data.expenses, data.payments);
       const settlements = calculateSettlements(balances);
       set({
+        currentTrip: trip,
         currentExpenses: data.expenses,
         currentPayments: data.payments,
         currentAllMembers: data.members,

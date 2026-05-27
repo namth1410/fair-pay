@@ -24,7 +24,7 @@ interface NotificationState {
   loadMore: () => Promise<void>;
   refreshUnreadCount: () => Promise<void>;
   markAsRead: (ids: string[]) => Promise<void>;
-  markAllAsRead: () => Promise<void>;
+  markAllAsRead: (opts?: { groupIds?: string[] }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   /** Insert a realtime-received notification at the head. Skip duplicates. */
   prepend: (n: Notification) => void;
@@ -108,16 +108,26 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
-  markAllAsRead: async () => {
+  markAllAsRead: async (opts) => {
     const now = new Date().toISOString();
     const prevItems = get().items;
     const prevUnread = get().unreadCount;
+    const groupIds = opts?.groupIds?.length ? new Set(opts.groupIds) : null;
+    const nextItems = prevItems.map((n) => {
+      if (n.read_at) return n;
+      if (groupIds && !groupIds.has(n.group_id ?? '')) return n;
+      return { ...n, read_at: now };
+    });
+    const flipped = nextItems.filter((n, i) => prevItems[i] && !prevItems[i].read_at && n.read_at).length;
     set({
-      items: prevItems.map((n) => (n.read_at ? n : { ...n, read_at: now })),
-      unreadCount: 0,
+      items: nextItems,
+      unreadCount: Math.max(0, prevUnread - flipped),
     });
     try {
-      await markAllAsReadApi();
+      await markAllAsReadApi(opts);
+      // Re-sync badge từ server vì items đã load có thể không bao phủ hết
+      // unread notifications của user (đặc biệt khi filter group rộng).
+      await get().refreshUnreadCount();
     } catch (e) {
       set({ items: prevItems, unreadCount: prevUnread });
       if (__DEV__) console.warn('[Notif] markAllAsRead rollback:', e);

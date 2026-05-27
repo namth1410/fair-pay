@@ -1,18 +1,17 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { File } from 'expo-file-system';
 import { BottomSheet, Button } from 'heroui-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
+import * as groupRepo from '../../repositories/group.repo';
 import {
-  commitGroupAvatar,
-  removeGroupAvatar,
-  requestGroupAvatarUploadUrl,
+  removeGroupAvatarOfflineFirst,
+  saveGroupAvatar,
 } from '../../services/group.service';
 import { useGroupStore } from '../../stores/group.store';
 import { getErrorMessage } from '../../utils/error';
-import { showSuccess } from '../../utils/toast';
+import { showInfo, showSuccess } from '../../utils/toast';
 import { type AvatarSource, pickAndProcessAvatar, type ProcessedAvatar } from '../../utils/imageProcessing';
 import { validateName } from '../../utils/validate';
 import { AppText, Avatar, DismissKeyboardView } from '../ui';
@@ -147,20 +146,13 @@ export function GroupEditSheet({
     setAvatarError('');
     setAvatarState({ kind: 'uploading', processed });
     try {
-      const presign = await requestGroupAvatarUploadUrl(groupId, processed.sizeBytes);
-      const file = new File(processed.uri);
-      const arrayBuffer = await file.arrayBuffer();
-      const putRes = await fetch(presign.uploadUrl, {
-        method: 'PUT',
-        body: arrayBuffer,
-        headers: { 'Content-Type': 'image/jpeg' },
-      });
-      if (!putRes.ok) {
-        throw new Error(`Upload thất bại (${putRes.status})`);
+      const result = await saveGroupAvatar(groupId, processed);
+      setGroupAvatar(groupId, result.avatarUrl);
+      if (result.pending) {
+        showInfo('Đã lưu, sẽ tải lên khi có mạng');
+      } else {
+        showSuccess('Đã đổi ảnh nhóm');
       }
-      const result = await commitGroupAvatar(groupId, presign.fileKey);
-      setGroupAvatar(groupId, result.avatar_url);
-      showSuccess('Đã đổi ảnh nhóm');
       onOpenChange(false);
     } catch (err) {
       setAvatarError(mapUploadError(err));
@@ -172,9 +164,21 @@ export function GroupEditSheet({
     setAvatarError('');
     setAvatarState({ kind: 'removing' });
     try {
-      await removeGroupAvatar(groupId);
-      setGroupAvatar(groupId, null);
-      showSuccess('Đã xóa ảnh nhóm');
+      const r = await removeGroupAvatarOfflineFirst(groupId);
+      if (r.revertedPending) {
+        // Hủy pending upload → avatar revert về URL server. Đọc lại từ repo
+        // (bypass overlay vì pending row đã xóa).
+        const fresh = await groupRepo.getById(groupId);
+        setGroupAvatar(groupId, fresh?.avatarUrl ?? null);
+        showSuccess('Đã hủy ảnh vừa chọn');
+      } else {
+        setGroupAvatar(groupId, null);
+        if (r.pending) {
+          showInfo('Đã xóa, sẽ đồng bộ khi có mạng');
+        } else {
+          showSuccess('Đã xóa ảnh nhóm');
+        }
+      }
       onOpenChange(false);
     } catch (err) {
       setAvatarError(mapUploadError(err));

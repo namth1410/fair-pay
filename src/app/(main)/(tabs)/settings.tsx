@@ -89,7 +89,7 @@ export default function SettingsScreen() {
     setProfile({ ...profile, settings: newSettings });
 
     try {
-      await updateSettings(newSettings);
+      await updateSettings({ [key]: value } as Partial<UserSettings>);
       await persistPreferencesCache(newSettings);
       // Master push toggle → register/unregister FCM token. Fire-and-forget,
       // user-facing toggle đã update tức thì qua optimistic setProfile.
@@ -224,6 +224,7 @@ export default function SettingsScreen() {
                   variant="outline"
                   size="sm"
                   onPress={() => {
+                    Keyboard.dismiss();
                     setIsEditingName(false);
                     setNewName(profile?.display_name || '');
                   }}

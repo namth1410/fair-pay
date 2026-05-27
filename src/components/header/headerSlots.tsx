@@ -7,6 +7,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useUIStore } from '../../stores/ui.store';
 import { hapticLight } from '../../utils/haptics';
 import { BALL_RADIUS } from './headerConstants';
+import { MarkAllReadButton } from './MarkAllReadButton';
 
 export type Slot = {
   id: string;
@@ -85,11 +86,18 @@ export function useHeaderSlots(
       ),
     };
 
+    const markAllReadSlot: Slot = {
+      id: 'notifications-mark-all',
+      render: () => <MarkAllReadButton />,
+    };
+
     const rightBalls: Slot[] = [];
     if (routeName === 'presets') {
       rightBalls.push(presetsAddSlot);
     } else if (routeName === 'trips/[id]/index') {
       rightBalls.push(tripExportSlot);
+    } else if (routeName === 'notifications') {
+      rightBalls.push(markAllReadSlot);
     }
 
     return {

@@ -312,6 +312,26 @@ const migrations: Migration[] = [
       );
     },
   },
+  {
+    version: 5,
+    // Bảng pending_group_avatar_uploads — defer upload/remove avatar nhóm khi offline.
+    // Mirror pattern của pending_image_uploads nhưng có thêm `op` để phân biệt
+    // upload vs remove operation.
+    up: async (db) => {
+      await db.execAsync(
+        `CREATE TABLE IF NOT EXISTS pending_group_avatar_uploads (
+           group_id TEXT PRIMARY KEY,
+           op TEXT NOT NULL DEFAULT 'upload' CHECK (op IN ('upload','remove')),
+           local_path TEXT,
+           size_bytes INTEGER,
+           retry_count INTEGER NOT NULL DEFAULT 0,
+           last_error TEXT,
+           next_retry_at TEXT,
+           created_at TEXT NOT NULL
+         )`
+      );
+    },
+  },
 ];
 
 export async function runMigrations(

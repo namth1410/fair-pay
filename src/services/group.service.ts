@@ -1,3 +1,5 @@
+import { File } from 'expo-file-system';
+
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
@@ -5,6 +7,12 @@ import * as groupMemberRepo from '../repositories/groupMember.repo';
 import * as userRepo from '../repositories/user.repo';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
+import {
+  cancelStagedGroupAvatar,
+  stageGroupAvatar,
+} from '../sync/imageStaging';
+import * as pendingGroupAvatarUploads from '../sync/pendingGroupAvatarUploads';
+import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
@@ -60,12 +68,38 @@ export interface GroupWithMemberCount extends Group {
   member_count: number;
 }
 
+/**
+ * Apply overlay từ pending_group_avatar_uploads — override avatar_url của group:
+ * - op='upload' → swap sang local_path (UI hiện ảnh local đang chờ upload).
+ * - op='remove' → swap sang null (UI hiện default avatar).
+ * Worker sau khi upload/remove thành công sẽ remove pending row → lần fetch kế
+ * tiếp không còn overlay → avatar về server URL.
+ */
+async function overlayPendingAvatars<T extends { id: string; avatar_url: string | null }>(
+  groups: T[]
+): Promise<T[]> {
+  if (groups.length === 0) return groups;
+  const pendingMap = await pendingGroupAvatarUploads.listAll();
+  if (pendingMap.size === 0) return groups;
+  return groups.map((g) => {
+    const p = pendingMap.get(g.id);
+    if (!p) return g;
+    if (p.op === 'upload' && p.local_path) {
+      return { ...g, avatar_url: p.local_path };
+    }
+    if (p.op === 'remove') {
+      return { ...g, avatar_url: null };
+    }
+    return g;
+  });
+}
+
 /** Fetch all groups the current user belongs to. Fallback SQLite mirror. */
 export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
   const userId = await getAuthUserId();
   if (!userId) return [];
 
-  return tryServerThenLocal<GroupWithMemberCount[]>(
+  const groups = await tryServerThenLocal<GroupWithMemberCount[]>(
     async () => {
       const { data: memberships, error: memErr } = await supabase
         .from('group_members')
@@ -123,6 +157,8 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
       return rows;
     }
   );
+
+  return overlayPendingAvatars(groups);
 }
 
 /**
@@ -855,13 +891,18 @@ export async function renameMember(
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.GROUP_MEMBER, memberId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('update_member_display_name', {
+    const { data, error } = await supabase.rpc('update_member_display_name', {
       p_member_id: memberId,
       p_display_name: trimmed,
       p_base_version: local.version,
@@ -869,6 +910,18 @@ export async function renameMember(
       p_client_created_at: now,
     });
     if (error) throw error;
+
+    // Write-back local mirror với server's version + updated_at: tránh lần
+    // update kế dùng stale base_version → P0410 version_conflict.
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as { version: number; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE group_members SET display_name = ?, version = ?, updated_at = ? WHERE id = ?`,
+        [trimmed, serverRow.version, serverRow.updated_at, memberId]
+      );
+    }
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[renameMember] network fail, queueing offline');
@@ -925,13 +978,18 @@ export async function updateGroup(
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.GROUP, groupId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('update_group', {
+    const { data, error } = await supabase.rpc('update_group', {
       p_group_id: groupId,
       p_name: trimmed,
       p_avatar_url: null,
@@ -940,6 +998,18 @@ export async function updateGroup(
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
+
+    // Write-back local mirror với server's version + updated_at: tránh lần
+    // update kế dùng stale base_version → P0410 version_conflict.
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as { version: number; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE groups SET name = ?, version = ?, updated_at = ? WHERE id = ?`,
+        [trimmed, serverRow.version, serverRow.updated_at, groupId]
+      );
+    }
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[updateGroup] network fail, queueing offline');
@@ -1007,6 +1077,131 @@ export async function commitGroupAvatar(
 
 export async function removeGroupAvatar(groupId: string): Promise<void> {
   await invokeAvatarFunction('group-avatar-remove', { groupId });
+}
+
+// ── Offline-first orchestrators ─────────────
+// Wrap presign+PUT+commit (upload) hoặc remove Edge Function với offline staging.
+// Worker drain pending khi online.
+
+export interface SaveGroupAvatarResult {
+  /** URL hiện hành để UI cập nhật ngay (R2 public URL nếu online; file:// nếu pending). */
+  avatarUrl: string;
+  /** true = đang chờ worker upload R2. */
+  pending: boolean;
+}
+
+export interface RemoveGroupAvatarResult {
+  /** true = đang chờ worker gọi remove Edge Function. */
+  pending: boolean;
+  /** true = vừa hủy pending upload (revert về avatar server), KHÔNG queue remove. */
+  revertedPending: boolean;
+}
+
+/**
+ * Offline-first: lưu avatar nhóm.
+ * - Online OK: upload R2 ngay + UPDATE local groups.avatar_url + trả R2 URL.
+ * - Online network fail giữa chừng → stage local + queue → trả local path.
+ * - Offline: stage local + queue → trả local path.
+ *
+ * Quota/permission/size errors (non-network) bubble lên cho UI hiển thị.
+ */
+export async function saveGroupAvatar(
+  groupId: string,
+  processed: { uri: string; sizeBytes: number }
+): Promise<SaveGroupAvatarResult> {
+  await assertRole(groupId, ['admin']);
+
+  const enqueueLocal = async (): Promise<SaveGroupAvatarResult> => {
+    const stagedPath = await stageGroupAvatar(
+      groupId,
+      processed.uri,
+      processed.sizeBytes
+    );
+    return { avatarUrl: stagedPath, pending: true };
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    return enqueueLocal();
+  }
+
+  try {
+    const presign = await requestGroupAvatarUploadUrl(
+      groupId,
+      processed.sizeBytes
+    );
+    const file = new File(processed.uri);
+    const arrayBuffer = await file.arrayBuffer();
+    const putRes = await fetch(presign.uploadUrl, {
+      method: 'PUT',
+      body: arrayBuffer,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    if (!putRes.ok) {
+      throw new Error(`Upload thất bại (${putRes.status})`);
+    }
+    const result = await commitGroupAvatar(groupId, presign.fileKey);
+
+    // Update local mirror để pull lần sau không downgrade (server cũng đã có
+    // URL mới; ghi idempotent vào local).
+    const db = getDatabase();
+    await db.runAsync(
+      `UPDATE groups SET avatar_url = ?, updated_at = ? WHERE id = ?`,
+      [result.avatar_url, new Date().toISOString(), groupId]
+    );
+    return { avatarUrl: result.avatar_url, pending: false };
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__)
+        console.warn('[saveGroupAvatar] network fail, staging offline');
+      return enqueueLocal();
+    }
+    throw err;
+  }
+}
+
+/**
+ * Offline-first: xóa avatar nhóm.
+ * - Đang có pending upload → hủy pending (xóa file local + remove row),
+ *   KHÔNG queue remove. UI tự revert về avatar server.
+ * - Không có pending + online: gọi Edge Function ngay.
+ * - Không có pending + offline (hoặc network fail): queue op='remove'.
+ */
+export async function removeGroupAvatarOfflineFirst(
+  groupId: string
+): Promise<RemoveGroupAvatarResult> {
+  await assertRole(groupId, ['admin']);
+
+  const existing = await pendingGroupAvatarUploads.getForGroup(groupId);
+  if (existing?.op === 'upload') {
+    await cancelStagedGroupAvatar(groupId);
+    return { pending: false, revertedPending: true };
+  }
+
+  const enqueueLocal = async (): Promise<RemoveGroupAvatarResult> => {
+    await pendingGroupAvatarUploads.addRemove(groupId);
+    return { pending: true, revertedPending: false };
+  };
+
+  if (!useAppStore.getState().isOnline) {
+    return enqueueLocal();
+  }
+
+  try {
+    await removeGroupAvatar(groupId);
+    const db = getDatabase();
+    await db.runAsync(
+      `UPDATE groups SET avatar_url = NULL, updated_at = ? WHERE id = ?`,
+      [new Date().toISOString(), groupId]
+    );
+    return { pending: false, revertedPending: false };
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__)
+        console.warn('[removeGroupAvatarOfflineFirst] network fail, queueing');
+      return enqueueLocal();
+    }
+    throw err;
+  }
 }
 
 /** Soft delete group (admin only). Offline-first: idempotent. */

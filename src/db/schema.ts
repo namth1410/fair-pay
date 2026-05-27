@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const CREATE_TABLES = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -249,6 +249,21 @@ export const CREATE_TABLES = [
     next_retry_at TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE
+  )`,
+
+  // Pending group avatar uploads (offline-first cho avatar nhóm).
+  // op='upload': local_path trỏ tới file đã stage; worker upload R2 + commit.
+  // op='remove': local_path NULL; worker gọi removeGroupAvatar Edge Function.
+  // KHÔNG dùng FK vì foreign_keys=OFF ở local DB.
+  `CREATE TABLE IF NOT EXISTS pending_group_avatar_uploads (
+    group_id TEXT PRIMARY KEY,
+    op TEXT NOT NULL DEFAULT 'upload' CHECK (op IN ('upload','remove')),
+    local_path TEXT,
+    size_bytes INTEGER,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    next_retry_at TEXT,
+    created_at TEXT NOT NULL
   )`,
 
   // Cached auth identity cho offline bootstrap (1 row duy nhất).

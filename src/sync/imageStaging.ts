@@ -9,10 +9,12 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { getDatabase } from '../db/database';
+import * as pendingGroupAvatarUploads from './pendingGroupAvatarUploads';
 import * as pendingImageUploads from './pendingImageUploads';
 import { MAX_QUEUE_RETRIES } from './types';
 
 const STAGING_DIR = `${FileSystem.documentDirectory}pending_images/`;
+const GROUP_AVATAR_STAGING_DIR = `${FileSystem.documentDirectory}pending_group_avatars/`;
 
 async function ensureDir(): Promise<void> {
   try {
@@ -22,6 +24,19 @@ async function ensureDir(): Promise<void> {
     }
   } catch (e) {
     if (__DEV__) console.warn('[imgStaging] ensureDir failed', e);
+  }
+}
+
+async function ensureGroupAvatarDir(): Promise<void> {
+  try {
+    const info = await FileSystem.getInfoAsync(GROUP_AVATAR_STAGING_DIR);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(GROUP_AVATAR_STAGING_DIR, {
+        intermediates: true,
+      });
+    }
+  } catch (e) {
+    if (__DEV__) console.warn('[imgStaging] ensureGroupAvatarDir failed', e);
   }
 }
 
@@ -70,6 +85,38 @@ interface OrphanRow {
  * Idempotent, an toàn chạy nhiều lần. Không đụng row đang active (expense
  * local tồn tại + retry chưa cạn).
  */
+/**
+ * Stage group avatar: copy file vào staging dir + register pending upload row.
+ * Nếu group đã có pending upload trước đó, file cũ bị overwrite (cùng filename
+ * <group_id>.jpg) — không cần explicit delete. addUpload upsert PK = group_id.
+ * Trả về local file:// URI để UI hiển thị ngay (optimistic).
+ */
+export async function stageGroupAvatar(
+  groupId: string,
+  sourceUri: string,
+  sizeBytes: number
+): Promise<string> {
+  await ensureGroupAvatarDir();
+  const dest = `${GROUP_AVATAR_STAGING_DIR}${groupId}.jpg`;
+  await FileSystem.copyAsync({ from: sourceUri, to: dest });
+  await pendingGroupAvatarUploads.addUpload(groupId, dest, sizeBytes);
+  return dest;
+}
+
+/**
+ * Hủy staged avatar: xóa file + remove pending row. Idempotent.
+ * Dùng cho cancel pending khi user bấm "Xóa ảnh" (revert) hoặc worker mark dead.
+ */
+export async function cancelStagedGroupAvatar(groupId: string): Promise<void> {
+  const path = `${GROUP_AVATAR_STAGING_DIR}${groupId}.jpg`;
+  try {
+    await FileSystem.deleteAsync(path, { idempotent: true });
+  } catch {
+    // ignore
+  }
+  await pendingGroupAvatarUploads.remove(groupId);
+}
+
 export async function sweepStagedOrphans(): Promise<number> {
   const db = getDatabase();
   const orphans = await db.getAllAsync<OrphanRow>(

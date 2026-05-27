@@ -254,6 +254,19 @@ export interface PendingImageUploadRow {
   created_at: string;
 }
 
+export type PendingGroupAvatarOp = 'upload' | 'remove';
+
+export interface PendingGroupAvatarUploadRow {
+  group_id: string;
+  op: PendingGroupAvatarOp;
+  local_path: string | null;
+  size_bytes: number | null;
+  retry_count: number;
+  last_error: string | null;
+  next_retry_at: string | null;
+  created_at: string;
+}
+
 export interface AuthCacheRow {
   id: number; // always 1 (single row enforced by CHECK)
   auth_user_id: string;

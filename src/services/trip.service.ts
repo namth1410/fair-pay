@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
+import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import type { TripWithGroup } from '../types/database.types';
@@ -54,6 +55,31 @@ export async function fetchTrips(groupId: string): Promise<Trip[]> {
         [groupId]
       );
       return rows;
+    }
+  );
+}
+
+/** Fetch single trip by id — fallback SQLite mirror khi offline/network fail.
+ *  Dùng cho entry-point bypass group detail (pinned card, deep link, notification). */
+export async function fetchTripById(tripId: string): Promise<Trip | null> {
+  return tryServerThenLocal<Trip | null>(
+    async () => {
+      const { data, error } = await supabase
+        .from('trips')
+        .select('*')
+        .eq('id', tripId)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as Trip | null) ?? null;
+    },
+    async () => {
+      const db = getDatabase();
+      const row = await db.getFirstAsync<Trip>(
+        `SELECT * FROM trips WHERE id = ? AND deleted_at IS NULL`,
+        [tripId]
+      );
+      return row ?? null;
     }
   );
 }
@@ -232,8 +258,13 @@ export async function closeTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
@@ -315,8 +346,13 @@ export async function reopenTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
@@ -387,13 +423,18 @@ export async function updateTripName(tripId: string, newName: string): Promise<v
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('update_trip_name', {
+    const { data, error } = await supabase.rpc('update_trip_name', {
       p_trip_id: tripId,
       p_name: trimmed,
       p_base_version: local.version,
@@ -401,6 +442,18 @@ export async function updateTripName(tripId: string, newName: string): Promise<v
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
+
+    // Write-back local mirror với server's version + updated_at: tránh lần
+    // update kế dùng stale base_version → P0410 version_conflict.
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as { version: number; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE trips SET name = ?, version = ?, updated_at = ? WHERE id = ?`,
+        [trimmed, serverRow.version, serverRow.updated_at, tripId]
+      );
+    }
     // Audit logged by RPC server-side.
   } catch (err) {
     if (isNetworkError(err)) {

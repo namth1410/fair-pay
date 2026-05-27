@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { CircleCheck, Info } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -17,6 +17,7 @@ import { ExportScopeSheet } from '../../../../components/trip/ExportScopeSheet';
 import { HistoryTab } from '../../../../components/trip/HistoryTab';
 import { MyBalanceExplanationSheet } from '../../../../components/trip/MyBalanceExplanationSheet';
 import { SettlementTab } from '../../../../components/trip/SettlementTab';
+import { TripDetailSkeleton } from '../../../../components/trip/TripDetailSkeleton';
 import { TripManagementTab } from '../../../../components/trip/TripManagementTab';
 import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../../components/ui';
 import { useAppTheme } from '../../../../hooks/useAppTheme';
@@ -50,7 +51,7 @@ export default function TripDetailScreen() {
   const { width: W } = useWindowDimensions();
 
   const {
-    trips, currentExpenses, currentPayments, balances, settlements, auditLogs,
+    currentTrip, currentExpenses, currentPayments, balances, settlements, auditLogs,
     isLoadingExpenses, currentTripId,
     removeExpense,
     addPayment, removePayment,
@@ -112,7 +113,10 @@ export default function TripDetailScreen() {
     [W, progress, startProgress, targetIdx],
   );
 
-  const trip = trips.find((t) => t.id === tripId);
+  // currentTrip populate qua loadBalances → support entry-point bypass group detail
+  // (pinned card, deep link, notification). Tránh dùng trips.find() vì `trips` chỉ
+  // có data khi user vào group detail trước.
+  const trip = currentTrip && currentTrip.id === tripId ? currentTrip : null;
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
   const groupName = useMemo(
     () => groups.find((g) => g.id === trip?.group_id)?.name ?? '',
@@ -234,9 +238,9 @@ export default function TripDetailScreen() {
   const isHydrating = currentTripId !== tripId || !trip;
   if (isHydrating) {
     return (
-      <View style={[styles.container, styles.hydrating, { backgroundColor: c.background }]}>
+      <View style={[styles.container, { backgroundColor: c.background }]}>
         <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
-        <ActivityIndicator size="large" color={c.tint} />
+        <TripDetailSkeleton />
       </View>
     );
   }
@@ -358,7 +362,6 @@ function describeBalance(b: number): { label: string; tone: 'success' | 'danger'
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  hydrating: { justifyContent: 'center', alignItems: 'center' },
   tabViewport: { flex: 1, overflow: 'hidden' },
   tabRow: { flex: 1, flexDirection: 'row' },
   heroWrap: {

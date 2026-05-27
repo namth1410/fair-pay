@@ -1,8 +1,8 @@
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
-import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { BottomSheet } from 'heroui-native';
-import { Check, CheckCheck } from 'lucide-react-native';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Check } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   RefreshControl,
@@ -11,8 +11,8 @@ import {
   View,
 } from 'react-native';
 
-import { TabHeader } from '../../../components/header/TabHeader';
 import { InvitationConfirmDialog } from '../../../components/group/InvitationConfirmDialog';
+import { TabHeader } from '../../../components/header/TabHeader';
 import { NotificationRow } from '../../../components/notifications/NotificationRow';
 import { AppText, EmptyState, ListSkeleton } from '../../../components/ui';
 import { SkiaFireBorder } from '../../../components/ui/skia';
@@ -27,7 +27,7 @@ import type { Notification } from '../../../services/notification.service';
 import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
 import { hapticLight } from '../../../utils/haptics';
-import { showError, showSuccess, showWarning } from '../../../utils/toast';
+import { showError, showWarning } from '../../../utils/toast';
 
 type Bucket = 'today' | 'yesterday' | 'this_week' | 'older';
 const BUCKET_LABEL: Record<Bucket, string> = {
@@ -64,7 +64,6 @@ function groupBySection(items: Notification[]) {
 
 export default function NotificationsScreen() {
   const c = useAppTheme();
-  const navigation = useNavigation();
 
   const items = useNotificationStore((s) => s.items);
   const isLoading = useNotificationStore((s) => s.isLoading);
@@ -73,14 +72,12 @@ export default function NotificationsScreen() {
   const refresh = useNotificationStore((s) => s.refresh);
   const loadMore = useNotificationStore((s) => s.loadMore);
   const markAsRead = useNotificationStore((s) => s.markAsRead);
-  const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
   const remove = useNotificationStore((s) => s.remove);
   const setFilter = useNotificationStore((s) => s.setFilter);
 
   const [groups, setGroups] = useState<GroupWithMemberCount[]>([]);
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [confirmInvitation, setConfirmInvitation] = useState<MyPendingInvitation | null>(null);
-  const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   // Initial load + throttle: re-focus trong vòng 30s chỉ refresh badge,
   // không re-fetch toàn bộ list (tránh flash + cost network).
@@ -107,32 +104,6 @@ export default function NotificationsScreen() {
       .then(setGroups)
       .catch(() => undefined);
   }, []);
-
-  // Header right: "Đọc tất cả" — phụ thuộc unreadCount thay vì array items
-  // để tránh re-set headerRight mỗi lần list thay đổi (không cần thiết).
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () =>
-        unreadCount > 0 ? (
-          <Pressable
-            onPress={async () => {
-              hapticLight();
-              await markAllAsRead();
-              showSuccess('Đã đánh dấu tất cả đã đọc');
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Đánh dấu tất cả đã đọc"
-            hitSlop={8}
-            style={({ pressed }) => [styles.headerAction, pressed && { opacity: 0.6 }]}
-          >
-            <CheckCheck size={18} color={c.foreground} />
-            <AppText variant="meta" weight="semibold">
-              Đọc tất cả
-            </AppText>
-          </Pressable>
-        ) : null,
-    });
-  }, [navigation, unreadCount, markAllAsRead, c.foreground]);
 
   const sections = useMemo(() => groupBySection(items), [items]);
 
@@ -516,13 +487,6 @@ const styles = StyleSheet.create({
   },
   emptyWrap: { flex: 1, justifyContent: 'center' },
   footerSpace: { height: 120 },
-  headerAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    minHeight: 44,
-  },
   // BottomSheet content
   sheetHeader: {
     flexDirection: 'row',

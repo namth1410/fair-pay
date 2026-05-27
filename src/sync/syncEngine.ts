@@ -11,6 +11,7 @@
 // Concurrency: chỉ 1 run() in-flight. Caller gọi liên tiếp → no-op.
 
 import { useAppStore } from '../stores/app.store';
+import { uploadPendingGroupAvatars } from './groupAvatarUploadWorker';
 import { uploadPending as uploadPendingImages } from './imageUploadWorker';
 import { pullAll, type PullResult } from './pullWorker';
 import { pushPending } from './pushWorker';
@@ -69,6 +70,9 @@ export async function run(force = false): Promise<SyncRunResult> {
       }
       await uploadPendingImages().catch((e) => {
         if (__DEV__) console.warn('[syncEngine] imageUpload failed', e);
+      });
+      await uploadPendingGroupAvatars().catch((e) => {
+        if (__DEV__) console.warn('[syncEngine] groupAvatarUpload failed', e);
       });
       await syncQueue.cleanup();
       lastRunAt = Date.now();

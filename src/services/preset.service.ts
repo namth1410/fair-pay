@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
+import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import type { ExpensePresetRow, PresetSplitEntry } from '../types/database.types';
@@ -303,8 +304,14 @@ export async function updatePreset(
     return updated as ExpensePreset;
   };
 
-  if (!useAppStore.getState().isOnline) {
-    return enqueueLocal();
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.PRESET, presetId);
+  if (!isOnline || hasPending) {
+    const result = await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
+    return result;
   }
 
   try {
@@ -326,10 +333,34 @@ export async function updatePreset(
       }
       throw error;
     }
-    // RPC returns rows array — take first
-    return Array.isArray(data) && data.length > 0
-      ? (data[0] as ExpensePreset)
-      : ({} as ExpensePreset);
+
+    // Write-back local mirror với server's version + updated_at: tránh lần
+    // update kế dùng stale base_version → P0410 version_conflict.
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as ExpensePreset & { version: number; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE expense_presets
+            SET title = ?, amount = ?, trip_id = ?, paid_by_member_id = ?,
+                split_type = ?, splits_data = ?, version = ?, updated_at = ?
+          WHERE id = ? AND user_id = ?`,
+        [
+          title,
+          params.amount,
+          params.tripId ?? null,
+          params.paidByMemberId ?? null,
+          params.splitType ?? null,
+          params.splitsData ? JSON.stringify(params.splitsData) : null,
+          serverRow.version,
+          serverRow.updated_at,
+          presetId,
+          userId,
+        ]
+      );
+    }
+
+    return (serverRow ?? {}) as ExpensePreset;
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[updatePreset] network fail, queueing offline');

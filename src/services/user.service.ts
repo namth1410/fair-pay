@@ -2,6 +2,7 @@ import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import { useAppStore } from '../stores/app.store';
+import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import { isNetworkError } from '../utils/network';
@@ -126,18 +127,39 @@ export async function updateDisplayName(name: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.USER, userId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    // Online + có pending queue: trigger sync để push row mới sớm, tránh chờ
+    // trigger ngẫu nhiên (background/foreground hoặc network blip). Sync engine
+    // single-flight + rate-limit 5s → an toàn fire-and-forget.
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('update_user_display_name', {
+    const { data, error } = await supabase.rpc('update_user_display_name', {
       p_display_name: trimmed,
       p_base_version: local.version,
       p_client_request_id: clientRequestId,
     });
     if (error) throw error;
+
+    // Write-back local mirror với server's exact version + updated_at: tránh
+    // stale value làm lần update kế throw P0410 (server's trigger bump không
+    // được client biết → lần kế gửi base_version cũ → version_conflict).
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as { version: number; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE users SET display_name = ?, version = ?, updated_at = ? WHERE id = ?`,
+        [trimmed, serverRow.version, serverRow.updated_at, userId]
+      );
+    }
 
     // Auth metadata is secondary — DB is source of truth. Best-effort.
     try {
@@ -157,15 +179,19 @@ export async function updateDisplayName(name: string): Promise<void> {
 
 /**
  * Update user settings. Offline-first: LWW theo updated_at (P5 pattern).
- * 2 device offline sửa cùng settings → device sau sync sẽ conflict modal.
+ *
+ * Nhận PATCH (delta) thay vì full object → server merge `current || patch`
+ * chỉ ghi đúng field client đổi, giữ nguyên 7 field còn lại trên server →
+ * tránh stale value của Zustand cache overwrite change của thiết bị khác.
  */
-export async function updateSettings(settings: UserSettings): Promise<void> {
+export async function updateSettings(patch: Partial<UserSettings>): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
+  if (Object.keys(patch).length === 0) return;
 
   const db = getDatabase();
-  const local = await db.getFirstAsync<{ updated_at: string }>(
-    `SELECT updated_at FROM users WHERE id = ?`,
+  const local = await db.getFirstAsync<{ updated_at: string; settings: string | null }>(
+    `SELECT updated_at, settings FROM users WHERE id = ?`,
     [userId]
   );
   if (!local) throw new Error('Hồ sơ không tồn tại');
@@ -173,10 +199,15 @@ export async function updateSettings(settings: UserSettings): Promise<void> {
   const clientRequestId = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
 
+  // Merge với SQLite current trước khi write local — mirror khớp với cách
+  // server merge `current || patch` (whitelist + JSONB ||).
+  const currentLocal = JSON.parse(local.settings || '{}') as Partial<UserSettings>;
+  const mergedLocal = { ...currentLocal, ...patch };
+
   const enqueueLocal = async (): Promise<void> => {
     await db.runAsync(
       `UPDATE users SET settings = ?, updated_at = ? WHERE id = ?`,
-      [JSON.stringify(settings), now, userId]
+      [JSON.stringify(mergedLocal), now, userId]
     );
     await syncQueue.enqueue({
       op_type: OP_TYPES.UPDATE_USER_SETTINGS,
@@ -184,25 +215,43 @@ export async function updateSettings(settings: UserSettings): Promise<void> {
       entity_id: userId,
       client_request_id: clientRequestId,
       payload: {
-        settings: settings as unknown as Record<string, unknown>,
+        settings: patch as Record<string, unknown>,
         base_updated_at: local.updated_at,
         client_request_id: clientRequestId,
       },
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.USER, userId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('update_user_settings', {
-      p_settings: settings,
+    const { data, error } = await supabase.rpc('update_user_settings', {
+      p_settings: patch,
       p_base_updated_at: local.updated_at,
       p_client_request_id: clientRequestId,
     });
     if (error) throw error;
+
+    // Write-back local mirror với server's settings + updated_at: tránh stale
+    // base_updated_at làm lần toggle kế throw P0410 lww_stale. Dùng exact
+    // server value (vì server's NOW() ≠ client's now() do RTT).
+    const serverRow = Array.isArray(data) && data.length > 0
+      ? (data[0] as { settings: Record<string, unknown>; updated_at: string })
+      : null;
+    if (serverRow) {
+      await db.runAsync(
+        `UPDATE users SET settings = ?, updated_at = ? WHERE id = ?`,
+        [JSON.stringify(serverRow.settings), serverRow.updated_at, userId]
+      );
+    }
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[updateSettings] network fail, queueing offline');
