@@ -74,6 +74,19 @@ UI → Service (online check) ─┬─→ Server (RPC/INSERT) ─→ Success
 - **P7 Idempotent set**: `pinTrip`, `unpinTrip`, `reorderPinnedTrips`, `markAsRead`,
   `markAllAsRead`, `deleteNotification`.
 
+**Pending-check chống cross-op race**: Mọi op P2/P3/P4/P5/P7 phải gọi
+`syncQueue.hasPendingForEntity(entityType, entityId)` trước Flow A direct-server-call. Nếu có
+pending → enqueue thay vì gọi direct, để FIFO queue replay đảm bảo causal order. Pattern
+reference: [closeTrip](src/services/trip.service.ts) (P4) hoặc [deleteExpense](src/services/expense.service.ts) (P2). Loại trừ:
+- **P1 creates** skip vì entity_id là UUID mới mint trong cùng call (không thể có pending).
+- **Notification ops** (`markAsRead`/`markAllAsRead`/`deleteNotification`) skip vì entity_id
+  composite (`"id1|id2|..."` hoặc `"all"`) — single-id check không match. Race rất hiếm và
+  server ops idempotent.
+- **reorderPinnedTrips** dùng composite `"tripA|tripB"` → chỉ catch reorder-vs-reorder cùng
+  order; reorder-vs-pin/unpin riêng lẻ KHÔNG catch (rare, LWW server xử lý gần đủ).
+
+Mọi op mới thêm vào dispatcher PHẢI tuân pattern này nếu không phải P1 create thuần.
+
 ### Phân lớp file
 - **Repositories** (`src/repositories/`): 12 file đọc SQLite local. Mỗi entity có
   `getById()`, `listByX()`, `upsertFromServer()` (sync engine pull gọi).
@@ -148,8 +161,22 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - **Write offline**: pattern trong `createExpense` / `updateGroup`:
   1. Lookup local entity để check authz + lấy `base_version` (nếu P3)
   2. Define `enqueueLocal()` — write SQLite + `syncQueue.enqueue()`
-  3. `if (!isOnline) return enqueueLocal()`
+  3. Nếu không phải P1 create thuần: `const hasPending = await syncQueue.hasPendingForEntity(entityType, entityId)` →
+     `if (!isOnline || hasPending) { await enqueueLocal(); if (isOnline) void runSync().catch(() => {}); return; }`
   4. try server RPC; catch `isNetworkError(err)` → fall back to `enqueueLocal`
+  5. Với op có local write-back cần mirror server state (vd pinned_trips): tách
+     `writeLocal()` riêng, gọi cả trong `enqueueLocal()` lẫn ngay sau Flow A success.
+  6. **Write-back checklist sau RPC P3/P5/direct UPDATE success**: trigger
+     `bump_version_and_updated_at` (và analog `bump_version_users`) tự bump
+     `version + updated_at` mỗi UPDATE. Client PHẢI mirror đầy đủ về local SQLite,
+     nếu không lần update kế gửi base stale → P0410 (`version_conflict` hoặc
+     `lww_stale`). Dùng helper `mirrorServerRow(table, id, serverRow, extraCols)`
+     từ [src/repositories/writeback.ts](src/repositories/writeback.ts) — đối chiếu
+     `RETURNS TABLE(...)` SQL với call site, mọi cột RPC trả về phải có trong
+     write-back. Reference: 12+ call sites đã apply pattern. Direct
+     `.from('X').update({...})` (không qua RPC) phải thêm `.select('version,
+     updated_at').single()` để capture trigger bump. Bài học: [memory
+     `feedback_rpc_writeback_all_bumped_cols`](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_rpc_writeback_all_bumped_cols.md).
 - **Mỗi op_type mới**: phải thêm handler trong `pushDispatcher.ts` (case switch theo
   `OP_TYPES`).
 - **Trigger sync**: KHÔNG gọi `syncEngine.run()` thủ công từ UI — SyncBridge tự handle.
@@ -343,8 +370,12 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Lý do dùng chung keystore cho debug: SHA-1 fingerprint duy nhất → Google Sign-In OAuth client chỉ cần whitelist 1 SHA-1 cho mọi build local. KHÔNG dùng `~/.android/debug.keystore` mặc định.
 - **Nếu chạy `expo prebuild` (đặc biệt `--clean`)**: cấu hình `signingConfigs.fairpay` + `buildTypes.debug.signingConfig` sẽ bị **OVERWRITE** về template Expo mặc định (`debug` xài `debug.keystore`, `release` không có signing). Phải restore lại block trên + giữ `versionCode` mới nhất. Bug đã từng xảy ra → xem [project_android_signing.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/project_android_signing.md).
 
-### FCM push notifications (Android-only)
-- Stack: `expo-notifications` (SDK 55 dùng FCM v1 native) + cột `users.fcm_token` (1 user / 1 token) + Edge Function `send-push` + Postgres trigger qua `pg_net`.
+### Firebase services (Android-only)
+- 2 SDK đang dùng trong [android/app/build.gradle](android/app/build.gradle) Firebase BoM block: `firebase-messaging` (FCM push) + `firebase-analytics` (DAU/MAU/country/version, auto-collected events only — KHÔNG có JS code). Cùng share `google-services.json` + BoM 34.13.0.
+- **Firebase Analytics**: chỉ native SDK, không có wrapper RN. Auto-collected events ra-of-the-box (`first_open`, `session_start`, `user_engagement`, `app_remove`, country/device/version dimensions). KHÔNG log custom event nào — business event đã có ở `audit_logs` table riêng.
+- **AD_ID permission đã chặn**: Analytics SDK ≥21.0.0 tự inject `com.google.android.gms.permission.AD_ID` qua manifest merger. Block ở 2 chỗ — `app.json` `expo.android.blockedPermissions` (survive prebuild) + `AndroidManifest.xml` hand-edit (`tools:node="remove"`). Hậu quả: mất age/gender demographics + audiences, NHƯNG giữ được DAU/country/version/device + Play Console Data Safety form gọn (không khai báo advertising ID).
+- Verify Analytics SDK fire event: smoke test trên máy dev qua `adb shell setprop debug.firebase.analytics.app com.throneware.fairpay` → Firebase Console DebugView. Tester thật KHÔNG cần adb — events tự về Dashboard sau 24-48h batch.
+- Stack FCM: `expo-notifications` (SDK 55 dùng FCM v1 native) + cột `users.fcm_token` (1 user / 1 token) + Edge Function `send-push` + Postgres trigger qua `pg_net`.
 - Token registration: gọi `registerForPushNotifications()` (fire-and-forget) sau khi `set({ session })` trong 3 flow login ở [auth.store.ts](src/stores/auth.store.ts). `signOut()` gọi `unregisterPushToken()` TRƯỚC `supabase.auth.signOut()` để pass RLS update.
 - Foreground duplicate suppression: `Notifications.setNotificationHandler` trả `shouldShowBanner=false` — realtime channel `notif:${appUserId}` đã handle toast/badge. FCM chỉ đẹp khi app background/killed.
 - Tap deep link: `PushTapBridge` ở [_layout.tsx](src/app/_layout.tsx) gọi `setupNotificationListeners` 1 lần (KHÔNG re-mount theo session để bắt cold-start). Parse `data.route` từ FCM payload → `router.push()` + `dispatchNotificationRefetch()` để invalidate stores. Route mapping ở `getDeepLinkForNotification()` ([notificationRouter.ts](src/utils/notificationRouter.ts)).
@@ -361,9 +392,12 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - **Khi `expo prebuild --clean`**: phần lớn FCM config Expo TỰ regenerate đúng vì app.json đã declare:
   - `expo.android.googleServicesFile: "./google-services.json"` → Expo tự copy `google-services.json` sang `android/app/` + add Google Services Gradle plugin (classpath + `apply plugin`).
   - Plugin `expo-notifications` trong app.json plugins → tự add `firebase-messaging` dependency + `POST_NOTIFICATIONS` permission.
-  - **KHÔNG cần restore tay** 4 thứ này nếu app.json giữ nguyên config.
-- Verify sau prebuild --clean: `git diff android/` xem có thiếu gì không (so với state đã work). Nếu app.json bị edit nhầm (mất `googleServicesFile` hoặc plugin `expo-notifications`) → prebuild sẽ KHÔNG sinh FCM config → restore app.json + prebuild lại.
-- Riêng **signing config** (`signingConfigs.fairpay` block) là custom KHÔNG có trong Expo standard → vẫn bị wipe khi --clean → phải restore tay như đã document ở section "Android build & signing". Memory chi tiết: [feedback_fcm_prebuild_overwrite.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_fcm_prebuild_overwrite.md).
+  - `expo.android.blockedPermissions` chứa `AD_ID` → Expo tự inject `tools:node="remove"` vào AndroidManifest cho Analytics.
+  - **KHÔNG cần restore tay** các thứ trên nếu app.json giữ nguyên config.
+- **CẦN restore tay sau prebuild --clean** (Expo không có plugin tự sinh):
+  - `signingConfigs.fairpay` block ở `android/app/build.gradle` (chi tiết section "Android build & signing").
+  - Dòng `implementation("com.google.firebase:firebase-analytics")` ở `android/app/build.gradle` Firebase BoM block — Expo standard chỉ biết firebase-messaging qua expo-notifications plugin, KHÔNG biết Analytics. Nếu quên thì Analytics SDK bị remove → Dashboard ngừng nhận data từ build mới.
+- Verify sau prebuild --clean: `git diff android/` xem có thiếu gì không (so với state đã work). Nếu app.json bị edit nhầm (mất `googleServicesFile` hoặc plugin `expo-notifications` hoặc `AD_ID` trong blockedPermissions) → prebuild sẽ KHÔNG sinh config tương ứng → restore app.json + prebuild lại. Memory chi tiết: [feedback_fcm_prebuild_overwrite.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/feedback_fcm_prebuild_overwrite.md).
 - iOS chưa support — APNs cần Apple Developer cert + cấu hình khác. `registerForPushNotifications()` early-return `Platform.OS !== 'android'`.
 
 ### Tooling gotchas

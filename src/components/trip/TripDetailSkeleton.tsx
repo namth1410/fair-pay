@@ -1,7 +1,7 @@
 import { SkeletonGroup } from 'heroui-native';
 import { StyleSheet, View } from 'react-native';
 
-import { ListSkeleton } from '../ui/ListSkeleton';
+import { ExpenseTimelineSkeleton } from './ExpenseTimelineSkeleton';
 
 // Mimic geometry của trip detail screen: hero block (label + Money + meta) +
 // section tabs strip (5 pill chips) + list body. Match padding/margin/border-radius
@@ -23,7 +23,7 @@ export function TripDetailSkeleton() {
         ))}
       </View>
 
-      <ListSkeleton count={3} />
+      <ExpenseTimelineSkeleton count={3} />
     </SkeletonGroup>
   );
 }

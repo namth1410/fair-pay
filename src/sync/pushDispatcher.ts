@@ -137,6 +137,7 @@ interface DeleteNotificationPayload {
 
 interface DeleteExpensePayload {
   expense_id: string;
+  actor_name: string;
   client_request_id: string;
   client_created_at: string;
 }
@@ -272,25 +273,15 @@ export async function dispatch(
 
     case OP_TYPES.CREATE_TRIP: {
       const p = payload as unknown as CreateTripPayload;
-      const userId = await (await import('../services/auth.helper')).getAuthUserId();
-      if (!userId) throw new Error('unauthenticated');
-      const { data, error } = await supabase
-        .from('trips')
-        .insert({
-          id: p.id,
-          group_id: p.group_id,
-          name: p.name,
-          type: p.type,
-          created_by: userId,
-          client_request_id: p.client_request_id,
-        })
-        .select()
-        .maybeSingle();
-      if (error) {
-        // 23505 (duplicate) → đã apply, treat as success
-        if ((error as { code?: string }).code === '23505') return null;
-        throw error;
-      }
+      const { data, error } = await supabase.rpc('create_trip', {
+        p_id: p.id,
+        p_group_id: p.group_id,
+        p_name: p.name,
+        p_type: p.type,
+        p_client_request_id: p.client_request_id,
+        p_client_created_at: p.client_created_at,
+      });
+      if (error) throw error;
       return data;
     }
 
@@ -375,23 +366,14 @@ export async function dispatch(
 
     case OP_TYPES.ADD_VIRTUAL_MEMBER: {
       const p = payload as unknown as AddVirtualMemberPayload;
-      const { data, error } = await supabase
-        .from('group_members')
-        .insert({
-          id: p.id,
-          group_id: p.group_id,
-          user_id: null,
-          display_name: p.display_name,
-          role: 'member',
-          is_virtual: true,
-          client_request_id: p.client_request_id,
-        })
-        .select()
-        .maybeSingle();
-      if (error) {
-        if ((error as { code?: string }).code === '23505') return null;
-        throw error;
-      }
+      const { data, error } = await supabase.rpc('add_virtual_member', {
+        p_id: p.id,
+        p_group_id: p.group_id,
+        p_display_name: p.display_name,
+        p_client_request_id: p.client_request_id,
+        p_client_created_at: p.client_created_at,
+      });
+      if (error) throw error;
       return data;
     }
 
@@ -422,13 +404,11 @@ export async function dispatch(
 
     case OP_TYPES.REMOVE_MEMBER: {
       const p = payload as unknown as RemoveMemberPayload;
-      const { data, error } = await supabase
-        .from('group_members')
-        .update({ left_at: p.client_created_at })
-        .eq('id', p.member_id)
-        .is('left_at', null)
-        .select()
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('remove_member', {
+        p_member_id: p.member_id,
+        p_client_request_id: p.client_request_id,
+        p_client_created_at: p.client_created_at,
+      });
       if (error) throw error;
       return data;
     }
@@ -461,14 +441,12 @@ export async function dispatch(
 
     case OP_TYPES.DELETE_EXPENSE: {
       const p = payload as unknown as DeleteExpensePayload;
-      // Soft-delete idempotent: chỉ set deleted_at nếu chưa set
-      const { data, error } = await supabase
-        .from('expenses')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', p.expense_id)
-        .is('deleted_at', null)
-        .select()
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('delete_expense', {
+        p_expense_id: p.expense_id,
+        p_actor_name: p.actor_name,
+        p_client_request_id: p.client_request_id,
+        p_client_created_at: p.client_created_at,
+      });
       if (error) throw error;
       return data;
     }

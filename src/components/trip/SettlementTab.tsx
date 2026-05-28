@@ -1,15 +1,13 @@
 import { Button } from 'heroui-native';
 import { Wallet } from 'lucide-react-native';
 import React, { useCallback, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { useAppTheme } from '../../hooks/useAppTheme';
 import type { GroupMember } from '../../services/group.service';
 import type { Payment } from '../../services/payment.service';
-import { hapticSuccess } from '../../utils/haptics';
-import { showError, showSuccess, showValidationError } from '../../utils/toast';
-import { AppCard, AppText, ChipPicker, ConfirmDialog, DismissKeyboardView, EmptyState, FormReveal, Money, MoneyChipsDock, SwipeableCard } from '../ui';
-import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
+import { showError } from '../../utils/toast';
+import { AppCard, AppText, BouncyDialog, EmptyState, Money, SwipeableCard } from '../ui';
+import { RecordPaymentSheet } from './RecordPaymentSheet';
 
 interface SettlementEntry {
   from: string;
@@ -49,174 +47,106 @@ export const SettlementTab = React.memo(function SettlementTab({
   onAddPayment, onDeletePayment,
 }: SettlementTabProps) {
   const isOpen = tripStatus === 'open';
-  const c = useAppTheme();
 
-  const [showForm, setShowForm] = useState(false);
-  const [payFrom, setPayFrom] = useState('');
-  const [payTo, setPayTo] = useState('');
-  const [payAmountStr, setPayAmountStr] = useState('');
-  const [payNote, setPayNote] = useState('');
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Payment | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [amountFocused, setAmountFocused] = useState(false);
 
-  const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
-  const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
-
-  const handleSubmit = useCallback(async () => {
-    if (busy) return;
-    if (!payFrom || !payTo || !payAmountStr.trim()) return;
-    const amount = parseInt(payAmountStr, 10);
-    if (isNaN(amount) || amount <= 0) {
-      showValidationError('Lỗi', 'Số tiền phải lớn hơn 0');
-      return;
-    }
-    if (payFrom === payTo) {
-      showValidationError('Lỗi', 'Người trả và người nhận không được giống nhau');
-      return;
-    }
-    Keyboard.dismiss();
-    setBusy(true);
-    try {
-      await onAddPayment({
-        tripId, groupId,
-        fromMemberId: payFrom, toMemberId: payTo,
-        amount, note: payNote.trim() || undefined,
-      });
-      hapticSuccess();
-      showSuccess('Đã ghi nhận thanh toán');
-      setPayAmountStr(''); setPayNote('');
-      setShowForm(false);
-    } catch (e: unknown) {
-      showError(e);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, payFrom, payTo, payAmountStr, payNote, tripId, groupId, onAddPayment]);
+  const getMemberName = useCallback(
+    (id: string) => members.find((m) => m.id === id)?.display_name || '?',
+    [members],
+  );
 
   return (
     <View style={styles.flex}>
-    <ScrollView
-      contentContainerStyle={styles.list}
-      keyboardDismissMode="on-drag"
-      keyboardShouldPersistTaps="handled"
-    >
-      {settlements.length > 0 && (
+      <ScrollView
+        contentContainerStyle={styles.list}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+      >
+        {settlements.length > 0 && (
+          <View style={styles.section}>
+            <AppText variant="subtitle" weight="semibold">Đề xuất quyết toán</AppText>
+            <AppText variant="caption" tone="muted" style={styles.suggestionHint}>
+              Gợi ý tối ưu — chỉ tham khảo
+            </AppText>
+            {settlements.map((s) => (
+              <AppCard
+                key={`${s.from}-${s.to}`}
+                title={`${s.fromName} → ${s.toName}`}
+                trailing={<Money value={s.amount} variant="default" tone="danger" />}
+              />
+            ))}
+          </View>
+        )}
+
         <View style={styles.section}>
-          <AppText variant="subtitle" weight="semibold">Đề xuất quyết toán</AppText>
-          <AppText variant="caption" tone="muted" style={styles.suggestionHint}>
-            Gợi ý tối ưu — chỉ tham khảo
+          <AppText variant="subtitle" weight="semibold" style={styles.sectionTitle}>
+            Thanh toán thực tế
           </AppText>
-          {settlements.map((s) => (
-            <AppCard
-              key={`${s.from}-${s.to}`}
-              title={`${s.fromName} → ${s.toName}`}
-              trailing={<Money value={s.amount} variant="default" tone="danger" />}
+          {isOpen ? (
+            <View style={styles.recordBtnWrap}>
+              <Button variant="primary" size="sm" onPress={() => setSheetOpen(true)}>
+                <Button.Label>Ghi nhận thanh toán</Button.Label>
+              </Button>
+            </View>
+          ) : null}
+
+          {payments.map((pay) => (
+            <SwipeableCard
+              key={pay.id}
+              title={`${getMemberName(pay.from_member_id)} → ${getMemberName(pay.to_member_id)}`}
+              subtitle={pay.note || undefined}
+              onDelete={isOpen ? () => setDeleteTarget(pay) : undefined}
+              onLongPress={isOpen ? () => setDeleteTarget(pay) : undefined}
+              trailing={<Money value={pay.amount} variant="default" tone="success" />}
             />
           ))}
+
+          {payments.length === 0 && (
+            <EmptyState icon={Wallet} title="Chưa có thanh toán nào" />
+          )}
         </View>
-      )}
 
-      <View style={styles.section}>
-        <AppText variant="subtitle" weight="semibold" style={styles.sectionTitle}>
-          Thanh toán thực tế
-        </AppText>
-        {isOpen ? (
-          <Button variant="primary" size="sm" onPress={() => setShowForm(!showForm)}>
-            <Button.Label>{showForm ? 'Hủy' : 'Ghi nhận thanh toán'}</Button.Label>
-          </Button>
-        ) : null}
-
-        <FormReveal isOpen={isOpen && showForm}>
-          <DismissKeyboardView>
-            <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người trả tiền</AppText>
-            <ChipPicker options={memberOptions} selected={payFrom} onSelect={setPayFrom} />
-
-            <AppText variant="meta" tone="muted" style={styles.fieldLabel}>Người nhận tiền</AppText>
-            <ChipPicker options={memberOptions} selected={payTo} onSelect={setPayTo} activeColor={c.success} activeSoft={c.successSoft} />
-
-            <FloatingMoneyInput
-              label="Số tiền (VND)"
-              value={payAmountStr}
-              onChangeText={setPayAmountStr}
-              showSuggestions={false}
-              onFocus={() => setAmountFocused(true)}
-              onBlur={() => setAmountFocused(false)}
-              accessibilityLabel="Số tiền thanh toán"
-              surfaceColor={c.surface}
-            />
-            <FloatingLabelInput label="Ghi chú (VD: Chuyển khoản Momo)" value={payNote} onChangeText={setPayNote} accessibilityLabel="Ghi chú thanh toán" surfaceColor={c.surface} />
-
-            {payFrom && payTo && payFrom !== payTo && (
-              <View style={[styles.previewBox, { backgroundColor: c.surfaceAlt }]}>
-                <AppText variant="meta" tone="muted" style={styles.previewLabel}>Số dư hiện tại</AppText>
-                {[payFrom, payTo].map((memberId) => {
-                  const bal = balances.find((b) => b.memberId === memberId)?.balance || 0;
-                  return (
-                    <View key={memberId} style={styles.previewRow}>
-                      <AppText variant="caption">{getMemberName(memberId)}</AppText>
-                      <Money
-                        value={Math.abs(bal)}
-                        variant="compact"
-                        tone={bal >= 0 ? 'success' : 'danger'}
-                        showSign
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            <Button
-              variant="primary"
-              size="md"
-              onPress={handleSubmit}
-              isDisabled={busy || !payFrom || !payTo || !payAmountStr.trim()}
-            >
-              <Button.Label>{busy ? 'Đang ghi...' : 'Ghi nhận'}</Button.Label>
+        <BouncyDialog
+          isOpen={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+        >
+          <BouncyDialog.Title>Xóa thanh toán</BouncyDialog.Title>
+          <BouncyDialog.Description>Xóa ghi nhận thanh toán này?</BouncyDialog.Description>
+          <BouncyDialog.Actions>
+            <Button variant="ghost" size="sm" onPress={() => setDeleteTarget(null)}>
+              <Button.Label>Hủy</Button.Label>
             </Button>
-          </DismissKeyboardView>
-        </FormReveal>
+            <Button
+              variant="danger"
+              size="sm"
+              onPress={async () => {
+                const target = deleteTarget;
+                setDeleteTarget(null);
+                if (target) {
+                  try {
+                    await onDeletePayment(target.id, tripId);
+                  } catch (e: unknown) {
+                    showError(e);
+                  }
+                }
+              }}
+            >
+              <Button.Label>Xóa</Button.Label>
+            </Button>
+          </BouncyDialog.Actions>
+        </BouncyDialog>
+      </ScrollView>
 
-        {payments.map((pay) => (
-          <SwipeableCard
-            key={pay.id}
-            title={`${getMemberName(pay.from_member_id)} → ${getMemberName(pay.to_member_id)}`}
-            subtitle={pay.note || undefined}
-            onDelete={isOpen ? () => setDeleteTarget(pay) : undefined}
-            onLongPress={isOpen ? () => setDeleteTarget(pay) : undefined}
-            trailing={<Money value={pay.amount} variant="default" tone="success" />}
-          />
-        ))}
-
-        {payments.length === 0 && !showForm && (
-          <EmptyState icon={Wallet} title="Chưa có thanh toán nào" />
-        )}
-      </View>
-
-      <ConfirmDialog
-        isOpen={!!deleteTarget}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Xóa thanh toán"
-        description="Xóa ghi nhận thanh toán này?"
-        confirmLabel="Xóa"
-        destructive
-        onConfirm={async () => {
-          if (deleteTarget) {
-            try {
-              await onDeletePayment(deleteTarget.id, tripId);
-            } catch (e: unknown) {
-              showError(e);
-            }
-          }
-        }}
+      <RecordPaymentSheet
+        isOpen={sheetOpen}
+        onOpenChange={setSheetOpen}
+        tripId={tripId}
+        groupId={groupId}
+        members={members}
+        balances={balances}
+        onAddPayment={onAddPayment}
       />
-    </ScrollView>
-    <MoneyChipsDock
-      visible={showForm && amountFocused}
-      amountStr={payAmountStr}
-      onPick={(amount) => setPayAmountStr(String(amount))}
-    />
     </View>
   );
 });
@@ -226,9 +156,6 @@ const styles = StyleSheet.create({
   section: { marginBottom: 24 },
   sectionTitle: { marginBottom: 8 },
   suggestionHint: { marginBottom: 8 },
-  fieldLabel: { marginTop: 8, marginBottom: 2 },
-  previewBox: { padding: 10, borderRadius: 10, gap: 2 },
-  previewLabel: { marginBottom: 4 },
-  previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  recordBtnWrap: { marginBottom: 12 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
 });

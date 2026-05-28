@@ -1,6 +1,7 @@
 import { TRIP_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
 import { run as runSync } from '../sync/syncEngine';
@@ -183,29 +184,19 @@ export async function createTrip(
 
   try {
     const { data, error } = await supabase
-      .from('trips')
-      .insert({
-        id: tripId,
-        group_id: groupId,
-        name,
-        type,
-        created_by: userId,
-        client_request_id: clientRequestId,
+      .rpc('create_trip', {
+        p_id: tripId,
+        p_group_id: groupId,
+        p_name: name,
+        p_type: type,
+        p_client_request_id: clientRequestId,
+        p_client_created_at: clientCreatedAt,
       })
-      .select()
       .single();
 
     if (error) throw error;
-
-    await logAction({
-      groupId,
-      tripId: data.id,
-      action: 'trip.create',
-      targetId: data.id,
-      afterData: { name, type },
-    });
-
-    return data;
+    // RPC server-side đã log audit `trip.create` atomic.
+    return data as Trip;
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[createTrip] network fail, queueing offline');
@@ -269,13 +260,27 @@ export async function closeTrip(tripId: string): Promise<void> {
   }
 
   try {
-    const { error } = await supabase.rpc('close_trip', {
+    const { data, error } = await supabase.rpc('close_trip', {
       p_trip_id: tripId,
       p_base_version: local.version,
       p_client_request_id: clientRequestId,
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
+
+    // Write-back mirror: trigger bump version+updated_at trên trips → tránh stale.
+    const row = extractServerRow<{
+      version: number;
+      updated_at: string;
+      status: string;
+      closed_at: string | null;
+    }>(data);
+    if (row) {
+      await mirrorServerRow('trips', tripId, row, {
+        status: row.status,
+        closed_at: row.closed_at,
+      });
+    }
 
     // Notify (best-effort) — RPC server-side đã log audit atomic.
     const userId = await getAuthUserId();
@@ -357,13 +362,25 @@ export async function reopenTrip(tripId: string): Promise<void> {
   }
 
   try {
-    const { error } = await supabase.rpc('reopen_trip', {
+    const { data, error } = await supabase.rpc('reopen_trip', {
       p_trip_id: tripId,
       p_base_version: local.version,
       p_client_request_id: clientRequestId,
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
+
+    const row = extractServerRow<{
+      version: number;
+      updated_at: string;
+      status: string;
+    }>(data);
+    if (row) {
+      await mirrorServerRow('trips', tripId, row, {
+        status: row.status,
+        closed_at: null,
+      });
+    }
     // Audit logged by RPC, no notify on reopen.
   } catch (err) {
     if (isNetworkError(err)) {
@@ -443,16 +460,10 @@ export async function updateTripName(tripId: string, newName: string): Promise<v
     });
     if (error) throw error;
 
-    // Write-back local mirror với server's version + updated_at: tránh lần
-    // update kế dùng stale base_version → P0410 version_conflict.
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as { version: number; updated_at: string })
-      : null;
+    // Write-back: mirror version + updated_at (xem src/repositories/writeback.ts).
+    const serverRow = extractServerRow<{ version: number; updated_at: string }>(data);
     if (serverRow) {
-      await db.runAsync(
-        `UPDATE trips SET name = ?, version = ?, updated_at = ? WHERE id = ?`,
-        [trimmed, serverRow.version, serverRow.updated_at, tripId]
-      );
+      await mirrorServerRow('trips', tripId, serverRow, { name: trimmed });
     }
     // Audit logged by RPC server-side.
   } catch (err) {
@@ -519,17 +530,29 @@ export async function clearTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
     const { data, error } = await supabase
       .rpc('clear_trip', { p_trip_id: tripId })
-      .single<{ group_id: string; name: string; was_closed: boolean }>();
+      .single<{ group_id: string; name: string; was_closed: boolean; version: number; updated_at: string }>();
     if (error) throw error;
     if (!data) throw new Error('Chuyến đi không tồn tại');
+
+    // Write-back trip mirror (cascade expenses/payments sẽ sync qua pull).
+    // clear_trip reopen status nếu was_closed → mirror status='open' + closed_at=null.
+    await mirrorServerRow('trips', tripId, data, {
+      status: 'open',
+      closed_at: null,
+    });
 
     // Audit + notify (best-effort)
     const userId = await getAuthUserId();
@@ -609,17 +632,25 @@ export async function deleteTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
     const { data, error } = await supabase
       .rpc('delete_trip', { p_trip_id: tripId })
-      .single<{ group_id: string; name: string }>();
+      .single<{ group_id: string; name: string; version: number; updated_at: string }>();
     if (error) throw error;
     if (!data) throw new Error('Chuyến đi không tồn tại');
+
+    // Write-back trip mirror với deleted_at (cascade expenses/payments sync qua pull).
+    await mirrorServerRow('trips', tripId, data, { deleted_at: now });
 
     const userId = await getAuthUserId();
     if (!userId) return;
@@ -715,9 +746,9 @@ export async function pinTrip(tripId: string): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const enqueueLocal = async (): Promise<void> => {
+  const writeLocal = async (): Promise<void> => {
     const db = getDatabase();
-    // Pick next position (0 hoặc 1). Nếu đã có 2 pin → server reject.
+    // Pick next position (0 hoặc 1). Nếu đã có 2 pin → server reject hoặc replace.
     const existing = await db.getAllAsync<{ position: number }>(
       `SELECT position FROM pinned_trips WHERE user_id = ? ORDER BY position`,
       [userId]
@@ -725,7 +756,6 @@ export async function pinTrip(tripId: string): Promise<void> {
     const usedPositions = new Set(existing.map((p) => p.position));
     let nextPos = 0;
     while (usedPositions.has(nextPos) && nextPos < 2) nextPos++;
-    // Nếu đã đủ 2 pin, vẫn enqueue — server sẽ reject hoặc replace.
     const id = globalThis.crypto.randomUUID();
     const now = new Date().toISOString();
     await db.runAsync(
@@ -734,6 +764,10 @@ export async function pinTrip(tripId: string): Promise<void> {
        ON CONFLICT(user_id, trip_id) DO NOTHING`,
       [id, userId, tripId, nextPos, now, now]
     );
+  };
+
+  const enqueueLocal = async (): Promise<void> => {
+    await writeLocal();
     await syncQueue.enqueue({
       op_type: OP_TYPES.PIN_TRIP,
       entity_type: ENTITY_TYPES.PINNED_TRIP,
@@ -743,13 +777,19 @@ export async function pinTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.PINNED_TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
   try {
     const { error } = await supabase.rpc('pin_trip', { p_trip_id: tripId });
     if (error) throw error;
+    await writeLocal();
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[pinTrip] network fail, queueing offline');
@@ -766,12 +806,16 @@ export async function unpinTrip(tripId: string): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const enqueueLocal = async (): Promise<void> => {
+  const writeLocal = async (): Promise<void> => {
     const db = getDatabase();
     await db.runAsync(
       `DELETE FROM pinned_trips WHERE user_id = ? AND trip_id = ?`,
       [userId, tripId]
     );
+  };
+
+  const enqueueLocal = async (): Promise<void> => {
+    await writeLocal();
     await syncQueue.enqueue({
       op_type: OP_TYPES.UNPIN_TRIP,
       entity_type: ENTITY_TYPES.PINNED_TRIP,
@@ -781,13 +825,19 @@ export async function unpinTrip(tripId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.PINNED_TRIP, tripId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
   try {
     const { error } = await supabase.rpc('unpin_trip', { p_trip_id: tripId });
     if (error) throw error;
+    await writeLocal();
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[unpinTrip] network fail, queueing offline');
@@ -808,7 +858,9 @@ export async function reorderPinnedTrips(
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const enqueueLocal = async (): Promise<void> => {
+  const compositeEntityId = orderedTripIds.join('|');
+
+  const writeLocal = async (): Promise<void> => {
     const db = getDatabase();
     const now = new Date().toISOString();
     // Local swap: tạm dùng position -1 / -2 tránh UNIQUE conflict trong transaction
@@ -834,17 +886,33 @@ export async function reorderPinnedTrips(
         [userId, orderedTripIds[1]]
       );
     });
+  };
+
+  const enqueueLocal = async (): Promise<void> => {
+    await writeLocal();
     await syncQueue.enqueue({
       op_type: OP_TYPES.REORDER_PINNED_TRIPS,
       entity_type: ENTITY_TYPES.PINNED_TRIP,
-      entity_id: orderedTripIds.join('|'),
+      entity_id: compositeEntityId,
       client_request_id: clientRequestId,
       payload: { trip_ids: orderedTripIds, client_request_id: clientRequestId },
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  // Limitation: entity_id ở đây là composite "tripA|tripB", trong khi pinTrip/unpinTrip
+  // dùng single tripId. Pending-check dưới đây CHỈ catch reorder-vs-reorder cùng order.
+  // Race reorder-vs-pin/unpin của tripA hoặc tripB riêng lẻ KHÔNG bị catch (rare, server
+  // LWW xử lý gần đủ).
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(
+    ENTITY_TYPES.PINNED_TRIP,
+    compositeEntityId,
+  );
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
   try {
@@ -852,6 +920,7 @@ export async function reorderPinnedTrips(
       p_trip_ids: orderedTripIds,
     });
     if (error) throw error;
+    await writeLocal();
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[reorderPinnedTrips] network fail, queueing offline');

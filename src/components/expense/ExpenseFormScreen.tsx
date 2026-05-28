@@ -43,12 +43,12 @@ import {
 import { ImagePickerSheet } from '../common/ImagePickerSheet';
 import {
   AppText,
+  BouncyDialog,
   ChipPicker,
   DismissKeyboardView,
   Money,
   MoneyChipsDock,
 } from '../ui';
-import { ConfirmDialog } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 import { AddToField } from './AddToField';
 import { DateTimeField } from './DateTimeField';
@@ -781,16 +781,30 @@ export function ExpenseFormScreen({
         onRemove={() => setPendingImage(null)}
         showRemove={!!pendingImage}
       />
-      <ConfirmDialog
+      <BouncyDialog
         isOpen={exitConfirm}
-        onOpenChange={setExitConfirm}
-        title="Thoát mà chưa lưu?"
-        description="Dữ liệu đã nhập sẽ bị mất. Bạn có chắc muốn thoát?"
-        confirmLabel="Thoát"
-        cancelLabel="Ở lại"
-        destructive
-        onConfirm={handleConfirmExit}
-      />
+        onClose={() => setExitConfirm(false)}
+      >
+        <BouncyDialog.Title>Thoát mà chưa lưu?</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          Dữ liệu đã nhập sẽ bị mất. Bạn có chắc muốn thoát?
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setExitConfirm(false)}>
+            <Button.Label>Ở lại</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onPress={() => {
+              setExitConfirm(false);
+              handleConfirmExit();
+            }}
+          >
+            <Button.Label>Thoát</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
     </SafeAreaView>
   );
 }

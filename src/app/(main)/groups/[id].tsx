@@ -20,7 +20,7 @@ import { MembersTab } from '../../../components/group/MembersTab';
 import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
 import { TripActionSheet } from '../../../components/trip/TripActionSheet';
-import { Avatar, BouncyDialog, ConfirmDialog, SectionTabs } from '../../../components/ui';
+import { Avatar, BouncyDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
 import type {
@@ -445,15 +445,29 @@ export default function GroupDetailScreen() {
         </GestureDetector>
       </View>
 
-      <ConfirmDialog
+      <BouncyDialog
         isOpen={confirm.isOpen}
-        onOpenChange={(open) => { if (!open) setConfirm(CONFIRM_CLOSED); }}
-        title={confirm.title}
-        description={confirm.description}
-        confirmLabel={confirm.confirmLabel}
-        destructive={confirm.destructive}
-        onConfirm={confirm.onConfirm}
-      />
+        onClose={() => setConfirm(CONFIRM_CLOSED)}
+      >
+        <BouncyDialog.Title>{confirm.title}</BouncyDialog.Title>
+        <BouncyDialog.Description>{confirm.description}</BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setConfirm(CONFIRM_CLOSED)}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button
+            variant={confirm.destructive ? 'danger' : 'primary'}
+            size="sm"
+            onPress={() => {
+              const fn = confirm.onConfirm;
+              setConfirm(CONFIRM_CLOSED);
+              fn();
+            }}
+          >
+            <Button.Label>{confirm.confirmLabel}</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
 
       {id ? (
         <AddMemberSheet

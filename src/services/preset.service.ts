@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
 import { run as runSync } from '../sync/syncEngine';
@@ -334,30 +335,19 @@ export async function updatePreset(
       throw error;
     }
 
-    // Write-back local mirror với server's version + updated_at: tránh lần
-    // update kế dùng stale base_version → P0410 version_conflict.
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as ExpensePreset & { version: number; updated_at: string })
-      : null;
+    // Write-back local mirror đầy đủ: mọi cột RPC trả về để tránh stale
+    // (version/updated_at do trigger bump; category server return cũng mirror).
+    const serverRow = extractServerRow<ExpensePreset & { version: number; updated_at: string }>(data);
     if (serverRow) {
-      await db.runAsync(
-        `UPDATE expense_presets
-            SET title = ?, amount = ?, trip_id = ?, paid_by_member_id = ?,
-                split_type = ?, splits_data = ?, version = ?, updated_at = ?
-          WHERE id = ? AND user_id = ?`,
-        [
-          title,
-          params.amount,
-          params.tripId ?? null,
-          params.paidByMemberId ?? null,
-          params.splitType ?? null,
-          params.splitsData ? JSON.stringify(params.splitsData) : null,
-          serverRow.version,
-          serverRow.updated_at,
-          presetId,
-          userId,
-        ]
-      );
+      await mirrorServerRow('expense_presets', presetId, serverRow, {
+        title: serverRow.title,
+        amount: serverRow.amount,
+        category: serverRow.category,
+        trip_id: serverRow.trip_id,
+        paid_by_member_id: serverRow.paid_by_member_id,
+        split_type: serverRow.split_type,
+        splits_data: serverRow.splits_data,
+      });
     }
 
     return (serverRow ?? {}) as ExpensePreset;
@@ -402,19 +392,30 @@ export async function deletePreset(presetId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.PRESET, presetId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase
+    // .select() để capture version+updated_at bị trigger bump → write-back local mirror.
+    const { data, error } = await supabase
       .from('expense_presets')
       .update({ deleted_at: now })
       .eq('id', presetId)
       .eq('user_id', userId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('version, updated_at, deleted_at')
+      .maybeSingle();
     if (error) throw error;
+    if (data) {
+      await mirrorServerRow('expense_presets', presetId, data, { deleted_at: data.deleted_at });
+    }
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[deletePreset] network fail, queueing offline');

@@ -40,8 +40,8 @@ export function ExpenseTimelineSectionHeader({ title, isFirst }: Props) {
       </View>
       <View style={styles.content}>
         <View style={[styles.chip, { backgroundColor: c.primary }]}>
-          <AppText variant="meta" weight="bold" tone="inverse">
-            {title.toUpperCase()}
+          <AppText variant="meta" weight="medium" tone="inverse">
+            {title}
           </AppText>
         </View>
       </View>
@@ -83,8 +83,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
     borderRadius: 999,
   },
 });

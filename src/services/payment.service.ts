@@ -3,8 +3,10 @@ import { getDatabase } from '../db/database';
 import * as groupMemberRepo from '../repositories/groupMember.repo';
 import * as tripRepo from '../repositories/trip.repo';
 import * as userRepo from '../repositories/user.repo';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
+import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import { isNetworkError } from '../utils/network';
@@ -272,18 +274,32 @@ export async function deletePayment(paymentId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.PAYMENT, paymentId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase.rpc('delete_payment', {
+    const { data, error } = await supabase.rpc('delete_payment', {
       p_payment_id: paymentId,
       p_client_request_id: clientRequestId,
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
+
+    const row = extractServerRow<{
+      version: number;
+      updated_at: string;
+      deleted_at: string;
+    }>(data);
+    if (row) {
+      await mirrorServerRow('payments', paymentId, row, { deleted_at: row.deleted_at });
+    }
 
     // Audit logged by RPC server-side. Notify không cần — payment.delete không phát notify.
   } catch (err) {

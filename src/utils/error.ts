@@ -65,6 +65,8 @@ const ERROR_MAP: Record<string, string> = {
   user_not_found: 'Tài khoản người dùng không tồn tại.',
   group_not_found: 'Nhóm không tồn tại hoặc đã bị xóa.',
   not_owner: 'Bạn không phải chủ sở hữu preset này.',
+  expense_not_found: 'Khoản chi không tồn tại hoặc đã bị xóa.',
+  cannot_remove_admin: 'Quản trị viên không thể bị xóa khỏi nhóm.',
 
   // RPC custom — invitation flow (invite_member_by_email / respond_to_invitation / revoke_invitation)
   email_invalid_or_not_found: 'Không thể mời. Vui lòng kiểm tra lại email.',

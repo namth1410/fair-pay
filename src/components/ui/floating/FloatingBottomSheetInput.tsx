@@ -1,9 +1,9 @@
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useCallback, useState } from 'react';
 import {
-  StyleSheet,
   type KeyboardTypeOptions,
   type StyleProp,
+  StyleSheet,
   type TextStyle,
 } from 'react-native';
 
@@ -17,6 +17,8 @@ interface FloatingBottomSheetInputProps {
   defaultValue?: string;
   /** Called on every keystroke. Parent ghi vào ref để track value. */
   onChangeText?: (text: string) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   error?: string;
   keyboardType?: KeyboardTypeOptions;
   autoCapitalize?: 'none' | 'sentences' | 'words';
@@ -35,6 +37,8 @@ export function FloatingBottomSheetInput({
   label,
   defaultValue = '',
   onChangeText,
+  onFocus,
+  onBlur,
   error,
   keyboardType,
   autoCapitalize,
@@ -61,8 +65,14 @@ export function FloatingBottomSheetInput({
     [onChangeText],
   );
 
-  const handleFocus = useCallback(() => setIsFocused(true), []);
-  const handleBlur = useCallback(() => setIsFocused(false), []);
+  const handleFocus = useCallback(() => {
+    setIsFocused(true);
+    onFocus?.();
+  }, [onFocus]);
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+    onBlur?.();
+  }, [onBlur]);
 
   return (
     <FloatingLabelContainer

@@ -7,10 +7,11 @@ import { SectionList, StyleSheet, View } from 'react-native';
 import type { ExpenseWithSplits } from '../../services/expense.service';
 import type { GroupMember } from '../../services/group.service';
 import { groupExpensesByDay } from '../../utils/expenseGrouping';
-import { ConfirmDialog, EmptyState, ListSkeleton } from '../ui';
+import { BouncyDialog, EmptyState } from '../ui';
 import { ExpenseDetailSheet } from './ExpenseDetailSheet';
 import { ExpenseTimelineRow } from './ExpenseTimelineRow';
 import { ExpenseTimelineSectionHeader } from './ExpenseTimelineSectionHeader';
+import { ExpenseTimelineSkeleton } from './ExpenseTimelineSkeleton';
 
 interface ExpensesTabProps {
   tripId: string;
@@ -95,7 +96,7 @@ export const ExpensesTab = React.memo(function ExpensesTab({
       )}
 
       {isLoading && expenses.length === 0 ? (
-        <ListSkeleton count={3} />
+        <ExpenseTimelineSkeleton count={3} />
       ) : (
         <SectionList
           sections={sections}
@@ -108,17 +109,29 @@ export const ExpensesTab = React.memo(function ExpensesTab({
         />
       )}
 
-      <ConfirmDialog
+      <BouncyDialog
         isOpen={!!deleteTarget}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title="Xóa khoản chi"
-        description={`Xóa "${deleteTarget?.title}"?`}
-        confirmLabel="Xóa"
-        destructive
-        onConfirm={() => {
-          if (deleteTarget) onDeleteExpense(deleteTarget.id, tripId);
-        }}
-      />
+        onClose={() => setDeleteTarget(null)}
+      >
+        <BouncyDialog.Title>Xóa khoản chi</BouncyDialog.Title>
+        <BouncyDialog.Description>{`Xóa "${deleteTarget?.title}"?`}</BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setDeleteTarget(null)}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onPress={() => {
+              const target = deleteTarget;
+              setDeleteTarget(null);
+              if (target) onDeleteExpense(target.id, tripId);
+            }}
+          >
+            <Button.Label>Xóa</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
 
       <ExpenseDetailSheet
         isOpen={!!selectedExpense}

@@ -21,6 +21,7 @@ import {
 } from '../services/expenseImage.service';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
+import { mirrorServerRow } from '../repositories/writeback';
 import * as pendingImageUploads from './pendingImageUploads';
 
 let isRunning = false;
@@ -143,11 +144,23 @@ export async function uploadPending(maxItems = 5): Promise<UploadResult> {
         // 5. Commit (Edge Function verifies + updates expense.image_url server-side)
         const commit = await commitExpenseImage(expense.id, presign.fileKey);
 
-        // 6. Cập nhật local mirror với R2 URL + cleanup
-        await db.runAsync(
-          `UPDATE expenses SET image_url = ?, updated_at = ? WHERE id = ?`,
-          [commit.image_url, new Date().toISOString(), expense.id]
-        );
+        // 6. Cập nhật local mirror với R2 URL + version/updated_at từ server.
+        // Edge Function trả `{image_url}` thôi → SELECT thêm để mirror version+
+        // updated_at (trigger đã bump). Tránh lần expense edit kế stale base_version.
+        const { data: bumped } = await supabase
+          .from('expenses')
+          .select('version, updated_at')
+          .eq('id', expense.id)
+          .maybeSingle();
+        if (bumped) {
+          await mirrorServerRow('expenses', expense.id, bumped, { image_url: commit.image_url });
+        } else {
+          // Fallback: nếu SELECT fail (rare), giữ local consistent với image_url ít nhất.
+          await db.runAsync(
+            `UPDATE expenses SET image_url = ?, updated_at = ? WHERE id = ?`,
+            [commit.image_url, new Date().toISOString(), expense.id]
+          );
+        }
         await deleteFile(row.local_path);
         await pendingImageUploads.remove(row.expense_id);
         succeeded++;
@@ -178,9 +191,15 @@ export async function _forceSyncImageUrl(
   expenseId: string,
   imageUrl: string | null
 ): Promise<void> {
-  const { error } = await supabase
+  // .select() để capture version+updated_at bị trigger bump → write-back local mirror.
+  const { data, error } = await supabase
     .from('expenses')
     .update({ image_url: imageUrl })
-    .eq('id', expenseId);
+    .eq('id', expenseId)
+    .select('version, updated_at')
+    .maybeSingle();
   if (error) throw error;
+  if (data) {
+    await mirrorServerRow('expenses', expenseId, data, { image_url: imageUrl });
+  }
 }

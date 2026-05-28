@@ -1,4 +1,4 @@
-import { CloudUpload, type LucideIcon, WifiOff } from 'lucide-react-native';
+import { WifiOff } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -10,19 +10,19 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
-import { useQueueStats } from '../../hooks/useQueueStats';
 import { useAppStore } from '../../stores/app.store';
 import { AppText } from '../ui/AppText';
 
 /**
- * Banner top-of-screen hiển thị 2 trạng thái:
- *   1. Offline: cảnh báo + số mutation đang chờ sync
- *   2. Online + đang sync: hiện "Đang đồng bộ N thao tác" (subtle, primarySoft)
+ * Banner top-of-screen — chỉ hiện 1 trạng thái duy nhất: offline.
  *
- * Online + không có pending → height collapse về 0 (KHÔNG unmount) để tránh
- * layout shift cho content phía dưới. NetInfo subscription nằm ở
- * `initNetworkSync()` (src/utils/networkSync.ts) — banner thuần observer
- * đọc store.
+ * Online (kể cả khi đang sync hoặc còn pending) → height collapse về 0
+ * (KHÔNG unmount) để tránh layout shift. User low-tech không cần biết
+ * sync mechanism — chỉ cần biết khi mất mạng. Conflict flow do
+ * ConflictResolverModal + Settings badge xử lý riêng.
+ *
+ * NetInfo subscription nằm ở `initNetworkSync()`
+ * (src/utils/networkSync.ts) — banner thuần observer đọc store.
  */
 
 const ANIM_DURATION_MS = 180;
@@ -30,46 +30,20 @@ const VPAD = 6;
 
 type BannerState = {
   message: string;
-  bgKey: 'warning' | 'primarySoft';
-  fgKey: 'inverseForeground' | 'foreground';
-  Icon: LucideIcon;
-  isOffline: boolean;
 };
 
 export function OfflineBanner() {
   const isOnline = useAppStore((s) => s.isOnline);
-  const isSyncing = useAppStore((s) => s.isSyncing);
   const setBannerVisible = useAppStore((s) => s.setBannerVisible);
   const c = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { pendingCount } = useQueueStats();
 
   const state = useMemo<BannerState | null>(() => {
     if (!isOnline) {
-      return {
-        message:
-          pendingCount > 0
-            ? `Ngoại tuyến — ${pendingCount} thao tác chờ đồng bộ`
-            : 'Ngoại tuyến — dữ liệu sẽ đồng bộ khi có mạng',
-        bgKey: 'warning',
-        fgKey: 'inverseForeground',
-        Icon: WifiOff,
-        isOffline: true,
-      };
-    }
-    if (isSyncing || pendingCount > 0) {
-      return {
-        message: isSyncing
-          ? `Đang đồng bộ${pendingCount > 0 ? ` ${pendingCount} thao tác` : '...'}`
-          : `${pendingCount} thao tác chờ đồng bộ`,
-        bgKey: 'primarySoft',
-        fgKey: 'foreground',
-        Icon: CloudUpload,
-        isOffline: false,
-      };
+      return { message: 'Ngoại tuyến' };
     }
     return null;
-  }, [isOnline, isSyncing, pendingCount]);
+  }, [isOnline]);
 
   // Publish visibility cho screens consume: Home/header/sync-conflicts bỏ
   // `insets.top` redundant khi banner đã cover status bar area. Dùng `state`
@@ -108,15 +82,15 @@ export function OfflineBanner() {
 
   if (!displayState) return null;
 
-  const { message, bgKey, fgKey, Icon, isOffline } = displayState;
-  const backgroundColor = c[bgKey];
-  const foregroundColor = c[fgKey];
+  const { message } = displayState;
+  const backgroundColor = c.warning;
+  const foregroundColor = c.inverseForeground;
 
   return (
     <Animated.View style={[styles.container, animatedContainerStyle]}>
       <View
         onLayout={onContentLayout}
-        accessibilityRole={isOffline ? 'alert' : undefined}
+        accessibilityRole="alert"
         accessibilityLiveRegion="polite"
         style={[
           styles.banner,
@@ -127,7 +101,7 @@ export function OfflineBanner() {
           },
         ]}
       >
-        <Icon size={14} color={foregroundColor} strokeWidth={2.2} />
+        <WifiOff size={14} color={foregroundColor} strokeWidth={2.2} />
         <AppText variant="caption" weight="semibold" style={{ color: foregroundColor }}>
           {message}
         </AppText>

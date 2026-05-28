@@ -1,6 +1,7 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
@@ -148,17 +149,11 @@ export async function updateDisplayName(name: string): Promise<void> {
     });
     if (error) throw error;
 
-    // Write-back local mirror với server's exact version + updated_at: tránh
-    // stale value làm lần update kế throw P0410 (server's trigger bump không
-    // được client biết → lần kế gửi base_version cũ → version_conflict).
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as { version: number; updated_at: string })
-      : null;
+    // Write-back: mirror version + updated_at server bump (xem
+    // src/repositories/writeback.ts cho lý do).
+    const serverRow = extractServerRow<{ version: number; updated_at: string }>(data);
     if (serverRow) {
-      await db.runAsync(
-        `UPDATE users SET display_name = ?, version = ?, updated_at = ? WHERE id = ?`,
-        [trimmed, serverRow.version, serverRow.updated_at, userId]
-      );
+      await mirrorServerRow('users', userId, serverRow, { display_name: trimmed });
     }
 
     // Auth metadata is secondary — DB is source of truth. Best-effort.
@@ -240,17 +235,14 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<void
     });
     if (error) throw error;
 
-    // Write-back local mirror với server's settings + updated_at: tránh stale
-    // base_updated_at làm lần toggle kế throw P0410 lww_stale. Dùng exact
-    // server value (vì server's NOW() ≠ client's now() do RTT).
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as { settings: Record<string, unknown>; updated_at: string })
-      : null;
+    // Write-back: mirror settings + version + updated_at.
+    const serverRow = extractServerRow<{
+      settings: Record<string, unknown>;
+      version: number;
+      updated_at: string;
+    }>(data);
     if (serverRow) {
-      await db.runAsync(
-        `UPDATE users SET settings = ?, updated_at = ? WHERE id = ?`,
-        [JSON.stringify(serverRow.settings), serverRow.updated_at, userId]
-      );
+      await mirrorServerRow('users', userId, serverRow, { settings: serverRow.settings });
     }
   } catch (err) {
     if (isNetworkError(err)) {
@@ -262,7 +254,12 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<void
   }
 }
 
-/** Update FCM token for push notifications. Pass `null` to clear on logout. */
+/** Update FCM token for push notifications. Pass `null` to clear on logout.
+ *
+ * Server-side trigger `trg_users_bump_version` skip bump version+updated_at
+ * khi chỉ `fcm_token` đổi (migration 20260528140000) → KHÔNG cần write-back
+ * local mirror để giữ optimistic concurrency / LWW base sync với server.
+ */
 export async function updateFcmToken(token: string | null): Promise<void> {
   const userId = await getAuthUserId();
   if (!userId) return;

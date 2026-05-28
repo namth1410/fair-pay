@@ -5,7 +5,6 @@ export { AppTextField } from './AppTextField';
 export { Avatar } from './Avatar';
 export { BouncyDialog } from './BouncyDialog';
 export { ChipPicker } from './ChipPicker';
-export { ConfirmDialog } from './ConfirmDialog';
 export { DismissKeyboardView } from './DismissKeyboardView';
 export { EmptyState } from './EmptyState';
 export { FormReveal } from './FormReveal';

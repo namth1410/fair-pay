@@ -67,6 +67,40 @@ android/app/build/outputs/bundle/release/app-release.aab
 
 Upload file `.aab` này lên Google Play Console → Production → Create new release.
 
+## Build Android APK (sideload / test nhanh)
+
+Dùng khi cần file `.apk` để chia sẻ trực tiếp (gửi tester qua link, sideload máy thật) — KHÔNG upload Play Console.
+
+### APK release (ký bằng keystore `fairpay`)
+
+**PowerShell (Windows):**
+
+```powershell
+cd android; .\gradlew.bat clean assembleRelease
+```
+
+**Bash (Git Bash / WSL / Mac / Linux):**
+
+```bash
+cd android && ./gradlew clean assembleRelease
+```
+
+Output:
+
+```
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+APK đã ký bằng keystore master (cùng SHA-1 với AAB) → Google Sign-In / FCM hoạt động bình thường.
+
+### APK debug (dev build, không minify)
+
+```powershell
+cd android; .\gradlew.bat assembleDebug
+```
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`. Cũng được ký bằng keystore `fairpay` (theo `signingConfigs` trong [android/app/build.gradle](android/app/build.gradle)) → install đè trực tiếp APK release/debug không cần uninstall.
+
 ## Prebuild (regenerate native code)
 
 Chỉ chạy khi sửa native config trong `app.json` — ví dụ: thêm/xóa plugin Expo, đổi permission text, đổi `icon`/`splash`/`adaptiveIcon`, đổi `android.package` / `ios.bundleIdentifier`, thêm intent filter / URL scheme. **KHÔNG cần prebuild khi chỉ sửa code JS/TS.**
@@ -174,4 +208,5 @@ keytool -list -v -keystore <FAIRPAY_KEYSTORE_PATH> -alias <FAIRPAY_KEY_ALIAS>
 
 ## Khác
 
-- Privacy policy / Xóa tài khoản: https://namth1410.github.io/fairpay-privacy/delete-account.html
+- Privacy policy: https://namth1410.github.io/fairpay-legal/privacy-policy.html
+- Xóa tài khoản: https://namth1410.github.io/fairpay-legal/delete-account.html

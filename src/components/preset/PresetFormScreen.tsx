@@ -1,7 +1,7 @@
-import { router, Stack } from 'expo-router';
+import { router, Stack, useNavigation } from 'expo-router';
 import { Button } from 'heroui-native';
 import { Check, ChevronLeft } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import type { PresetSplitEntry } from '../../types/database.types';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { showSuccess } from '../../utils/toast';
-import { AppText, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
+import { AppText, BouncyDialog, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
 interface PresetFormScreenProps {
@@ -42,6 +42,7 @@ const SPLIT_OPTIONS: { key: SplitOpt; label: string }[] = [
 
 export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
   const c = useAppTheme();
+  const navigation = useNavigation();
   const { addPreset, editPreset, presets, loaded: presetsLoaded } = usePresetStore();
   const groups = useGroupStore((s) => s.groups);
   const loadGroups = useGroupStore((s) => s.loadGroups);
@@ -87,14 +88,97 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
   const [busy, setBusy] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
   const [splitFocusedMemberId, setSplitFocusedMemberId] = useState<string | null>(null);
+  const [exitConfirm, setExitConfirm] = useState(false);
+  const submittedRef = useRef(false);
+  const bypassExitGuardRef = useRef(false);
 
   // Edit mode safety: nếu presetId được cung cấp nhưng store đã load và không
   // tìm thấy preset → preset có thể đã bị xóa hoặc id sai → quay về list.
   useEffect(() => {
     if (presetId && presetsLoaded && !preset) {
+      bypassExitGuardRef.current = true;
       router.back();
     }
   }, [presetId, presetsLoaded, preset]);
+
+  // So sánh state hiện tại với giá trị ban đầu (preset hoặc empty) — KHÔNG dùng
+  // selectedGroupId vì nó là derived async từ trip lookup, có thể flip null→value
+  // sau khi mount mà không phải user-driven.
+  const isDirty = useMemo(() => {
+    const initTitle = preset?.title ?? '';
+    const initAmount = preset ? String(preset.amount) : '';
+    const initScope: Scope = preset?.trip_id ? 'trip' : 'global';
+    const initTripId = preset?.trip_id ?? null;
+    const initPaidBy = preset?.paid_by_member_id ?? null;
+    const initSplitOpt: SplitOpt = preset?.split_type ?? 'none';
+    const initSplitMembers = new Set(
+      (preset?.splits_data ?? []).map((s) => s.member_id),
+    );
+    const initRatios: Record<string, string> = {};
+    const initCustom: Record<string, string> = {};
+    (preset?.splits_data ?? []).forEach((s) => {
+      if (s.ratio !== undefined) initRatios[s.member_id] = String(s.ratio);
+      if (s.amount !== undefined) initCustom[s.member_id] = String(s.amount);
+    });
+
+    if (title.trim() !== initTitle.trim()) return true;
+    if (amountStr !== initAmount) return true;
+    if (scope !== initScope) return true;
+    if (selectedTripId !== initTripId) return true;
+    if (paidByMemberId !== initPaidBy) return true;
+    if (splitOpt !== initSplitOpt) return true;
+    if (selectedSplitMembers.size !== initSplitMembers.size) return true;
+    for (const id of selectedSplitMembers) {
+      if (!initSplitMembers.has(id)) return true;
+    }
+    const ratioKeys = new Set([...Object.keys(ratios), ...Object.keys(initRatios)]);
+    for (const k of ratioKeys) {
+      if ((ratios[k] || '') !== (initRatios[k] || '')) return true;
+    }
+    const customKeys = new Set([
+      ...Object.keys(customAmounts),
+      ...Object.keys(initCustom),
+    ]);
+    for (const k of customKeys) {
+      if ((customAmounts[k] || '') !== (initCustom[k] || '')) return true;
+    }
+    return false;
+  }, [
+    preset,
+    title,
+    amountStr,
+    scope,
+    selectedTripId,
+    paidByMemberId,
+    splitOpt,
+    selectedSplitMembers,
+    ratios,
+    customAmounts,
+  ]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener(
+      'beforeRemove' as never,
+      ((e: { preventDefault: () => void }) => {
+        if (bypassExitGuardRef.current) {
+          bypassExitGuardRef.current = false;
+          return;
+        }
+        if (!isDirty || busy || submittedRef.current) return;
+        e.preventDefault();
+        setExitConfirm(true);
+      }) as never,
+    );
+    return unsub;
+  }, [navigation, isDirty, busy]);
+
+  // KHÔNG re-dispatch action cũ trong native-stack (double-pop thoát app).
+  // Bật cờ bypass + router.back() mới — listener phía trên skip nhờ cờ và pop 1 lần.
+  const handleConfirmExit = useCallback(() => {
+    setExitConfirm(false);
+    bypassExitGuardRef.current = true;
+    router.back();
+  }, []);
 
   useEffect(() => {
     if (groups.length === 0) loadGroups().catch(() => {});
@@ -349,6 +433,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
         await addPreset(params);
         showSuccess('Đã thêm preset', trimmed);
       }
+      submittedRef.current = true;
       router.back();
     } catch (e: unknown) {
       setError(getErrorMessage(e));
@@ -654,6 +739,31 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
           }
         }}
       />
+
+      <BouncyDialog
+        isOpen={exitConfirm}
+        onClose={() => setExitConfirm(false)}
+      >
+        <BouncyDialog.Title>Thoát mà chưa lưu?</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          Dữ liệu đã nhập sẽ bị mất. Bạn có chắc muốn thoát?
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setExitConfirm(false)}>
+            <Button.Label>Ở lại</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onPress={() => {
+              setExitConfirm(false);
+              handleConfirmExit();
+            }}
+          >
+            <Button.Label>Thoát</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
     </SafeAreaView>
   );
 }

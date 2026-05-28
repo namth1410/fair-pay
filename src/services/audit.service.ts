@@ -33,6 +33,7 @@ const ACTION_LABELS: Record<string, string> = {
   'member.join_rejected':  'Từ chối yêu cầu tham gia',
   'member.virtual_add':    'Thêm thành viên ảo',
   'member.rename':         'Đổi tên thành viên',
+  'member.removed':        'Xóa thành viên',
 };
 
 export function getActionLabel(action: string): string {

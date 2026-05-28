@@ -65,6 +65,69 @@ biến mất.
   (deleted_at đã có).
 - KHÔNG có lỗi, queue mark done.
 
+## Phase 2b — Cross-op race trên cùng entity
+
+Các scenario này verify rằng khi 1 entity có queue item pending, op tiếp theo trên cùng
+entity sẽ enqueue thay vì đi Flow A trực tiếp → tránh race do FIFO replay đảm bảo causal
+order. Pattern check: `syncQueue.hasPendingForEntity(entityType, entityId)`.
+
+### 2b.1. P1+P2 zombie expense (createExpense + deleteExpense)
+**Step**: Mạng tốt. Tạo expense X trong trip. UI hiện ngay. Trong 2-3 giây đầu (sync chưa
+flush queue), tap "Xóa" expense X → confirm.
+**Expected**:
+- `deleteExpense` thấy `CREATE_EXPENSE` pending trên `expenses/<X>` → enqueue
+  `DELETE_EXPENSE` thay vì Flow A.
+- Queue replay theo FIFO: CREATE_EXPENSE rồi DELETE_EXPENSE → server có expense với
+  `deleted_at` set ngay từ insert path (hoặc soft-delete sau insert).
+- Pull worker không resurrect expense vào local. UI không hiện lại expense X.
+- **Bug regression**: Trước fix, ~5-10s sau xóa, expense X xuất hiện lại trong list.
+
+### 2b.2. P1+P2 mạng yếu (createTrip + deleteTrip)
+**Step**: Bật network throttle (Charles "3G Bad" hoặc Android Studio Network: poor).
+1. Tap "Tạo chuyến" → đợi timeout. Trip xuất hiện local (optimistic).
+2. Tắt throttle → mạng phục hồi nhưng SyncBridge chưa fire (5s rate-limit).
+3. Vào trip vừa tạo → tap "Xóa chuyến đi".
+
+**Expected**:
+- `deleteTrip` thấy `CREATE_TRIP` pending → enqueue `DELETE_TRIP`.
+- Queue replay: CREATE_TRIP rồi DELETE_TRIP. Final server state: trip soft-deleted.
+- **Bug regression**: Trước fix, deleteTrip RPC raise "trip not found" → UI lỗi confusing.
+
+### 2b.3. P7+P7 pin/unpin race (pinTrip + unpinTrip)
+**Step**: Bật network throttle.
+1. Tap pin trip X → đợi timeout. UI hiện pin icon (optimistic).
+2. Tắt throttle (trong 5s rate-limit của SyncBridge).
+3. Tap unpin trip X.
+
+**Expected**:
+- `unpinTrip` thấy `PIN_TRIP` pending trên `pinned_trips/<X>` → enqueue `UNPIN_TRIP`.
+- FIFO replay: PIN_TRIP rồi UNPIN_TRIP → server final state: unpinned. Local cũng được
+  DELETE qua `writeLocal()` trong Flow B.
+- **Bug regression**: Trước fix, unpinTrip Flow A success → server unpinned, sync replay
+  PIN_TRIP → server pinned. Final state ≠ intent của user.
+
+### 2b.4. Flow A write-back local cho pin (mạng tốt)
+**Step**:
+1. Mạng ổn định. Pin trip X.
+2. Ngay sau khi UI confirm pinned, tắt mạng.
+3. Force-kill app rồi mở lại (vẫn offline).
+
+**Expected**:
+- Home hiển thị pin card của trip X từ SQLite local.
+- **Bug regression**: Trước fix, Flow A success KHÔNG INSERT vào local `pinned_trips` →
+  cold-start offline không thấy pin card cho tới khi pull worker chạy.
+
+### 2b.5. P2 cross-op P2 (clearTrip + deleteTrip)
+**Step**: Tạo trip với 3 expense + 1 payment. Mạng yếu:
+1. Tap "Xóa dữ liệu chuyến" (clearTrip) → timeout → queue.
+2. Mạng phục hồi (chưa sync).
+3. Tap "Xóa chuyến đi" (deleteTrip).
+
+**Expected**:
+- `deleteTrip` thấy `CLEAR_TRIP` pending trên `trips/<X>` → enqueue `DELETE_TRIP`.
+- Replay: CLEAR_TRIP (soft-del expenses + payments) rồi DELETE_TRIP (soft-del trip cascade).
+- Server state cuối: trip + children đều `deleted_at`.
+
 ## Phase 3 — Conflict resolution
 
 ### 3.1. Rename trip 2 device offline

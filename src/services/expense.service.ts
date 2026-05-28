@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import * as userRepo from '../repositories/user.repo';
+import { mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
 import { run as runSync } from '../sync/syncEngine';
@@ -16,11 +17,9 @@ import { isNetworkError } from '../utils/network';
 import { formatNotificationTitle } from '../utils/notificationFormat';
 import type { SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
-import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
 import { removeExpenseImage } from './expenseImage.service';
 import { assertRole } from './group.service';
-import { notifyExpenseEvent } from './notification.service';
 import type { Payment } from './payment.service';
 
 export interface Expense {
@@ -318,6 +317,12 @@ export async function deleteExpense(expenseId: string): Promise<void> {
   }
   await assertRole(localExp.group_id, ['admin']);
 
+  // Fetch actor_name từ local mirror (offline-friendly) để truyền vào RPC cho
+  // notify dedup title. Cả online lẫn replay queue path đều dùng.
+  const userId = await getAuthUserId();
+  const localUser = userId ? await userRepo.getById(userId) : null;
+  const actorName = localUser?.displayName?.trim() || 'Thành viên';
+
   const enqueueLocal = async (): Promise<void> => {
     await db.runAsync(
       `UPDATE expenses
@@ -332,24 +337,39 @@ export async function deleteExpense(expenseId: string): Promise<void> {
       client_request_id: clientRequestId,
       payload: {
         expense_id: expenseId,
+        actor_name: actorName,
         client_request_id: clientRequestId,
         client_created_at: clientCreatedAt,
       },
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.EXPENSE, expenseId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase
-      .from('expenses')
-      .update({ deleted_at: clientCreatedAt })
-      .eq('id', expenseId);
+    const { data, error } = await supabase.rpc('delete_expense', {
+      p_expense_id: expenseId,
+      p_actor_name: actorName,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: clientCreatedAt,
+    });
     if (error) throw error;
 
+    // delete_expense RPC RETURNS jsonb { expense_id, was_deleted, group_id, trip_id, version, updated_at }
+    if (data && typeof data === 'object' && 'version' in data && 'updated_at' in data) {
+      const row = data as { version: number; updated_at: string };
+      await mirrorServerRow('expenses', expenseId, row, { deleted_at: clientCreatedAt });
+    }
+
+    // RPC server-side đã log audit `expense.delete` + notify `expense.deleted` atomic.
     // Best-effort R2 cleanup nếu expense có ảnh — không block kết quả delete.
     if (localExp.image_url) {
       removeExpenseImage(expenseId).catch((err) => {
@@ -358,34 +378,6 @@ export async function deleteExpense(expenseId: string): Promise<void> {
         }
       });
     }
-
-    // Audit + notify (best-effort)
-    const userId = await getAuthUserId();
-    if (!userId) return;
-    const { data: actor } = await supabase
-      .from('users')
-      .select('display_name')
-      .eq('id', userId)
-      .maybeSingle();
-    const actorName = actor?.display_name || 'Thành viên';
-    await Promise.all([
-      logAction({
-        groupId: localExp.group_id,
-        tripId: localExp.trip_id,
-        action: 'expense.delete',
-        targetId: expenseId,
-        beforeData: { title: localExp.title, amount: localExp.amount },
-      }),
-      notifyExpenseEvent('expense.deleted', {
-        groupId: localExp.group_id,
-        tripId: localExp.trip_id,
-        actorId: userId,
-        actorName,
-        expenseId,
-        expenseTitle: localExp.title,
-        amount: localExp.amount,
-      }),
-    ]);
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[deleteExpense] network fail, queueing offline');

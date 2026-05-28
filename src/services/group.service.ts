@@ -5,6 +5,7 @@ import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import * as groupMemberRepo from '../repositories/groupMember.repo';
 import * as userRepo from '../repositories/user.repo';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
 import {
@@ -245,7 +246,49 @@ export async function createGroup(name: string): Promise<Group> {
       p_client_created_at: clientCreatedAt,
     });
     if (error) throw error;
-    return data as Group;
+
+    // RPC RETURNS public.groups row → write-back đầy đủ vào local mirror để
+    // updateGroup ngay sau đó đọc đúng version + invite_code (server source-of-truth).
+    // Cũng INSERT group_members row của admin để in-trip flows hoạt động ngay.
+    const server = data as Group & {
+      version: number;
+      updated_at: string;
+      avatar_url: string | null;
+    };
+    const db = getDatabase();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT INTO groups
+          (id, name, avatar_url, created_by, invite_code, version, client_request_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            avatar_url = excluded.avatar_url,
+            invite_code = excluded.invite_code,
+            version = excluded.version,
+            updated_at = excluded.updated_at`,
+        [
+          server.id,
+          server.name,
+          server.avatar_url ?? null,
+          server.created_by,
+          server.invite_code,
+          server.version,
+          clientRequestId,
+          server.created_at,
+          server.updated_at,
+        ]
+      );
+      await db.runAsync(
+        `INSERT INTO group_members
+          (id, group_id, user_id, display_name, role, is_virtual, version,
+           client_request_id, joined_at, updated_at)
+         VALUES (?, ?, ?, ?, 'admin', 0, 1, ?, ?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+        [adminMemberId, server.id, userId, adminDisplayName, clientRequestId, clientCreatedAt, clientCreatedAt]
+      );
+    });
+    return server as Group;
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[createGroup] network fail, queueing offline');
@@ -463,29 +506,18 @@ export async function addVirtualMember(
 
   try {
     const { data, error } = await supabase
-      .from('group_members')
-      .insert({
-        id: memberId,
-        group_id: groupId,
-        user_id: null,
-        display_name: displayName,
-        role: 'member',
-        is_virtual: true,
-        client_request_id: clientRequestId,
+      .rpc('add_virtual_member', {
+        p_id: memberId,
+        p_group_id: groupId,
+        p_display_name: displayName,
+        p_client_request_id: clientRequestId,
+        p_client_created_at: now,
       })
-      .select()
       .single();
 
     if (error) throw error;
-
-    await logAction({
-      groupId,
-      action: 'member.virtual_add',
-      targetId: data.id,
-      afterData: { display_name: displayName, is_virtual: true },
-    });
-
-    return data;
+    // RPC server-side đã log audit `member.virtual_add` atomic.
+    return data as GroupMember;
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[addVirtualMember] network fail, queueing offline');
@@ -810,18 +842,24 @@ export async function removeMember(memberId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.GROUP_MEMBER, memberId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase
-      .from('group_members')
-      .update({ left_at: now })
-      .eq('id', memberId)
-      .is('left_at', null);
+    const { error } = await supabase.rpc('remove_member', {
+      p_member_id: memberId,
+      p_client_request_id: clientRequestId,
+      p_client_created_at: now,
+    });
     if (error) throw error;
+    // RPC server-side đã log audit `member.removed` atomic.
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[removeMember] network fail, queueing offline');
@@ -911,16 +949,10 @@ export async function renameMember(
     });
     if (error) throw error;
 
-    // Write-back local mirror với server's version + updated_at: tránh lần
-    // update kế dùng stale base_version → P0410 version_conflict.
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as { version: number; updated_at: string })
-      : null;
+    // Write-back: mirror version + updated_at (xem src/repositories/writeback.ts).
+    const serverRow = extractServerRow<{ version: number; updated_at: string }>(data);
     if (serverRow) {
-      await db.runAsync(
-        `UPDATE group_members SET display_name = ?, version = ?, updated_at = ? WHERE id = ?`,
-        [trimmed, serverRow.version, serverRow.updated_at, memberId]
-      );
+      await mirrorServerRow('group_members', memberId, serverRow, { display_name: trimmed });
     }
   } catch (err) {
     if (isNetworkError(err)) {
@@ -999,16 +1031,19 @@ export async function updateGroup(
     });
     if (error) throw error;
 
-    // Write-back local mirror với server's version + updated_at: tránh lần
-    // update kế dùng stale base_version → P0410 version_conflict.
-    const serverRow = Array.isArray(data) && data.length > 0
-      ? (data[0] as { version: number; updated_at: string })
-      : null;
-    if (serverRow) {
-      await db.runAsync(
-        `UPDATE groups SET name = ?, version = ?, updated_at = ? WHERE id = ?`,
-        [trimmed, serverRow.version, serverRow.updated_at, groupId]
-      );
+    // Write-back local mirror: tránh stale base_version cho lần update kế.
+    // Mirror cả `name + avatar_url` server trả về để local đồng bộ tuyệt đối.
+    const row = extractServerRow<{
+      version: number;
+      updated_at: string;
+      name: string;
+      avatar_url: string | null;
+    }>(data);
+    if (row) {
+      await mirrorServerRow('groups', groupId, row, {
+        name: row.name,
+        avatar_url: row.avatar_url,
+      });
     }
   } catch (err) {
     if (isNetworkError(err)) {
@@ -1232,18 +1267,29 @@ export async function deleteGroup(groupId: string): Promise<void> {
     });
   };
 
-  if (!useAppStore.getState().isOnline) {
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.GROUP, groupId);
+  if (!isOnline || hasPending) {
     await enqueueLocal();
+    if (isOnline) {
+      void runSync().catch(() => {});
+    }
     return;
   }
 
   try {
-    const { error } = await supabase
+    // .select() để capture version+updated_at bị trigger bump → write-back local mirror.
+    const { data, error } = await supabase
       .from('groups')
       .update({ deleted_at: now })
       .eq('id', groupId)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .select('version, updated_at, deleted_at')
+      .maybeSingle();
     if (error) throw error;
+    if (data) {
+      await mirrorServerRow('groups', groupId, data, { deleted_at: data.deleted_at });
+    }
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[deleteGroup] network fail, queueing offline');
