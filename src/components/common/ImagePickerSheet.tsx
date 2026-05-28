@@ -1,6 +1,8 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet } from 'heroui-native';
-import { Camera, ImageIcon, Trash2 } from 'lucide-react-native';
+import Camera from 'lucide-react-native/dist/esm/icons/camera';
+import ImageIcon from 'lucide-react-native/dist/esm/icons/image';
+import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';

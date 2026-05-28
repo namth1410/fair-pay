@@ -1,5 +1,5 @@
 import { Button } from 'heroui-native';
-import { Pencil } from 'lucide-react-native';
+import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 

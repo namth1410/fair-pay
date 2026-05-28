@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react-native';
+import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import ReanimatedSwipeable, {

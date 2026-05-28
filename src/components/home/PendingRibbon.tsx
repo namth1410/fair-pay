@@ -1,4 +1,4 @@
-import { X } from 'lucide-react-native';
+import X from 'lucide-react-native/dist/esm/icons/x';
 import { memo, useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {

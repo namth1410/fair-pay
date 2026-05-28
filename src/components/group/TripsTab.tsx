@@ -1,5 +1,5 @@
 import { Button } from 'heroui-native';
-import { MapPin } from 'lucide-react-native';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
 import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 

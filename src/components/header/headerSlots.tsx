@@ -1,5 +1,7 @@
 import { useNavigation } from 'expo-router';
-import { ArrowLeft, FileDown, Plus } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/dist/esm/icons/arrow-left';
+import FileDown from 'lucide-react-native/dist/esm/icons/file-down';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 

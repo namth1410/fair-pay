@@ -1,4 +1,5 @@
-import { ChevronRight, Users } from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/dist/esm/icons/chevron-right';
+import Users from 'lucide-react-native/dist/esm/icons/users';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {

@@ -1,4 +1,4 @@
-import { Scale } from 'lucide-react-native';
+import Scale from 'lucide-react-native/dist/esm/icons/scale';
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 

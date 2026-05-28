@@ -369,6 +369,11 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - 4 property đọc từ `~/.gradle/gradle.properties` (global, ngoài repo, KHÔNG commit): `FAIRPAY_KEYSTORE_PATH`, `FAIRPAY_KEYSTORE_PASSWORD`, `FAIRPAY_KEY_ALIAS`, `FAIRPAY_KEY_PASSWORD`.
 - Lý do dùng chung keystore cho debug: SHA-1 fingerprint duy nhất → Google Sign-In OAuth client chỉ cần whitelist 1 SHA-1 cho mọi build local. KHÔNG dùng `~/.android/debug.keystore` mặc định.
 - **Nếu chạy `expo prebuild` (đặc biệt `--clean`)**: cấu hình `signingConfigs.fairpay` + `buildTypes.debug.signingConfig` sẽ bị **OVERWRITE** về template Expo mặc định (`debug` xài `debug.keystore`, `release` không có signing). Phải restore lại block trên + giữ `versionCode` mới nhất. Bug đã từng xảy ra → xem [project_android_signing.md](C:/Users/ADMIN/.claude/projects/d--fair-pay/memory/project_android_signing.md).
+- **`expo prebuild --clean` bị `EBUSY: resource busy or locked, rmdir 'android'` trên Windows khi VS Code đang mở project**: VS Code file watcher giữ directory handle vào `android/` (kể cả sau khi Expo đã xóa được contents bên trong) → `rmdir` folder gốc fail. Tệ hơn: lệnh `expo prebuild` cũng zombie không exit hẳn, giữ thêm lock chồng lên — retry lần 2 còn fail nặng hơn. Cách xử lý theo thứ tự ưu tiên:
+  1. **Skip `--clean`**: nếu `android/` đã rỗng hoặc gần rỗng (lần fail trước Expo đã kịp xóa contents), chạy `npx expo prebuild --platform android` (merge mode) — Expo generate vào folder hiện tại, không cần xóa folder gốc.
+  2. **Collapse folder `android` trong VS Code Explorer sidebar** (click mũi tên ▼) → file watcher release directory handle → retry `--clean`.
+  3. **Đóng hẳn VS Code** → mở PowerShell standalone từ Start Menu → `cd C:\Users\tranh\fair-pay` → chạy `--clean` → mở lại VS Code.
+  4. Trước khi retry: kill zombie process lần fail trước bằng `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'expo prebuild' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }` + `adb kill-server` (adb daemon hay khóa folder phụ).
 
 ### Firebase services (Android-only)
 - 2 SDK đang dùng trong [android/app/build.gradle](android/app/build.gradle) Firebase BoM block: `firebase-messaging` (FCM push) + `firebase-analytics` (DAU/MAU/country/version, auto-collected events only — KHÔNG có JS code). Cùng share `google-services.json` + BoM 34.13.0.

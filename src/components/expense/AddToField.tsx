@@ -1,4 +1,5 @@
-import { Plus, X } from 'lucide-react-native';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
+import X from 'lucide-react-native/dist/esm/icons/x';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 

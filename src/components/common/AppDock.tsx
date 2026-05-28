@@ -1,6 +1,10 @@
 import { BlurView } from 'expo-blur';
 import { router, usePathname } from 'expo-router';
-import { Bell, Bookmark, Home, Plus, Settings } from 'lucide-react-native';
+import Bell from 'lucide-react-native/dist/esm/icons/bell';
+import Bookmark from 'lucide-react-native/dist/esm/icons/bookmark';
+import Home from 'lucide-react-native/dist/esm/icons/house';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
+import Settings from 'lucide-react-native/dist/esm/icons/settings';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,

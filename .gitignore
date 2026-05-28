@@ -48,3 +48,5 @@ play-store-key.json
 android/
 uniwind-types.d.ts
 .bundle-analysis
+.bundle-analysis-after
+.bundle-analysis-hbc

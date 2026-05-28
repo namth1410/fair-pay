@@ -1,6 +1,7 @@
 import { router, Stack, useNavigation } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Check, ChevronLeft } from 'lucide-react-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
+import ChevronLeft from 'lucide-react-native/dist/esm/icons/chevron-left';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';

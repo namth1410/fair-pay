@@ -1,16 +1,14 @@
-import {
-  Bell,
-  CheckCircle2,
-  CreditCard,
-  PencilLine,
-  Receipt,
-  Sparkles,
-  Trash2,
-  UserMinus,
-  UserPlus,
-  Users,
-  XCircle,
-} from 'lucide-react-native';
+import Bell from 'lucide-react-native/dist/esm/icons/bell';
+import CheckCircle2 from 'lucide-react-native/dist/esm/icons/circle-check';
+import CreditCard from 'lucide-react-native/dist/esm/icons/credit-card';
+import PencilLine from 'lucide-react-native/dist/esm/icons/pencil-line';
+import Receipt from 'lucide-react-native/dist/esm/icons/receipt';
+import Sparkles from 'lucide-react-native/dist/esm/icons/sparkles';
+import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
+import UserMinus from 'lucide-react-native/dist/esm/icons/user-minus';
+import UserPlus from 'lucide-react-native/dist/esm/icons/user-plus';
+import Users from 'lucide-react-native/dist/esm/icons/users';
+import XCircle from 'lucide-react-native/dist/esm/icons/circle-x';
 import { memo, useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import ReanimatedSwipeable, {

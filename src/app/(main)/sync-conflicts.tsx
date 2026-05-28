@@ -4,7 +4,7 @@
 // Mở từ Settings hoặc từ ConflictResolverModal "Xem tất cả".
 
 import { Stack } from 'expo-router';
-import { CheckCircle2 } from 'lucide-react-native';
+import CheckCircle2 from 'lucide-react-native/dist/esm/icons/circle-check';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

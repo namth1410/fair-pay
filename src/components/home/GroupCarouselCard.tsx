@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react-native';
+import Users from 'lucide-react-native/dist/esm/icons/users';
 import { memo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {

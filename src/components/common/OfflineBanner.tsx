@@ -1,4 +1,4 @@
-import { WifiOff } from 'lucide-react-native';
+import WifiOff from 'lucide-react-native/dist/esm/icons/wifi-off';
 import { useEffect, useMemo, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import Animated, {

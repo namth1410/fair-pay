@@ -1,9 +1,7 @@
-import {
-  AlignCenterHorizontal,
-  LayoutGrid,
-  List,
-  type LucideIcon,
-} from 'lucide-react-native';
+import AlignCenterHorizontal from 'lucide-react-native/dist/esm/icons/align-center-horizontal';
+import LayoutGrid from 'lucide-react-native/dist/esm/icons/layout-grid';
+import List from 'lucide-react-native/dist/esm/icons/list';
+import type { LucideIcon } from 'lucide-react-native';
 import { memo, useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {

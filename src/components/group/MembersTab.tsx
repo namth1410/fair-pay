@@ -1,5 +1,6 @@
 import { Button } from 'heroui-native';
-import { Clock, Share2 } from 'lucide-react-native';
+import Clock from 'lucide-react-native/dist/esm/icons/clock';
+import Share2 from 'lucide-react-native/dist/esm/icons/share-2';
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 

@@ -1,4 +1,4 @@
-import { X } from 'lucide-react-native';
+import X from 'lucide-react-native/dist/esm/icons/x';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,

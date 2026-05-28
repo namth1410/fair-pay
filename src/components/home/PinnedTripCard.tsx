@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { MapPin, Pin } from 'lucide-react-native';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import Pin from 'lucide-react-native/dist/esm/icons/pin';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {

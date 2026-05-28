@@ -1,5 +1,6 @@
 import { Button } from 'heroui-native';
-import { Pin, Plus } from 'lucide-react-native';
+import Pin from 'lucide-react-native/dist/esm/icons/pin';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
 import { memo } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';

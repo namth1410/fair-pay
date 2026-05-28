@@ -1,4 +1,4 @@
-import { Clock } from 'lucide-react-native';
+import Clock from 'lucide-react-native/dist/esm/icons/clock';
 import React, { useMemo } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 

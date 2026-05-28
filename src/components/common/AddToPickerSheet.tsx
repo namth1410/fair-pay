@@ -1,14 +1,12 @@
 import { BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { router } from 'expo-router';
 import { BottomSheet } from 'heroui-native';
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Search,
-  Users,
-} from 'lucide-react-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
+import ChevronDown from 'lucide-react-native/dist/esm/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/dist/esm/icons/chevron-right';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
+import Search from 'lucide-react-native/dist/esm/icons/search';
+import Users from 'lucide-react-native/dist/esm/icons/users';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,

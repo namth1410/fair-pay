@@ -1,4 +1,5 @@
-import { Eye, EyeOff } from 'lucide-react-native';
+import Eye from 'lucide-react-native/dist/esm/icons/eye';
+import EyeOff from 'lucide-react-native/dist/esm/icons/eye-off';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 

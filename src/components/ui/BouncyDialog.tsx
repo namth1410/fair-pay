@@ -53,10 +53,15 @@ const PEEK_DRAGONS: { src: ImageSourcePropType; facing: PeekFacing }[] = [
   { src: require('../../../assets/nobg/03_e_nha.png'),          facing: 'left' },
   { src: require('../../../assets/nobg/04_lop_truong.png'),     facing: 'left' },
   { src: require('../../../assets/nobg/05_plus_one_may.png'),   facing: 'left' },
+  { src: require('../../../assets/nobg/06_na_ni.png'),          facing: 'right' },
   { src: require('../../../assets/nobg/07_du_wow_roi_do.png'),  facing: 'left'  },
   { src: require('../../../assets/nobg/08_ten_ten.png'),        facing: 'left' },
+  { src: require('../../../assets/nobg/09_mtp.png'),            facing: 'right' },
   { src: require('../../../assets/nobg/10_dinh_noc.png'),       facing: 'left' },
   { src: require('../../../assets/nobg/11_bao_qua.png'),        facing: 'left' },
+  { src: require('../../../assets/nobg/12_mlem.png'),           facing: 'right' },
+  { src: require('../../../assets/nobg/13_nai_xu.png'),         facing: 'right' },
+  { src: require('../../../assets/nobg/14_j97.png'),            facing: 'right' },
 ];
 const PEEK_WIDTH = 150;
 const PEEK_HEIGHT = Math.round(PEEK_WIDTH * (341 / 256));   // giữ tỉ lệ ảnh gốc 256×341

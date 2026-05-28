@@ -1,4 +1,7 @@
-import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react-native';
+import AlertCircle from 'lucide-react-native/dist/esm/icons/circle-alert';
+import AlertTriangle from 'lucide-react-native/dist/esm/icons/triangle-alert';
+import CheckCircle2 from 'lucide-react-native/dist/esm/icons/circle-check';
+import Info from 'lucide-react-native/dist/esm/icons/info';
 import type { ComponentType } from 'react';
 
 import type { ToastVariantName } from './types';

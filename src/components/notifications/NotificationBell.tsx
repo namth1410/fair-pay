@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bell } from 'lucide-react-native';
+import Bell from 'lucide-react-native/dist/esm/icons/bell';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';

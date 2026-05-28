@@ -1,6 +1,9 @@
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { AlertTriangle, ChevronRight, MessageCircle, Pencil } from 'lucide-react-native';
+import AlertTriangle from 'lucide-react-native/dist/esm/icons/triangle-alert';
+import ChevronRight from 'lucide-react-native/dist/esm/icons/chevron-right';
+import MessageCircle from 'lucide-react-native/dist/esm/icons/message-circle';
+import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
 import { useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 

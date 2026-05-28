@@ -1,6 +1,8 @@
 import { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
-import { Check, FileDown, UsersRound } from 'lucide-react-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
+import FileDown from 'lucide-react-native/dist/esm/icons/file-down';
+import UsersRound from 'lucide-react-native/dist/esm/icons/users-round';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

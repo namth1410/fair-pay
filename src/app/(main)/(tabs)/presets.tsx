@@ -1,6 +1,9 @@
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { MapPin, Pencil, Trash2, Zap } from 'lucide-react-native';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
+import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
+import Zap from 'lucide-react-native/dist/esm/icons/zap';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,

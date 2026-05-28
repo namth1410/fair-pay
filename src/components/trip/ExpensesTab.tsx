@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
-import { Receipt } from 'lucide-react-native';
+import Receipt from 'lucide-react-native/dist/esm/icons/receipt';
 import React, { useCallback, useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 

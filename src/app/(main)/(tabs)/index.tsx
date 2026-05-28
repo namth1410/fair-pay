@@ -1,5 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Plus, Users } from 'lucide-react-native';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
+import Users from 'lucide-react-native/dist/esm/icons/users';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,

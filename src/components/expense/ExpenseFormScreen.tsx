@@ -1,7 +1,10 @@
 import * as Crypto from 'expo-crypto';
 import { router, Stack, useNavigation } from 'expo-router';
 import { Button, Switch } from 'heroui-native';
-import { ChevronLeft, ImagePlus, MapPin, X } from 'lucide-react-native';
+import ChevronLeft from 'lucide-react-native/dist/esm/icons/chevron-left';
+import ImagePlus from 'lucide-react-native/dist/esm/icons/image-plus';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import X from 'lucide-react-native/dist/esm/icons/x';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,

@@ -1,4 +1,4 @@
-import { CheckCheck } from 'lucide-react-native';
+import CheckCheck from 'lucide-react-native/dist/esm/icons/check-check';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';

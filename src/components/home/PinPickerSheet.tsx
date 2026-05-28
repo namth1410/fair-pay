@@ -1,6 +1,8 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { BottomSheet } from 'heroui-native';
-import { Check, MapPin, Pin } from 'lucide-react-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import Pin from 'lucide-react-native/dist/esm/icons/pin';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 

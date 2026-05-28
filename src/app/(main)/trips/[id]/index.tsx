@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { CircleCheck, Info } from 'lucide-react-native';
+import CircleCheck from 'lucide-react-native/dist/esm/icons/circle-check';
+import Info from 'lucide-react-native/dist/esm/icons/info';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';

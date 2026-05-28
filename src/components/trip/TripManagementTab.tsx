@@ -1,11 +1,9 @@
 import { Button } from 'heroui-native';
-import {
-  ChevronRight,
-  CircleCheck,
-  Pencil,
-  RotateCcw,
-  Trash2,
-} from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/dist/esm/icons/chevron-right';
+import CircleCheck from 'lucide-react-native/dist/esm/icons/circle-check';
+import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
+import RotateCcw from 'lucide-react-native/dist/esm/icons/rotate-ccw';
+import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 

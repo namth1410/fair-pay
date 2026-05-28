@@ -1,5 +1,5 @@
 import { Button } from 'heroui-native';
-import { Wallet } from 'lucide-react-native';
+import Wallet from 'lucide-react-native/dist/esm/icons/wallet';
 import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 

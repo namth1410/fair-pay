@@ -2,7 +2,7 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { Calendar } from 'lucide-react-native';
+import Calendar from 'lucide-react-native/dist/esm/icons/calendar';
 import React, { useCallback, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 

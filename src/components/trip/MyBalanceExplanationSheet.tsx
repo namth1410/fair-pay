@@ -1,6 +1,9 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { BottomSheet } from 'heroui-native';
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Send } from 'lucide-react-native';
+import ArrowDownLeft from 'lucide-react-native/dist/esm/icons/arrow-down-left';
+import ArrowUpRight from 'lucide-react-native/dist/esm/icons/arrow-up-right';
+import HandCoins from 'lucide-react-native/dist/esm/icons/hand-coins';
+import Send from 'lucide-react-native/dist/esm/icons/send';
 import { StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';

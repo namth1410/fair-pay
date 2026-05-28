@@ -1,7 +1,7 @@
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { router, useFocusEffect } from 'expo-router';
 import { BottomSheet } from 'heroui-native';
-import { Check } from 'lucide-react-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,

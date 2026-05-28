@@ -2,7 +2,12 @@ import { BottomSheetView } from '@gorhom/bottom-sheet';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import { BottomSheet, Button } from 'heroui-native';
-import { Camera, ImageIcon, MapPin, Pencil, Plus, Zap } from 'lucide-react-native';
+import Camera from 'lucide-react-native/dist/esm/icons/camera';
+import ImageIcon from 'lucide-react-native/dist/esm/icons/image';
+import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
+import Plus from 'lucide-react-native/dist/esm/icons/plus';
+import Zap from 'lucide-react-native/dist/esm/icons/zap';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 

@@ -1,6 +1,7 @@
 import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { BottomSheet, Button } from 'heroui-native';
-import { Pin, PinOff } from 'lucide-react-native';
+import Pin from 'lucide-react-native/dist/esm/icons/pin';
+import PinOff from 'lucide-react-native/dist/esm/icons/pin-off';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
