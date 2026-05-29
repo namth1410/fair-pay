@@ -11,7 +11,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from './AppText';
 
-type Variant = 'hero' | 'display' | 'default' | 'compact';
+type Variant = 'hero' | 'display' | 'subdisplay' | 'default' | 'compact';
 type Tone = 'default' | 'primary' | 'success' | 'danger' | 'muted';
 
 interface MoneyProps {
@@ -28,10 +28,11 @@ const VARIANT: Record<
   Variant,
   { amount: number; unit: number; bold: boolean; lineHeight: number }
 > = {
-  hero:    { amount: 36, unit: 18, bold: true,  lineHeight: 42 },
-  display: { amount: 26, unit: 14, bold: true,  lineHeight: 32 },
-  default: { amount: 16, unit: 12, bold: true,  lineHeight: 22 },
-  compact: { amount: 14, unit: 11, bold: true,  lineHeight: 18 },
+  hero:       { amount: 36, unit: 18, bold: true, lineHeight: 42 },
+  display:    { amount: 26, unit: 14, bold: true, lineHeight: 32 },
+  subdisplay: { amount: 20, unit: 13, bold: true, lineHeight: 26 },
+  default:    { amount: 16, unit: 12, bold: true, lineHeight: 22 },
+  compact:    { amount: 14, unit: 11, bold: true, lineHeight: 18 },
 };
 
 // Animated TextInput — set `text` via animatedProps without re-renders. Readonly editable=false

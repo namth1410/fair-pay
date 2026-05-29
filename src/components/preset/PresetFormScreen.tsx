@@ -17,6 +17,7 @@ import { usePresetStore } from '../../stores/preset.store';
 import type { PresetSplitEntry } from '../../types/database.types';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
+import { resolveRatio } from '../../utils/split';
 import { showSuccess } from '../../utils/toast';
 import { AppText, BouncyDialog, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
@@ -92,6 +93,9 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
   const [exitConfirm, setExitConfirm] = useState(false);
   const submittedRef = useRef(false);
   const bypassExitGuardRef = useRef(false);
+  // Ref per split-member TextInput → tap bất kỳ đâu trong khung (kể cả suffix "phần"/"đ")
+  // sẽ focus đúng input của row đó.
+  const splitInputRefs = useRef<Record<string, TextInput | null>>({});
 
   // Edit mode safety: nếu presetId được cung cấp nhưng store đã load và không
   // tìm thấy preset → preset có thể đã bị xóa hoặc id sai → quay về list.
@@ -161,6 +165,11 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
     const unsub = navigation.addListener(
       'beforeRemove' as never,
       ((e: { preventDefault: () => void }) => {
+        // Tắt bàn phím TẠI thời điểm rời màn (input còn focus trên màn active) — choke
+        // point chung cho mọi đường thoát (header back, hardware back, swipe, nút Hủy,
+        // confirm-exit). Dismiss TRƯỚC khi BouncyDialog (RN Modal) mở, nếu không Modal
+        // restore focus lúc đóng → bàn phím bật lại trên màn trước.
+        Keyboard.dismiss();
         if (bypassExitGuardRef.current) {
           bypassExitGuardRef.current = false;
           return;
@@ -334,7 +343,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
     if (splitOpt === 'ratio') {
       return Array.from(selectedSplitMembers).map((id) => ({
         member_id: id,
-        ratio: parseInt(ratios[id] || '1', 10) || 1,
+        ratio: resolveRatio(ratios[id]),
       }));
     }
     return Array.from(selectedSplitMembers).map((id) => ({
@@ -631,7 +640,9 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                                 </AppText>
                               </Pressable>
                               {selected && (isRatio || isCustom) ? (
-                                <View
+                                <Pressable
+                                  accessible={false}
+                                  onPress={() => splitInputRefs.current[m.id]?.focus()}
                                   style={[
                                     styles.splitInputWrap,
                                     isRatio
@@ -644,6 +655,9 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                                   ]}
                                 >
                                   <TextInput
+                                    ref={(el) => {
+                                      splitInputRefs.current[m.id] = el;
+                                    }}
                                     style={[
                                       styles.splitInputField,
                                       {
@@ -680,7 +694,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                                   >
                                     {isRatio ? 'phần' : 'đ'}
                                   </AppText>
-                                </View>
+                                </Pressable>
                               ) : null}
                             </View>
                           );

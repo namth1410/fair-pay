@@ -7,6 +7,7 @@
 import { computeBalancesSimple } from '../utils/balance';
 import { calculateSettlements } from '../utils/settlement';
 import {
+  resolveRatio,
   splitByRatio,
   splitByRatioWithExplanation,
   splitEqual,
@@ -580,5 +581,91 @@ describe('BIZ-01: splitByRatio overflow edge case — cumulative rounding fix', 
       expect(result.every((s) => s.amount >= 0)).toBe(true);
       expect(result.every((s) => s.amount % 1000 === 0)).toBe(true);
     }
+  });
+});
+
+describe('resolveRatio — parse raw ratio từ form (fix bug "0" bị ép thành 1)', () => {
+  it('rỗng / undefined / blank → mặc định 1 (placeholder)', () => {
+    expect(resolveRatio('')).toBe(1);
+    expect(resolveRatio(undefined)).toBe(1);
+    expect(resolveRatio('   ')).toBe(1);
+  });
+
+  it('"0" được GIỮ là 0 (không ép thành 1) — đây là root-cause bug đã fix', () => {
+    expect(resolveRatio('0')).toBe(0);
+  });
+
+  it('số hợp lệ → parse đúng', () => {
+    expect(resolveRatio('1')).toBe(1);
+    expect(resolveRatio('2')).toBe(2);
+    expect(resolveRatio('10')).toBe(10);
+  });
+
+  it('không phải số → fallback 1', () => {
+    expect(resolveRatio('abc')).toBe(1);
+  });
+});
+
+describe('Chia theo tập con thành viên (participation checkbox)', () => {
+  it('equal subset: nhóm 4 người, chỉ chia cho A & B → mỗi người 250k', () => {
+    const splits = splitEqual(500_000, ['A', 'B']);
+    expect(splits).toHaveLength(2);
+    expect(splits.map((s) => s.amount)).toEqual([250_000, 250_000]);
+    expect(splits.reduce((a, s) => a + s.amount, 0)).toBe(500_000);
+    // C, D không xuất hiện trong splits → không bị chia.
+    expect(splits.some((s) => s.memberId === 'C')).toBe(false);
+  });
+
+  it('equal subset có dư: 300k cho A & B (bội 1k) → 150k mỗi người', () => {
+    const splits = splitEqual(300_000, ['A', 'B']);
+    expect(splits.map((s) => s.amount)).toEqual([150_000, 150_000]);
+  });
+
+  it('ratio subset: chỉ A(2) & B(1), C bị loại → A=200k, B=100k', () => {
+    const splits = splitByRatio(300_000, [
+      { memberId: 'A', ratio: 2 },
+      { memberId: 'B', ratio: 1 },
+    ]);
+    expect(splits).toHaveLength(2);
+    const map = Object.fromEntries(splits.map((s) => [s.memberId, s.amount]));
+    expect(map.A).toBe(200_000);
+    expect(map.B).toBe(100_000);
+    expect(splits.reduce((a, s) => a + s.amount, 0)).toBe(300_000);
+  });
+});
+
+describe('Ratio chứa số 0 — người ratio 0 nhận 0đ, người-cuối-được-tích nhận dư', () => {
+  it('[A:2, B:0, C:1] / 300k → B=0, A+C absorb, tổng đúng, không âm, bội 1k', () => {
+    const splits = splitByRatio(300_000, [
+      { memberId: 'A', ratio: 2 },
+      { memberId: 'B', ratio: 0 },
+      { memberId: 'C', ratio: 1 },
+    ]);
+    const map = Object.fromEntries(splits.map((s) => [s.memberId, s.amount]));
+    expect(map.B).toBe(0);
+    expect(splits.reduce((a, s) => a + s.amount, 0)).toBe(300_000);
+    expect(splits.every((s) => s.amount >= 0)).toBe(true);
+    expect(splits.every((s) => s.amount % 1000 === 0)).toBe(true);
+  });
+
+  it('ratio 0 ở vị trí CUỐI mảng → người cuối vẫn nhận đúng 0 (không nuốt dư)', () => {
+    const splits = splitByRatio(300_000, [
+      { memberId: 'A', ratio: 2 },
+      { memberId: 'B', ratio: 1 },
+      { memberId: 'C', ratio: 0 },
+    ]);
+    const map = Object.fromEntries(splits.map((s) => [s.memberId, s.amount]));
+    expect(map.C).toBe(0);
+    expect(splits.reduce((a, s) => a + s.amount, 0)).toBe(300_000);
+  });
+
+  it('all-zero suy biến: mọi ratio 0 → splitByRatio trả all-zero, validateSplits từ chối', () => {
+    const splits = splitByRatio(300_000, [
+      { memberId: 'A', ratio: 0 },
+      { memberId: 'B', ratio: 0 },
+    ]);
+    expect(splits.every((s) => s.amount === 0)).toBe(true);
+    // tổng 0 != 300k → validateSplits chặn (guard "everyone typed 0" ở submit).
+    expect(validateSplits(300_000, splits)).not.toBeNull();
   });
 });

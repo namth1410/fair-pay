@@ -44,6 +44,19 @@ export function validateAmount(amount: number): string | null {
 }
 
 /**
+ * Parse raw ratio string từ form (kiểu chia "Tỷ lệ").
+ * - Rỗng/blank → mặc định 1 (placeholder "1" = một phần).
+ * - Gõ "0" → giữ nguyên 0 (KHÔNG ép thành 1). Trước đây `|| 1` nuốt số 0 → người gõ 0
+ *   vẫn bị chia như 1 phần. Nay 0 được giữ để guard ratio>0 bắt được, hoặc engine cho 0đ.
+ * - Không phải số → 1.
+ */
+export function resolveRatio(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return 1;
+  const n = parseInt(raw, 10);
+  return Number.isNaN(n) ? 1 : n; // "0" → 0
+}
+
+/**
  * Equal split: round to nearest 1000đ, last person absorbs remainder.
  *
  * Edge cases handled:

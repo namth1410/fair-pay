@@ -327,6 +327,8 @@ CREATE TABLE expense_splits (
 );
 ```
 
+**Participation per-expense (chia tập-con thành viên):** `expense_splits` của một khoản chi có thể chỉ gồm **một tập con** thành viên nhóm — người không tham gia đơn giản không có row (không bị tính nợ). Form Thêm khoản chi (`ExpenseFormScreen`) dùng `participants: Set<string>` (mặc định tích hết) trực giao với `split_type`; cả 3 mode (`equal`/`ratio`/`custom`) chia cho người được tích. Toàn bộ tầng đọc đều subset-safe: `computeBalances` lặp theo split rows, `create_expense` RPC chèn đúng các row trong `p_splits` (không suy ra từ toàn bộ member, chỉ validate `paid_by` active + `SUM(splits)=amount`). Parse ratio qua `resolveRatio()` (`src/utils/split.ts`): rỗng→1, "0" giữ 0. `validateSplits` chạy ở cả UI form lẫn `createExpense` service (hardening cho caller không qua form: preset 1-tap, queue replay).
+
 ### 3.7 Table: `payments`
 
 ```sql

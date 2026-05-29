@@ -154,7 +154,7 @@ Hệ thống 2 cấp quyền:
 | Mã | Quy tắc | Chi tiết |
 |----|---------|----------|
 | BR-01 | Số tiền luôn là số nguyên, bội của 1.000đ | **Input:** App chỉ cho nhập số tiền là bội của 1.000đ (validate trước khi lưu). **Lưu trữ:** DB lưu cả `raw_amount` (số tiền gốc người dùng nhập) và `amount` (số tiền sau khi chia, đã làm tròn đến 1.000đ). Mục đích: hiển thị minh bạch cho người dùng biết số tiền gốc vs số tiền thực tế sau khi chia. **Chia đều:** Round đến 1.000đ, phần lẻ gán cho người cuối cùng trong danh sách. Không bao giờ dùng float. |
-| BR-02 | Tổng split = tổng khoản chi | Tổng số tiền trong expense_splits phải luôn bằng expenses.amount. Validate trước khi lưu. |
+| BR-02 | Tổng split = tổng khoản chi | Tổng số tiền trong expense_splits phải luôn bằng expenses.amount. Validate trước khi lưu (UI form + `createExpense` service). Khi chia cho tập-con thành viên: tổng tính trên những người **được chọn** — người không tham gia không có split row, không bị tính nợ. |
 | BR-03 | Payment là giao dịch tự do | Số tiền Payment không bị ràng buộc vào số dư hiện tại — người dùng có thể trả nhiều hơn hoặc ít hơn số đang nợ. |
 | BR-04 | Không xóa cứng (Soft delete / Soft-remove) | Mọi record bị xóa chỉ set `deleted_at`, không xóa khỏi database. Cần cho audit log và sync. Riêng `group_members`: dùng `left_at` (rời nhóm) thay vì `deleted_at`. Khi rejoin → reset `left_at = NULL`, giữ nguyên member ID → kế thừa data lịch sử. |
 | BR-05 | Chuyến đã đóng vẫn đọc được | Sau khi đóng chuyến: không thêm expense mới, nhưng vẫn có thể ghi nhận Payment và xem lịch sử. |
@@ -234,8 +234,8 @@ Hệ thống 2 cấp quyền:
 | F-03 | Invite thành viên qua link | Must have | v1.0 |
 | F-04 | Phân quyền Admin / Member | Must have | v1.0 |
 | F-05 | Tạo / đóng chuyến đi trong nhóm | Must have | v1.0 |
-| F-06 | Thêm khoản chi — chia đều | Must have | v1.0 |
-| F-07 | Thêm khoản chi — chia theo tỷ lệ / số tiền tùy chỉnh | Must have | v1.0 |
+| F-06 | Thêm khoản chi — chia đều (toàn nhóm hoặc chỉ người được chọn) | Must have | v1.0 |
+| F-07 | Thêm khoản chi — chia theo tỷ lệ / số tiền tùy chỉnh (áp trên người được chọn) | Must have | v1.0 |
 | F-08 | Xem số dư từng thành viên | Must have | v1.0 |
 | F-09 | Xem đề xuất quyết toán (thuật toán tối ưu) | Must have | v1.0 |
 | F-10 | Ghi nhận thanh toán thực tế (tự do, không theo thuật toán) | Must have | v1.0 |

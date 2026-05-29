@@ -64,7 +64,12 @@ interface AuthState {
   sendPasswordResetEmail: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
-  setProfile: (profile: UserProfile | null) => void;
+  setProfile: (
+    profile:
+      | UserProfile
+      | null
+      | ((prev: UserProfile | null) => UserProfile | null),
+  ) => void;
 }
 
 // Module-scope subscription handle — guards against double-listener khi
@@ -108,7 +113,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: false,
   isInitialized: false,
 
-  setProfile: (profile) => set({ profile }),
+  setProfile: (profile) =>
+    set((state) => ({
+      profile: typeof profile === 'function' ? profile(state.profile) : profile,
+    })),
 
   initialize: async () => {
     // Load cached identity TRƯỚC khi gọi Supabase — nếu offline ngay từ đầu,

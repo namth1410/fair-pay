@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { router, Stack, useNavigation } from 'expo-router';
 import { Button, Switch } from 'heroui-native';
+import Check from 'lucide-react-native/dist/esm/icons/check';
 import ChevronLeft from 'lucide-react-native/dist/esm/icons/chevron-left';
 import ImagePlus from 'lucide-react-native/dist/esm/icons/image-plus';
 import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
@@ -16,11 +17,11 @@ import {
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { AnimatedEntrance } from '../ui';
 import type { ExpensePreset } from '../../services/preset.service';
 import { useGroupStore } from '../../stores/group.store';
 import { getPresetsForContext, usePresetStore } from '../../stores/preset.store';
@@ -37,6 +38,7 @@ import {
 } from '../../utils/imageProcessing';
 import {
   type RatioMember,
+  resolveRatio,
   splitByRatio,
   splitEqual,
   type SplitResult,
@@ -136,6 +138,9 @@ export function ExpenseFormScreen({
   const [splitType, setSplitType] = useState<SplitType>('equal');
   const [ratios, setRatios] = useState<Record<string, string>>({});
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
+  // Chiều "AI tham gia" — tập member được chia (mặc định tất cả). Trực giao với splitType.
+  // Khởi tạo rỗng vì members load async; reset "tất cả" trong effect members bên dưới.
+  const [participants, setParticipants] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
   const [savePreset, setSavePreset] = useState(false);
@@ -147,6 +152,9 @@ export function ExpenseFormScreen({
   const presetAppliedRef = useRef(false);
   const submittedRef = useRef(false);
   const bypassExitGuardRef = useRef(false);
+  // Ref per split-member TextInput → tap bất kỳ đâu trong khung (kể cả suffix "phần"/"đ")
+  // sẽ focus đúng input của row đó.
+  const splitInputRefs = useRef<Record<string, TextInput | null>>({});
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   // Track focus per split-member row — đồng bộ identity handler để TextInput không
@@ -167,6 +175,19 @@ export function ExpenseFormScreen({
     });
     return map;
   }, [members]);
+  const toggleParticipant = useCallback((id: string) => {
+    setParticipants((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const selectAllParticipants = useCallback(
+    () => setParticipants(new Set(members.map((m) => m.id))),
+    [members],
+  );
+  const clearParticipants = useCallback(() => setParticipants(new Set()), []);
   const contextPresets = useMemo(
     () => getPresetsForContext(allPresets, { tripId: currentTripId ?? null }),
     [allPresets, currentTripId],
@@ -192,11 +213,17 @@ export function ExpenseFormScreen({
     if (Object.values(ratios).some((v) => v && v.trim() !== '')) return true;
     if (Object.values(customAmounts).some((v) => v && v.trim() !== ''))
       return true;
+    if (members.length > 0 && participants.size !== members.length) return true;
     return false;
-  }, [title, amountStr, note, pendingImage, savePreset, ratios, customAmounts]);
+  }, [title, amountStr, note, pendingImage, savePreset, ratios, customAmounts, members, participants]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e: { preventDefault: () => void }) => {
+      // Tắt bàn phím TẠI thời điểm rời màn (input còn focus trên màn active) — đây là
+      // choke point chung cho mọi đường thoát (header back, hardware back, swipe,
+      // confirm-exit). Phải dismiss TRƯỚC khi BouncyDialog (RN Modal) mở, nếu không
+      // Modal restore focus lúc đóng → bàn phím bật lại trên màn trước.
+      Keyboard.dismiss();
       if (bypassExitGuardRef.current) {
         bypassExitGuardRef.current = false;
         return;
@@ -228,12 +255,14 @@ export function ExpenseFormScreen({
     const first = members[0];
     if (!first) {
       if (paidBy) setPaidBy('');
+      setParticipants(new Set());
       return;
     }
     if (!paidBy || !members.some((m) => m.id === paidBy)) {
       setPaidBy(first.id);
       setRatios({});
       setCustomAmounts({});
+      setParticipants(new Set(members.map((m) => m.id)));
     }
   }, [members, paidBy]);
 
@@ -261,6 +290,7 @@ export function ExpenseFormScreen({
       setSplitType,
       setRatios,
       setCustomAmounts,
+      setParticipants,
       setPresetWarnings,
     });
   }, [applyPresetId, presetsLoaded, allPresets, members, currentTripId]);
@@ -311,6 +341,7 @@ export function ExpenseFormScreen({
           setSplitType,
           setRatios,
           setCustomAmounts,
+          setParticipants,
           setPresetWarnings,
         });
       } else {
@@ -339,17 +370,25 @@ export function ExpenseFormScreen({
       return setFormError('Đã có preset tên này, đổi tên hoặc bỏ tick "Lưu làm preset"');
     Keyboard.dismiss();
 
-    const memberIds = members.map((m) => m.id);
+    // Lọc người được tích TRƯỚC khi gọi builder → người-cuối-được-tích hấp thụ phần dư,
+    // không bao giờ là người bị loại.
+    const selectedMembers = members.filter((m) => participants.has(m.id));
+    if (selectedMembers.length === 0)
+      return setFormError('Chọn ít nhất 1 thành viên cho cách chia');
+    const memberIds = selectedMembers.map((m) => m.id);
     let splits: SplitResult[];
 
     if (splitType === 'ratio') {
-      const ratioMembers: RatioMember[] = members.map((m) => ({
+      // Ratio 0 cho người đang tích → từ chối (loại người = bỏ tích, không phải gõ 0).
+      if (selectedMembers.some((m) => resolveRatio(ratios[m.id]) <= 0))
+        return setFormError('Tỷ lệ phải lớn hơn 0');
+      const ratioMembers: RatioMember[] = selectedMembers.map((m) => ({
         memberId: m.id,
-        ratio: parseInt(ratios[m.id] || '1', 10) || 1,
+        ratio: resolveRatio(ratios[m.id]),
       }));
       splits = splitByRatio(amount, ratioMembers);
     } else if (splitType === 'custom') {
-      splits = members.map((m) => ({
+      splits = selectedMembers.map((m) => ({
         memberId: m.id,
         amount: parseInt(customAmounts[m.id] || '0', 10) || 0,
       }));
@@ -423,6 +462,7 @@ export function ExpenseFormScreen({
     requireTrip,
     amountStr,
     members,
+    participants,
     splitType,
     ratios,
     customAmounts,
@@ -442,15 +482,19 @@ export function ExpenseFormScreen({
   ]);
 
   const amount = parseInt(amountStr, 10) || 0;
+  const allParticipantsSelected =
+    members.length > 0 && participants.size === members.length;
 
   const ratioPreview =
     splitType === 'ratio' && amount > 0
       ? splitByRatio(
           amount,
-          members.map((m) => ({
-            memberId: m.id,
-            ratio: parseInt(ratios[m.id] || '1', 10) || 1,
-          })),
+          members
+            .filter((m) => participants.has(m.id))
+            .map((m) => ({
+              memberId: m.id,
+              ratio: resolveRatio(ratios[m.id]),
+            })),
         )
       : [];
 
@@ -482,7 +526,7 @@ export function ExpenseFormScreen({
         showsVerticalScrollIndicator={false}
         bottomOffset={amountFocused || splitFocusedMemberId ? 70 : 20}
       >
-        <Animated.View entering={FadeInDown.duration(260)}>
+        <AnimatedEntrance>
         <DismissKeyboardView style={styles.formArea}>
           {requireTrip ? (
             <AddToField
@@ -603,103 +647,171 @@ export function ExpenseFormScreen({
                 onSelect={setSplitType}
               />
 
-              {splitType === 'equal' && (
+              {/* Header chiều "AI tham gia" — tóm tắt + chọn/bỏ tất cả */}
+              <View style={styles.splitHeaderRow}>
+                <AppText variant="caption" tone="muted">
+                  Chia cho {participants.size}/{members.length} người
+                </AppText>
+                <Pressable
+                  onPress={allParticipantsSelected ? clearParticipants : selectAllParticipants}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                >
+                  <AppText variant="caption" tone="primary" weight="medium">
+                    {allParticipantsSelected ? 'Bỏ chọn' : 'Chọn tất cả'}
+                  </AppText>
+                </Pressable>
+              </View>
+
+              {splitType === 'ratio' && (
                 <AppText variant="caption" tone="muted" center>
-                  Chia đều cho {members.length} người ·{' '}
-                  {Math.floor(amount / members.length).toLocaleString('vi-VN')}₫/người
+                  Nhập tỷ lệ cho mỗi người (VD: 2 = gấp đôi)
+                </AppText>
+              )}
+              {splitType === 'custom' && (
+                <AppText variant="caption" tone="muted" center>
+                  Nhập số tiền cụ thể cho mỗi người
                 </AppText>
               )}
 
-              {splitType === 'ratio' && (
-                <View style={styles.splitSection}>
-                  <AppText variant="caption" tone="muted" center>
-                    Nhập tỷ lệ cho mỗi người (VD: 2 = gấp đôi)
-                  </AppText>
-                  {members.map((m) => (
-                    <View key={m.id} style={styles.splitRow}>
-                      <AppText variant="body" style={styles.splitName} numberOfLines={1}>
-                        {m.display_name}
-                      </AppText>
-                      <View
+              <View style={styles.splitSection}>
+                {members.map((m) => {
+                  const selected = participants.has(m.id);
+                  return (
+                    <View
+                      key={m.id}
+                      style={[styles.splitRow, !selected && styles.splitRowDimmed]}
+                    >
+                      <Pressable
+                        onPress={() => toggleParticipant(m.id)}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                        accessibilityLabel={m.display_name}
+                        hitSlop={6}
                         style={[
-                          styles.splitInputWrap,
-                          styles.splitInputWrapRatio,
-                          { backgroundColor: c.surface, borderColor: c.divider },
+                          styles.checkbox,
+                          {
+                            borderColor: selected ? c.primaryStrong : c.divider,
+                            backgroundColor: selected ? c.primaryStrong : 'transparent',
+                          },
                         ]}
                       >
-                        <TextInput
-                          style={[styles.splitInputField, { color: c.foreground }]}
-                          placeholder="1"
-                          placeholderTextColor={c.muted}
-                          value={ratios[m.id] || ''}
-                          onChangeText={(v) =>
-                            setRatios((prev) => ({ ...prev, [m.id]: v.replace(/\D/g, '') }))
-                          }
-                          onFocus={splitInputHandlers[m.id]?.onFocus}
-                          onBlur={splitInputHandlers[m.id]?.onBlur}
-                          keyboardType="number-pad"
-                          maxLength={2}
-                          accessibilityLabel={`Tỷ lệ ${m.display_name}`}
-                        />
-                        <AppText variant="caption" tone="muted" style={styles.splitInputSuffix}>
-                          phần
+                        {selected ? (
+                          <Check size={14} color={c.background} strokeWidth={3} />
+                        ) : null}
+                      </Pressable>
+                      <Pressable
+                        onPress={() => toggleParticipant(m.id)}
+                        style={styles.memberNameTap}
+                      >
+                        <AppText variant="body" numberOfLines={1}>
+                          {m.display_name}
                         </AppText>
-                      </View>
-                      <View style={styles.splitPreview}>
-                        <Money
-                          value={ratioPreview.find((s) => s.memberId === m.id)?.amount ?? 0}
-                          variant="compact"
-                          tone="muted"
-                        />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
+                      </Pressable>
 
-              {splitType === 'custom' && (
-                <View style={styles.splitSection}>
-                  <AppText variant="caption" tone="muted" center>
-                    Nhập số tiền cụ thể cho mỗi người
-                  </AppText>
-                  {members.map((m) => (
-                    <View key={m.id} style={styles.splitRow}>
-                      <AppText variant="body" style={styles.splitName} numberOfLines={1}>
-                        {m.display_name}
-                      </AppText>
-                      <View
-                        style={[
-                          styles.splitInputWrap,
-                          styles.splitInputWrapCustom,
-                          { backgroundColor: c.surface, borderColor: c.divider },
-                        ]}
-                      >
-                        <TextInput
+                      {selected && splitType === 'ratio' && (
+                        <>
+                          <Pressable
+                            accessible={false}
+                            onPress={() => splitInputRefs.current[m.id]?.focus()}
+                            style={[
+                              styles.splitInputWrap,
+                              styles.splitInputWrapRatio,
+                              { backgroundColor: c.surface, borderColor: c.divider },
+                            ]}
+                          >
+                            <TextInput
+                              ref={(el) => {
+                                splitInputRefs.current[m.id] = el;
+                              }}
+                              style={[styles.splitInputField, { color: c.foreground }]}
+                              placeholder="1"
+                              placeholderTextColor={c.muted}
+                              value={ratios[m.id] || ''}
+                              onChangeText={(v) =>
+                                setRatios((prev) => ({ ...prev, [m.id]: v.replace(/\D/g, '') }))
+                              }
+                              onFocus={splitInputHandlers[m.id]?.onFocus}
+                              onBlur={splitInputHandlers[m.id]?.onBlur}
+                              keyboardType="number-pad"
+                              maxLength={2}
+                              accessibilityLabel={`Tỷ lệ ${m.display_name}`}
+                            />
+                            <AppText variant="caption" tone="muted" style={styles.splitInputSuffix}>
+                              phần
+                            </AppText>
+                          </Pressable>
+                          <View style={styles.splitPreview}>
+                            <Money
+                              value={ratioPreview.find((s) => s.memberId === m.id)?.amount ?? 0}
+                              variant="compact"
+                              tone="muted"
+                            />
+                          </View>
+                        </>
+                      )}
+
+                      {selected && splitType === 'custom' && (
+                        <Pressable
+                          accessible={false}
+                          onPress={() => splitInputRefs.current[m.id]?.focus()}
                           style={[
-                            styles.splitInputField,
-                            { color: c.foreground, fontFamily: fonts.bold },
+                            styles.splitInputWrap,
+                            styles.splitInputWrapCustom,
+                            { backgroundColor: c.surface, borderColor: c.divider },
                           ]}
-                          placeholder="0"
-                          placeholderTextColor={c.muted}
-                          value={formatThousands(customAmounts[m.id] || '')}
-                          onChangeText={(v) =>
-                            setCustomAmounts((prev) => ({ ...prev, [m.id]: parseMoneyInput(v) }))
-                          }
-                          onFocus={splitInputHandlers[m.id]?.onFocus}
-                          onBlur={splitInputHandlers[m.id]?.onBlur}
-                          keyboardType="number-pad"
-                          maxLength={12}
-                          accessibilityLabel={`Số tiền ${m.display_name}`}
-                        />
-                        <AppText variant="caption" tone="muted" style={styles.splitInputSuffix}>
-                          đ
-                        </AppText>
-                      </View>
+                        >
+                          <TextInput
+                            ref={(el) => {
+                              splitInputRefs.current[m.id] = el;
+                            }}
+                            style={[
+                              styles.splitInputField,
+                              { color: c.foreground, fontFamily: fonts.bold },
+                            ]}
+                            placeholder="0"
+                            placeholderTextColor={c.muted}
+                            value={formatThousands(customAmounts[m.id] || '')}
+                            onChangeText={(v) =>
+                              setCustomAmounts((prev) => ({ ...prev, [m.id]: parseMoneyInput(v) }))
+                            }
+                            onFocus={splitInputHandlers[m.id]?.onFocus}
+                            onBlur={splitInputHandlers[m.id]?.onBlur}
+                            keyboardType="number-pad"
+                            maxLength={12}
+                            accessibilityLabel={`Số tiền ${m.display_name}`}
+                          />
+                          <AppText variant="caption" tone="muted" style={styles.splitInputSuffix}>
+                            đ
+                          </AppText>
+                        </Pressable>
+                      )}
                     </View>
-                  ))}
-                  {(() => {
+                  );
+                })}
+
+                {splitType === 'equal' && (
+                  <View style={styles.customTotal}>
+                    {participants.size > 0 ? (
+                      <AppText variant="caption" tone="muted" center>
+                        Chia đều cho {participants.size} người ·{' '}
+                        {Math.floor(amount / participants.size).toLocaleString('vi-VN')}₫/người
+                      </AppText>
+                    ) : (
+                      <AppText variant="caption" tone="danger" weight="medium" center>
+                        Chọn ít nhất 1 người
+                      </AppText>
+                    )}
+                  </View>
+                )}
+
+                {splitType === 'custom' &&
+                  (() => {
                     const sum = members.reduce(
-                      (s, m) => s + (parseInt(customAmounts[m.id] || '0', 10) || 0),
+                      (s, m) =>
+                        participants.has(m.id)
+                          ? s + (parseInt(customAmounts[m.id] || '0', 10) || 0)
+                          : s,
                       0,
                     );
                     const balanced = sum === amount;
@@ -717,8 +829,7 @@ export function ExpenseFormScreen({
                       </View>
                     );
                   })()}
-                </View>
-              )}
+              </View>
             </>
           ) : null}
 
@@ -761,7 +872,7 @@ export function ExpenseFormScreen({
             <Button.Label>{busy ? 'Đang lưu...' : 'Thêm khoản chi'}</Button.Label>
           </Button>
         </DismissKeyboardView>
-        </Animated.View>
+        </AnimatedEntrance>
       </KeyboardAwareScrollView>
       <MoneyChipsDock
         visible={amountFocused}
@@ -823,6 +934,7 @@ function applyPresetFullData(
     setSplitType: (v: SplitType) => void;
     setRatios: (v: Record<string, string>) => void;
     setCustomAmounts: (v: Record<string, string>) => void;
+    setParticipants: (v: Set<string>) => void;
     setPresetWarnings: (v: string[]) => void;
   },
 ): void {
@@ -839,6 +951,8 @@ function applyPresetFullData(
     const allActive = preset.splits_data.every((s) => activeIds.has(s.member_id));
     if (allActive) {
       setters.setSplitType(preset.split_type);
+      // splits_data = tập người tham gia của preset (kể cả equal subset).
+      setters.setParticipants(new Set(preset.splits_data.map((s) => s.member_id)));
       if (preset.split_type === 'ratio') {
         const r: Record<string, string> = {};
         preset.splits_data.forEach((s) => {
@@ -854,6 +968,7 @@ function applyPresetFullData(
       }
     } else {
       warnings.push('Cách chia trong preset có thành viên đã rời nhóm, đặt mặc định chia đều');
+      setters.setParticipants(new Set(members.map((m) => m.id)));
     }
   }
 
@@ -1021,6 +1136,28 @@ const styles = StyleSheet.create({
   splitName: {
     flex: 1,
     minWidth: 0,
+  },
+  splitHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  splitRowDimmed: {
+    opacity: 0.45,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberNameTap: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 6,
   },
   splitInputWrap: {
     flexDirection: 'row',

@@ -84,16 +84,26 @@ export default function SettingsScreen() {
       return;
     }
 
-    const prevSettings = profile.settings;
-    const newSettings: UserSettings = { ...prevSettings, [key]: value };
+    // Chỉ snapshot value cũ của ĐÚNG key này để rollback — KHÔNG snapshot cả
+    // object. 2 lần bấm rơi cùng frame React → handler sau capture profile cũ;
+    // nếu set/rollback cả object sẽ wipe toggle kia. Functional updater dưới chạm
+    // đúng [key] trên state mới nhất nên 2 toggle khác key không đè nhau.
+    const prevValue = profile.settings[key];
 
-    // Optimistic — store update là single source of truth, mọi consumer (cache singleton
-    // qua subscriber) đồng bộ ngay.
-    setProfile({ ...profile, settings: newSettings });
+    // Optimistic — store update là single source of truth, mọi consumer (cache
+    // singleton qua subscriber) đồng bộ ngay.
+    setProfile((prev) =>
+      prev
+        ? { ...prev, settings: { ...prev.settings, [key]: value } as UserSettings }
+        : prev,
+    );
 
     try {
       await updateSettings({ [key]: value } as Partial<UserSettings>);
-      await persistPreferencesCache(newSettings);
+      // Persist từ state mới nhất (không phải snapshot cũ trong closure) — gồm cả
+      // toggle khác vừa đổi song song.
+      const latest = useAuthStore.getState().profile?.settings;
+      if (latest) await persistPreferencesCache(latest);
       // Master push toggle → register/unregister FCM token. Fire-and-forget,
       // user-facing toggle đã update tức thì qua optimistic setProfile.
       if (key === 'push_enabled') {
@@ -104,9 +114,14 @@ export default function SettingsScreen() {
         }
       }
     } catch (e: unknown) {
-      setProfile({ ...profile, settings: prevSettings });
+      // Rollback chỉ [key] về giá trị cũ — không đụng các key khác.
+      setProfile((prev) =>
+        prev
+          ? { ...prev, settings: { ...prev.settings, [key]: prevValue } as UserSettings }
+          : prev,
+      );
       if (key === 'dark_mode') {
-        transitionToTheme(prevSettings.dark_mode);
+        transitionToTheme(prevValue as UserSettings['dark_mode']);
       }
       showError(e);
     }

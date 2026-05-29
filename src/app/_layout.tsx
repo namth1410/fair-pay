@@ -23,8 +23,6 @@ import { SplashScene } from '../components/common/SplashScene';
 import { ConflictResolverModal } from '../components/sync/ConflictResolverModal';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { ToastBridge } from '../components/ui/toast';
-import { LightningTransitionProvider } from '../contexts/LightningTransition';
-import { MorphTransitionProvider } from '../contexts/MorphTransition';
 import { initDatabase } from '../db/database';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { useInvitationsRealtime } from '../hooks/useInvitationsRealtime';
@@ -226,17 +224,13 @@ export default function RootLayout() {
             <StatusBar style={isDark ? 'light' : 'dark'} />
             <ToastBridge />
             <OfflineBanner />
-            <MorphTransitionProvider>
-              <LightningTransitionProvider>
-                <AuthGate>
-                  <Slot />
-                </AuthGate>
-                <NotificationRealtimeBridge />
-                <PushTapBridge />
-                <SyncBridge />
-                <ConflictResolverModal />
-              </LightningTransitionProvider>
-            </MorphTransitionProvider>
+            <AuthGate>
+              <Slot />
+            </AuthGate>
+            <NotificationRealtimeBridge />
+            <PushTapBridge />
+            <SyncBridge />
+            <ConflictResolverModal />
             <ThemeTransitionOverlay />
             <CameraCaptureHost />
             {!splashDone && (

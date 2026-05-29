@@ -15,7 +15,7 @@ import {
 } from '../utils/balance';
 import { isNetworkError } from '../utils/network';
 import { formatNotificationTitle } from '../utils/notificationFormat';
-import type { SplitResult } from '../utils/split';
+import { validateSplits, type SplitResult } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
 import { getAuthUserId } from './auth.helper';
 import { removeExpenseImage } from './expenseImage.service';
@@ -199,6 +199,11 @@ export async function createExpense(params: {
   if (titleErr) throw new Error(titleErr);
   const amountErr = validatePositiveAmount(params.amount);
   if (amountErr) throw new Error(amountErr);
+  // Hardening: validate splits ở tầng service (không chỉ form). Bảo vệ mọi caller
+  // không qua form — preset 1-tap (applyPresetToTrip → createExpense thẳng), queue
+  // replay, gọi lập trình. Dữ liệu xấu bị chặn trước khi vào queue.
+  const splitsErr = validateSplits(params.amount, params.splits);
+  if (splitsErr) throw new Error(splitsErr);
 
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');

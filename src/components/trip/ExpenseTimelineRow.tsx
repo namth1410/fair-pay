@@ -84,7 +84,7 @@ function TextColumn({
         {payerName} đã trả
       </AppText>
       <View style={styles.amountWrap}>
-        <Money value={expense.amount} variant="display" tone="primary" />
+        <Money value={expense.amount} variant="subdisplay" tone="primary" />
       </View>
     </View>
   );

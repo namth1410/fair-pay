@@ -69,8 +69,12 @@ UI → Service (online check) ─┬─→ Server (RPC/INSERT) ─→ Success
   `renameMember`, `updateDisplayName`, `updatePreset`.
 - **P4 State machine**: `close_trip`/`reopen_trip` — idempotent server-side (no-op nếu đã
   ở trạng thái target).
-- **P5 LWW theo `updated_at`**: `updateSettings` — server check `current.updated_at >
-  base_updated_at` → conflict modal.
+- **P5 Last-arrival-wins (KHÔNG LWW)**: `updateSettings` — settings là dữ liệu 1-user +
+  server merge JSONB theo từng key (`current || patch`) nên 2 patch khác key không đè nhau;
+  cùng key thì arrival cuối thắng. LWW base check ĐÃ BỎ ở migration
+  `20260529100000_settings_drop_lww.sql` (trước đó `current.updated_at > base` → conflict giả
+  khi save nhanh 2 toggle). `p_base_updated_at` giữ trong signature cho backward-compat nhưng
+  server bỏ qua. Vẫn PHẢI write-back `version + updated_at` (trigger còn bump) — xem checklist.
 - **P7 Idempotent set**: `pinTrip`, `unpinTrip`, `reorderPinnedTrips`, `markAsRead`,
   `markAllAsRead`, `deleteNotification`.
 
@@ -169,8 +173,10 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
   6. **Write-back checklist sau RPC P3/P5/direct UPDATE success**: trigger
      `bump_version_and_updated_at` (và analog `bump_version_users`) tự bump
      `version + updated_at` mỗi UPDATE. Client PHẢI mirror đầy đủ về local SQLite,
-     nếu không lần update kế gửi base stale → P0410 (`version_conflict` hoặc
-     `lww_stale`). Dùng helper `mirrorServerRow(table, id, serverRow, extraCols)`
+     nếu không lần update kế gửi base stale → P0410 `version_conflict` (vd
+     updateSettings bump version trên `users`, nếu không mirror thì updateDisplayName
+     P3 kế gửi base_version stale → conflict; settings không còn raise `lww_stale`
+     sau migration `20260529100000`). Dùng helper `mirrorServerRow(table, id, serverRow, extraCols)`
      từ [src/repositories/writeback.ts](src/repositories/writeback.ts) — đối chiếu
      `RETURNS TABLE(...)` SQL với call site, mọi cột RPC trả về phải có trong
      write-back. Reference: 12+ call sites đã apply pattern. Direct
@@ -239,8 +245,9 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 
 ### Tiền VND
 - Tất cả amount là INTEGER (đơn vị VND), bội của 1.000đ.
-- Hàm split luôn dùng pattern "người cuối nhận remainder" — remainder PHẢI được clamp `Math.max(0, remaining)`.
-- `validateAmount()` và `validateSplits()` nằm trong `src/utils/split.ts` — gọi trước khi tạo expense.
+- Hàm split luôn dùng pattern "người cuối nhận remainder" — remainder PHẢI được clamp `Math.max(0, remaining)`. Với chia tập-con member: PHẢI filter người được tích RA khỏi mảng TRƯỚC khi gọi `splitEqual`/`splitByRatio` → người-cuối-được-tích hấp thụ dư, không bao giờ là người bị loại.
+- `validateAmount()` và `validateSplits()` nằm trong `src/utils/split.ts`. `validateSplits` gọi ở UI form VÀ trong `createExpense` service (hardening — bảo vệ caller không qua form: preset 1-tap, queue replay).
+- Parse ratio từ form qua `resolveRatio(raw)` (split.ts): rỗng/blank → mặc định 1; gõ "0" GIỮ là 0 (KHÔNG ép thành 1 — bug cũ `parseInt(x||'1')||1` nuốt số 0). Dùng chung ở ExpenseForm (submit + preview) và PresetForm (`buildSplitsData`).
 - Input validation cơ bản (tên, số tiền) nằm trong `src/utils/validate.ts` — gọi ở đầu service create functions.
 
 ### Quy ước dấu cho balance (UI)
@@ -260,6 +267,10 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Trong `KeyboardAwareScrollView`/`ScrollView` có input, thêm `keyboardDismissMode="on-drag"` + `keyboardShouldPersistTaps="handled"`. Wrap children với `DismissKeyboardView` để tap empty area cũng dismiss.
 - Trong BottomSheet có input: wrap content **bên trong** `BottomSheetView`/`BottomSheetScrollView` (KHÔNG thay thế) — giữ nguyên `keyboardBlurBehavior="restore"` cho tap-overlay flow. Pressable wrap không xung đột với gorhom drag-to-close gesture.
 - `MoneyChipsDock` render là **sibling** (ngoài scroll) — không nằm trong wrap → tap chip vẫn fill amount, keyboard giữ mở.
+- **Rời màn full-screen — dismiss TẠI action-time, KHÔNG post-nav**: phải gọi `Keyboard.dismiss()` **đồng bộ ngay khi user kích hoạt rời màn**, lúc input còn focus trên màn đang active (giống các submit handler). **KHÔNG** dùng hook chạy SAU điều hướng (vd watcher `usePathname()` ở root): fire quá trễ → màn cũ còn mounted với input còn focus đang animate out (hoặc RN Modal restore focus khi dialog đóng) sẽ bật bàn phím lại. Đã thử bridge `usePathname` toàn cục → FAIL cả 2 case (back clean + confirm-exit dialog), đã gỡ.
+- **Màn có dirty-guard `beforeRemove`** (ExpenseFormScreen, PresetFormScreen): gọi `Keyboard.dismiss()` ở **dòng đầu listener `beforeRemove`** (trước mọi early-return/bypass). Đây là choke point chung cho MỌI đường thoát: header back, hardware back, swipe gesture, nút Hủy, confirm-exit. Quan trọng: dismiss chạy **trước** khi `BouncyDialog` (RN `Modal`) mở → Modal không "nhớ" input nào đang focus → đóng dialog KHÔNG restore focus → bàn phím không bật lại. Submit handler vẫn dismiss riêng (redundant, vô hại).
+- **Màn push/replace có input** (vd settings sửa tên → push sync-conflicts, auth replace): gọi `Keyboard.dismiss()` ngay trước `router.push/replace` trong handler.
+- **BottomSheet**: đóng/mở sheet không đổi route. Sheet có input PHẢI tự gọi `Keyboard.dismiss()` trong submit handler **trước** `onOpenChange(false)` (pattern hiện có ở 8 sheet: AddMemberSheet, CreateJoinSheet, FeedbackSheet, CreateTripSheet, RenameTripSheet, GroupEditSheet, RenameMemberSheet, RecordPaymentSheet).
 - Reference: 4 auth screens, ExpenseFormScreen, PresetFormScreen, SettlementTab, 7 BottomSheet input sheets.
 
 ### TextInput trong BottomSheet (gorhom / heroui-native)
@@ -337,6 +348,8 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
   - 3 button "Chụp ảnh / Chọn thư viện / Nhập thủ công" giữ nguyên ở dưới.
 - Entry **in-trip "+"** (ExpensesTab): đi thẳng `/trips/{tripId}/expenses/new` → form. Trong form có chip row preset filter strict theo `currentTripId` (chỉ global + trip-pinned của trip này). Tap chip → apply full data ngay vào state (fallback graceful nếu member thay đổi).
 - **Form Thêm khoản chi** đã merge 2-step (`basic` + `Cách chia`) thành 1 màn scroll — bỏ button "Tiếp tục", có 1 submit "Thêm khoản chi" duy nhất ở cuối.
+- **Mô hình chia 2 chiều (AI × THẾ NÀO)**: chiều "AI tham gia" = `participants: Set<string>` (mặc định tích hết), TRỰC GIAO với chiều `splitType` (`equal`/`ratio`/`custom`). Cả 3 mode render CHUNG một danh sách dòng-member: trái = checkbox (`toggleParticipant`), giữa = input theo mode (Đều: rỗng; Tỷ lệ: ô "phần"; Tùy chỉnh: ô "đ"), phải = preview. Dòng bỏ tích → mờ + ẩn input. "Chia đều tất cả" = tích hết (hành vi cũ); "đều người chỉ định" = bỏ tích. Header `Chia cho X/Y người` + nút "Chọn tất cả/Bỏ chọn". Loại người = bỏ tích (KHÔNG dùng "ratio 0"); gõ ratio 0 cho người đang tích → submit báo "Tỷ lệ phải lớn hơn 0". Guard min-1: "Chọn ít nhất 1 thành viên cho cách chia". **Payer ĐƯỢC bỏ tích** (case "ứng tiền trả hộ") — balance tự đúng (payer ghi có toàn bộ, không bị trừ chia). `participants` init: reset "tất cả" trong effect members/paidBy; preset apply → từ `splits_data` member_ids (kể cả equal subset).
+- Mọi tầng đọc/ghi splits đã subset-safe (balance lặp theo split rows, RPC nhận mảng splits con) — KHÔNG cần migration khi chia tập-con.
 - Switch "Lưu làm preset" trong form → tạo **global** preset (không trip). Pre-check trùng title chỉ check global scope (`presetConflict` true → disable submit + hint inline).
 - `applyPresetId` URL param: form effect mount → lookup preset trong store → nếu trip match + full data → apply paid_by + splits qua `applyPresetFullData` helper. Stale member → fallback default + warning banner trên form.
 - **AppDock chỉ visible ở (tabs) main pages** — không cần truyền `currentTripId` xuống QuickAddActionSheet.
