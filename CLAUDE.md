@@ -262,6 +262,13 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Sub-components dùng `React.memo()`. Nguồn data linh hoạt: props, store (Zustand), context — chọn cái hợp lý nhất theo từng case (data đã có sẵn ở parent → props; cross-tree shared state → store/context). Không có quy tắc cứng.
 - `useAppTheme()` trả về `{ isDark, ...colors }` — KHÔNG import `useIsDark()` riêng (deprecated).
 
+### Nút xoá nhanh (clear "x") trong ô input
+- `AppTextField` (heroui `InputGroup` + `Suffix`) và `FloatingLabelInput` (`TextInput` thuần + row) hiện nút `circle-x` ở cuối ô khi **focus + có nội dung**. Prop `clearable` mặc định `true`.
+- Tự tắt khi `secureTextEntry` (ô mật khẩu) hoặc `multiline` (ô ghi chú). `FloatingPasswordInput` truyền `clearable={false}` rõ ràng vì nó toggle `secureTextEntry` off khi "hiện mật khẩu" — nếu không nút x sẽ đụng nút con mắt (absolute right).
+- Áp tự động cho MỌI ô tiền (MoneyTextField, FloatingMoneyInput) qua AppTextField/FloatingLabelInput — không cần config riêng.
+- Clear dùng `onPressIn` + `inputRef.current?.focus()` để giữ focus + keyboard mở sau khi xoá (một số OEM blur input khi tap Pressable). KHÔNG dùng `onPress` (Suffix unmount khi value rỗng có thể nuốt event).
+- Muốn ẩn nút x ở 1 ô cụ thể: truyền `clearable={false}`.
+
 ### Tap-ngoài dismiss keyboard
 - Mọi screen/sheet chứa `TextInput`/`AppTextField`/`MoneyTextField`/`BottomSheetTextInput` PHẢI wrap content bằng `<DismissKeyboardView>` (từ `src/components/ui/DismissKeyboardView.tsx`) để tap empty area → keyboard dismiss. Component là Pressable không có visual feedback (disable ripple/sound) + `accessible={false}` — nested Pressable children (Button/ChipPicker/Link/Input) vẫn nhận tap đúng nhờ RN responder composition.
 - Trong `KeyboardAwareScrollView`/`ScrollView` có input, thêm `keyboardDismissMode="on-drag"` + `keyboardShouldPersistTaps="handled"`. Wrap children với `DismissKeyboardView` để tap empty area cũng dismiss.
@@ -287,7 +294,7 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Pattern: chip render là sibling của `BottomSheet.Content` trong `<BottomSheet.Portal>`, dùng `<KeyboardStickyView offset={{ closed: 0, opened: 0 }}>` từ `react-native-keyboard-controller`. Component này tự dock chip ở mép trên keyboard, animation worklet đồng bộ frame-by-frame, đã handle cross-OEM (Xiaomi MIUI, Oppo, Samsung) — không cần tự tính `kbHeight + insets.bottom`.
 - Track focus của input tiền qua `onFocus`/`onBlur` → render chip có điều kiện `isOpen && amountFocused` để không hiện khi user focus input khác.
 - `KeyboardProvider` đã wrap ở root layout (`src/app/_layout.tsx`) — bắt buộc trước khi dùng bất kỳ API nào của keyboard-controller.
-- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — gõ rỗng → defaults `[50k, 100k, 200k, 500k]`; single-digit start ×10.000 (gõ "3" → `[30k, 300k, 3tr, 30tr]`); multi-digit start ×1.000 (gõ "35" → `[35k, 350k, 3.5tr, 35tr]`, gõ "150" → `[150k, 1.5tr, 15tr, 150tr]`). Cap ở 999 tỷ.
+- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — model "chữ số có nghĩa": chip = `n × 10^k` (số gõ thêm các số 0 ở nhiều bậc), lọc theo `≥ 10.000đ` (MIN, bỏ mức 1k–9k) + `≤ 10 triệu` (MAX, app chia tiền không phải ngân hàng) + bội số 1.000đ, lấy 4 chip nhỏ nhất. Gõ rỗng → defaults `[50k, 100k, 200k, 500k]`. Ví dụ: "1" → `[10k, 100k, 1tr, 10tr]`; "8"/"80"/"800"/"8000"/"80000" đều → `[80k, 800k, 8tr]` (số 0 cuối không đổi ladder); "35" → `[35k, 350k, 3.5tr]`; "150" → `[15k, 150k, 1.5tr]`. List rỗng KHI số literal đã > 10tr (vd "20000000"). Đây là fix cho bug cũ: model "đơn vị nghìn" (smallest = n×1.000) làm "80000" → 80tr vượt cap → rỗng hết.
 - Reference implementation: `src/components/common/PresetFormModal.tsx`.
 
 ### User profile

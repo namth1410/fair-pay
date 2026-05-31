@@ -112,19 +112,24 @@ export function parseMoneyInput(text: string): string {
 /** Default chip suggestions when the money input is empty. */
 export const DEFAULT_MONEY_SUGGESTIONS = [50_000, 100_000, 200_000, 500_000];
 
-const MONEY_MULTIPLIERS_SINGLE = [10_000, 100_000, 1_000_000, 10_000_000];
-const MONEY_MULTIPLIERS_MULTI = [1_000, 10_000, 100_000, 1_000_000];
-const MAX_MONEY_SUGGESTION = 999_999_999_000; // ~999 tỷ
+// App chia tiền nhóm, không phải app ngân hàng — gợi ý tối đa 10 triệu.
+const MAX_MONEY_SUGGESTION = 10_000_000; // 10 triệu
+// Chip nhỏ nhất phải ≥ 10k — các mức 1k–9k quá nhỏ, ít gặp khi chia tiền.
+const MIN_MONEY_SUGGESTION = 10_000;
+const MONEY_SUGGESTION_COUNT = 4;
 
 /**
- * Generate quick-pick amount suggestions based on what the user has typed.
- *  - Empty / zero  → fallback to `defaults`.
- *  - "3"           → [30_000, 300_000, 3_000_000, 30_000_000].
- *  - "35"          → [35_000, 350_000, 3_500_000, 35_000_000].
+ * Generate quick-pick amount suggestions từ "chữ số có nghĩa" user gõ.
+ * Mỗi chip = `n × 10^k` — tức số đã gõ thêm các số 0 ở những bậc khác nhau —
+ * lọc theo: ≥ 10.000đ (MIN), ≤ 10 triệu (MAX), và bội số 1.000đ. Lấy 4 chip nhỏ nhất.
  *
- * Single-digit input starts at ×10.000 (1k–9k là quá nhỏ, ít gặp);
- * 2+ digit input starts at ×1.000 (cho phép "35" → 35k tự nhiên).
- * Suggestions exceeding the cap are dropped (so list may be < 4 items).
+ * Hệ quả: các số 0 ở cuối input gần như không ảnh hưởng — cùng "8/80/800/8000/80000"
+ * đều ra cùng ladder. KHÔNG bao giờ rỗng trừ khi số literal đã > 10tr.
+ *  - Empty / zero  → fallback to `defaults`.
+ *  - "1"           → [10_000, 100_000, 1_000_000, 10_000_000].
+ *  - "8"…"80000"   → [80_000, 800_000, 8_000_000].
+ *  - "150"         → [15_000, 150_000, 1_500_000].
+ *  - "20000000"    → [] (20tr literal đã vượt cap).
  */
 export function computeMoneySuggestions(
   rawDigits: string,
@@ -133,12 +138,15 @@ export function computeMoneySuggestions(
   if (!rawDigits) return defaults;
   const n = parseInt(rawDigits, 10);
   if (!Number.isFinite(n) || n <= 0) return defaults;
-  const multipliers = n >= 10 ? MONEY_MULTIPLIERS_MULTI : MONEY_MULTIPLIERS_SINGLE;
+
   const out: number[] = [];
-  for (const m of multipliers) {
+  for (let m = 1; ; m *= 10) {
     const v = n * m;
-    if (v > MAX_MONEY_SUGGESTION) break;
-    out.push(v);
+    if (v > MAX_MONEY_SUGGESTION) break; // v tăng dần → có thể dừng sớm
+    if (v >= MIN_MONEY_SUGGESTION && v % 1000 === 0) {
+      out.push(v);
+      if (out.length === MONEY_SUGGESTION_COUNT) break;
+    }
   }
   return out;
 }

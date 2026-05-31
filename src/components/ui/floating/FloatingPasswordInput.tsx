@@ -53,6 +53,7 @@ export function FloatingPasswordInput({
         accessibilityLabel={accessibilityLabel ?? label}
         inputStyle={styles.inputWithIcon}
         surfaceColor={surfaceColor}
+        clearable={false}
       />
       <Pressable
         onPress={() => setIsVisible((v) => !v)}
