@@ -151,8 +151,11 @@ export function dispatchNotificationRefetch(
       case 'payment.recorded':
       case 'payment.received': {
         // Chỉ refetch khi user đang xem đúng trip — tránh clobber.
+        // Quiet refresh (không bật skeleton) + reload audit để tab Lịch sử cũng
+        // cập nhật khi thay đổi đến từ thiết bị khác.
         if (tripId && tripState.currentTripId === tripId) {
-          fireAndForget(tripState.loadBalances(tripId));
+          fireAndForget(tripState.loadBalances(tripId, { quiet: true }));
+          fireAndForget(tripState.loadAuditLogs(tripId));
         }
         // Refresh group balance summary (Home card có thể thay đổi).
         fireAndForget(groupState.loadBalanceSummary());

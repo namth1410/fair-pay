@@ -36,6 +36,12 @@ export const TRIP_NAME_MAX_LENGTH = 50;
 // Pinned trips (home shortcut)
 export const MAX_PINNED_TRIPS = 2;
 
+// Home — số nhóm tối thiểu để bật carousel/arc mode (khớp biên `allowLoop = total >= 3`
+// trong GroupCarousel/GroupArcCarousel). Dưới ngưỡng này, home ép `list` + ẩn toggle:
+// 1-2 nhóm trong arc/coverflow chỉ là 1 card trôi giữa khoảng trống ~450px. Preference
+// arc/carousel của user vẫn được giữ trong cache và tự áp lại khi đạt đủ nhóm.
+export const MIN_GROUPS_FOR_CAROUSEL = 3;
+
 // Sync
 export const SYNC_RETRY_MAX = 3;
 export const SYNC_CLEANUP_AFTER_HOURS = 24;

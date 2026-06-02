@@ -31,6 +31,12 @@ interface FloatingLabelContainerProps {
   accessibilityLabel?: string;
   /** Background color to match parent — used for container fill + label "notch" bg. Default: c.background. */
   surfaceColor?: string;
+  /**
+   * Top-align children thay vì center. Bắt buộc cho ô multiline cao: nếu center,
+   * input ngắn nằm giữa box trong khi placeholder nổi ở `top: 14` → tap placeholder
+   * trượt khỏi input. Khi true, input (flex: 1) lấp đầy box → cả vùng đều touch được.
+   */
+  fillContent?: boolean;
 }
 
 const ANIM_DURATION = 150;
@@ -46,6 +52,7 @@ export function FloatingLabelContainer({
   minHeight = 50,
   accessibilityLabel,
   surfaceColor,
+  fillContent,
 }: FloatingLabelContainerProps) {
   const c = useAppTheme();
   const bg = surfaceColor ?? c.background;
@@ -91,6 +98,7 @@ export function FloatingLabelContainer({
       style={[
         styles.container,
         { backgroundColor: bg, minHeight },
+        fillContent ? styles.fillContent : null,
         borderAnimatedStyle,
         style,
       ]}
@@ -140,6 +148,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
     justifyContent: 'center',
+  },
+  fillContent: {
+    justifyContent: 'flex-start',
   },
   labelWrap: {
     position: 'absolute',

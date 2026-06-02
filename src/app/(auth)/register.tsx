@@ -1,16 +1,12 @@
 import { Link } from 'expo-router';
 import { Button } from 'heroui-native';
-import { useState } from 'react';
-import {
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { Keyboard, StyleSheet, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { BrandDecoration } from '../../components/brand/BrandDecoration';
 import { Wordmark } from '../../components/brand/Wordmark';
+import { RegisterNoticeDialog } from '../../components/common/RegisterNoticeDialog';
 import {
   AnimatedEntrance,
   AppText,
@@ -28,8 +24,31 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const { signUpWithEmail, isLoading } = useAuthStore();
+  const [showNotice, setShowNotice] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { signUpWithEmail, signInWithGoogle, isLoading } = useAuthStore();
   const c = useAppTheme();
+
+  // Hiện lưu ý "server free-tier giới hạn 4 email/giờ, nên đăng nhập Google"
+  // ngay sau khi vào màn — delay nhẹ để transition slide_from_right settle xong.
+  useEffect(() => {
+    const t = setTimeout(() => setShowNotice(true), 450);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      await signInWithGoogle();
+      // Thành công → AuthGate tự redirect sang (main), màn này unmount.
+    } catch (e: unknown) {
+      setShowNotice(false);
+      setError(getErrorMessage(e));
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleRegister = async () => {
     if (!displayName || !email || !password || !confirmPassword) {
@@ -63,13 +82,17 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      // Android adjustResize handles this natively; see login.tsx for details.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: c.background }]}
-    >
+    <View style={[styles.container, { backgroundColor: c.background }]}>
       <BrandDecoration />
-      <DismissKeyboardView style={styles.content}>
+      <KeyboardAwareScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        bottomOffset={20}
+      >
+        <DismissKeyboardView style={styles.content}>
         <AnimatedEntrance delay={0}>
           <View style={styles.brand}>
             <Wordmark size="md" />
@@ -156,8 +179,16 @@ export default function RegisterScreen() {
             </Link>
           </View>
         </AnimatedEntrance>
-      </DismissKeyboardView>
-    </KeyboardAvoidingView>
+        </DismissKeyboardView>
+      </KeyboardAwareScrollView>
+
+      <RegisterNoticeDialog
+        isOpen={showNotice}
+        onClose={() => setShowNotice(false)}
+        onUseGoogle={handleGoogleSignIn}
+        googleLoading={googleLoading}
+      />
+    </View>
   );
 }
 
@@ -165,9 +196,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  flex: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+  },
+  content: {
     paddingHorizontal: 24,
     gap: 12,
   },

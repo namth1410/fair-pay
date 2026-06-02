@@ -36,6 +36,7 @@ import {
 import type { TripWithGroup } from '../types/database.types';
 import type { SplitResult } from '../utils/split';
 import { useGroupStore } from './group.store';
+import { findTripContext, type TripContext } from './tripSelectors';
 
 interface BalanceEntry {
   memberId: string;
@@ -126,9 +127,16 @@ interface TripState {
   }) => Promise<void>;
   removePayment: (paymentId: string, tripId: string) => Promise<void>;
 
-  loadBalances: (tripId: string) => Promise<void>;
+  loadBalances: (tripId: string, opts?: { quiet?: boolean }) => Promise<void>;
   loadAuditLogs: (tripId: string) => Promise<void>;
   recomputeBalances: () => void;
+  /** Sync best-effort resolve trip context từ collection đang có (null nếu chưa cache). */
+  getTripContext: (tripId: string) => TripContext | null;
+  /**
+   * Async resolve: sync lookup trước; miss → fetchTripById (offline-safe).
+   * RETURN-ONLY — KHÔNG mutate currentTrip (detail screen là owner duy nhất qua loadBalances).
+   */
+  resolveTripContext: (tripId: string) => Promise<TripContext | null>;
   reset: () => void;
 }
 
@@ -188,16 +196,19 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   renameTrip: async (tripId, name) => {
     await updateTripName(tripId, name);
-    const trip = get().trips.find((t) => t.id === tripId);
+    // Resolve group_id qua mọi collection + offline fallback — tránh bỏ qua refresh
+    // trips list khi vào trip bypass group detail (trips array rỗng).
+    const ctx = await get().resolveTripContext(tripId);
     await Promise.all([
-      trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
+      ctx ? get().loadTrips(ctx.groupId) : Promise.resolve(),
       get().loadAuditLogs(tripId),
     ]);
   },
 
   clearCurrentTrip: async (tripId) => {
     await clearTrip(tripId);
-    const trip = get().trips.find((t) => t.id === tripId);
+    // Resolve group_id qua mọi collection + offline fallback (xem renameTrip).
+    const ctx = await get().resolveTripContext(tripId);
     // Sau RPC mass-soft-delete: cache cũ stale → loadBalances full fetch
     // (populate cả expenses + payments + members lại).
     // loadBalanceSummary: home group card đọc balanceSummary.groupBalances[groupId];
@@ -206,7 +217,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     await Promise.all([
       get().loadBalances(tripId),
       get().loadAuditLogs(tripId),
-      trip ? get().loadTrips(trip.group_id) : Promise.resolve(),
+      ctx ? get().loadTrips(ctx.groupId) : Promise.resolve(),
       useGroupStore.getState().loadBalanceSummary(),
     ]);
   },
@@ -292,7 +303,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     get().recomputeBalances();
   },
 
-  loadBalances: async (tripId) => {
+  loadBalances: async (tripId, opts) => {
     // Initial fetch (mount trip detail) hoặc post-RPC mass-delete: populate cache đầy đủ.
     // Toggle isLoadingExpenses để ExpensesTab hiện skeleton — tránh phải gọi
     // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
@@ -301,11 +312,15 @@ export const useTripStore = create<TripState>((set, get) => ({
     // Fetch trip metadata song song (fetchTripById) để hydrate currentTrip cho entry-point
     // bypass group detail (pinned card, deep link, notification) — `trips` array chỉ load
     // ở group detail nên detail screen sẽ kẹt loading nếu chỉ dựa vào nó.
+    //
+    // quiet=true (refresh nền sau sync / realtime): KHÔNG bật skeleton + KHÔNG clear cache
+    // → reconcile êm dữ liệu trip ĐANG xem mà không gây nháy màn hình.
+    const quiet = opts?.quiet ?? false;
     const isSwitchingTrip = get().currentTripId !== tripId;
     set({
-      isLoadingExpenses: true,
       currentTripId: tripId,
-      ...(isSwitchingTrip && {
+      ...(!quiet && { isLoadingExpenses: true }),
+      ...(!quiet && isSwitchingTrip && {
         currentTrip: null,
         currentExpenses: [],
         currentPayments: [],
@@ -343,7 +358,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         settlements,
       });
     } finally {
-      if (get().currentTripId === tripId) {
+      if (!quiet && get().currentTripId === tripId) {
         set({ isLoadingExpenses: false });
       }
     }
@@ -376,6 +391,29 @@ export const useTripStore = create<TripState>((set, get) => ({
     const balances = computeTripBalances(currentAllMembers, expensesForCompute, paymentsForCompute);
     const settlements = calculateSettlements(balances);
     set({ balances, settlements });
+  },
+
+  getTripContext: (tripId) => {
+    const { currentTrip, trips, pinnedTrips, allUserTrips } = get();
+    return findTripContext({ currentTrip, trips, pinnedTrips, allUserTrips }, tripId);
+  },
+
+  resolveTripContext: async (tripId) => {
+    const sync = get().getTripContext(tripId);
+    if (sync) return sync;
+    // Miss mọi collection (vào trip bypass group detail mà chưa hydrate) → fetch.
+    // tryServerThenLocal → đọc SQLite mirror khi offline.
+    const trip = await fetchTripById(tripId);
+    if (!trip) return null;
+    // RETURN-ONLY: KHÔNG set currentTrip ở đây — đó là state single-slot do trip detail
+    // screen làm chủ (màn detail còn mounted dưới form được push). Ghi đè sẽ làm màn dưới
+    // mis-render. Caller giữ giá trị resolve trong local state riêng.
+    return {
+      tripId: trip.id,
+      groupId: trip.group_id,
+      tripName: trip.name,
+      status: trip.status,
+    };
   },
 
   loadPinnedTrips: async () => {
@@ -458,6 +496,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   reset: () =>
     set({
       trips: [],
+      currentTrip: null,
       currentExpenses: [],
       currentPayments: [],
       currentAllMembers: [],

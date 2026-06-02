@@ -27,6 +27,7 @@ import {
   EmptyState,
   ListSkeleton,
 } from '../../../components/ui';
+import { MIN_GROUPS_FOR_CAROUSEL } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { useAppStore } from '../../../stores/app.store';
 import { useAuthStore } from '../../../stores/auth.store';
@@ -114,7 +115,12 @@ export default function HomeScreen() {
   }, [setCreateJoinOpen]);
 
   const showHero = groups.length > 0;
-  const showToggle = groups.length > 0;
+  // Carousel/arc chỉ có nghĩa khi đủ nhóm để vuốt (≥ MIN_GROUPS_FOR_CAROUSEL).
+  // Dưới ngưỡng: ẩn toggle + ép `list` cho gọn, nhưng GIỮ preference trong cache
+  // (useHomeViewMode) → tự áp lại khi user đạt đủ nhóm, không mất lựa chọn.
+  const canUseCarousel = groups.length >= MIN_GROUPS_FOR_CAROUSEL;
+  const showToggle = canUseCarousel;
+  const effectiveViewMode = canUseCarousel ? viewMode : 'list';
 
   const showSkeleton = isLoading && groups.length === 0;
   const isEmpty = !showSkeleton && groups.length === 0;
@@ -132,14 +138,14 @@ export default function HomeScreen() {
         }}
       />
     );
-  } else if (viewMode === 'carousel') {
+  } else if (effectiveViewMode === 'carousel') {
     listBody = (
       <GroupCarousel
         groups={groups}
         groupBalances={balanceSummary.groupBalances}
       />
     );
-  } else if (viewMode === 'arc') {
+  } else if (effectiveViewMode === 'arc') {
     listBody = (
       <GroupArcCarousel
         groups={groups}
@@ -221,7 +227,7 @@ export default function HomeScreen() {
                 <View style={styles.headerRight}>
                   {showToggle && (
                     <HomeViewToggle
-                      value={viewMode}
+                      value={effectiveViewMode}
                       onChange={handleViewModeChange}
                     />
                   )}

@@ -26,6 +26,7 @@ import { useAuthStore } from '../../../../stores/auth.store';
 import { useGroupStore } from '../../../../stores/group.store';
 import { useTripStore } from '../../../../stores/trip.store';
 import { useUIStore } from '../../../../stores/ui.store';
+import * as syncBus from '../../../../sync/syncBus';
 import { explainMyTripBalance } from '../../../../utils/explainBalance';
 import type { TripExportData } from '../../../../utils/exportHtml';
 import { hapticLight } from '../../../../utils/haptics';
@@ -220,6 +221,18 @@ export default function TripDetailScreen() {
     // trong 1 lượt → không gọi loadExpenses/loadPayments riêng (race + flicker).
     loadBalances(tripId);
     loadAuditLogs(tripId);
+  }, [tripId]);
+
+  // Sau khi sync nền hoàn tất (vd createExpense local-first đã push → server tạo audit
+  // expense.create), refresh ÊM Lịch sử + balances của trip đang xem — fix tab Lịch sử
+  // không tự cập nhật. Cũng cover offline→online và thay đổi từ thiết bị khác.
+  useEffect(() => {
+    if (!tripId) return;
+    return syncBus.subscribe(() => {
+      if (useTripStore.getState().currentTripId !== tripId) return;
+      void useTripStore.getState().loadAuditLogs(tripId);
+      void useTripStore.getState().loadBalances(tripId, { quiet: true });
+    });
   }, [tripId]);
 
   useEffect(() => {

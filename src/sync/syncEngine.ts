@@ -15,6 +15,7 @@ import { uploadPendingGroupAvatars } from './groupAvatarUploadWorker';
 import { uploadPending as uploadPendingImages } from './imageUploadWorker';
 import { pullAll, type PullResult } from './pullWorker';
 import { pushPending } from './pushWorker';
+import * as syncBus from './syncBus';
 import * as syncErrors from './syncErrors';
 import * as syncQueue from './syncQueue';
 
@@ -76,6 +77,9 @@ export async function run(force = false): Promise<SyncRunResult> {
       });
       await syncQueue.cleanup();
       lastRunAt = Date.now();
+      // Báo cho UI (vd trip detail) refresh sau khi sync nền pull về thay đổi —
+      // đặc biệt audit `expense.create` do server tạo sau createExpense local-first.
+      syncBus.emit({ pulled: pull2 !== undefined });
       return { skipped: false, pull: pull2 ?? pull1 };
     })();
 

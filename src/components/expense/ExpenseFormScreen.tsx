@@ -8,6 +8,7 @@ import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
 import X from 'lucide-react-native/dist/esm/icons/x';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Keyboard,
   Pressable,
@@ -95,23 +96,30 @@ export function ExpenseFormScreen({
   const c = useAppTheme();
   const navigation = useNavigation();
 
-  const trips = useTripStore((s) => s.trips);
+  const getTripContext = useTripStore((s) => s.getTripContext);
+  const resolveTripContext = useTripStore((s) => s.resolveTripContext);
   const addExpense = useTripStore((s) => s.addExpense);
   const loadMembers = useGroupStore((s) => s.loadMembers);
 
-  const initialTrip = initialTripId
-    ? trips.find((t) => t.id === initialTripId)
-    : undefined;
+  // Seed đồng bộ best-effort: vào form từ trip detail → currentTrip đã hydrate → hit ngay,
+  // không flicker. Miss (bypass entry-point chưa hydrate) → effect async resolve bên dưới.
+  const initialCtx = initialTripId ? getTripContext(initialTripId) : null;
 
   const [currentTripId, setCurrentTripId] = useState<string | undefined>(initialTripId);
   const [currentGroupId, setCurrentGroupId] = useState<string | undefined>(
-    initialTrip?.group_id,
+    initialCtx?.groupId,
   );
   const [currentTripName, setCurrentTripName] = useState<string | undefined>(
-    initialTrip?.name,
+    initialCtx?.tripName,
   );
   const [currentGroupName, setCurrentGroupName] = useState<string | undefined>(
-    undefined,
+    initialCtx?.groupName,
+  );
+  // Máy trạng thái resolve trip (chỉ ý nghĩa khi vào form qua initialTripId):
+  // 'resolving' (đang fetch group_id) → 'resolved' (đủ data) | 'notFound' (trip không tồn tại/
+  // offline chưa sync). requireTrip=true (form /expenses/new) luôn 'resolved' — AddToField tự cấp.
+  const [tripState, setTripState] = useState<'resolving' | 'resolved' | 'notFound'>(() =>
+    !initialTripId || initialCtx ? 'resolved' : 'resolving',
   );
 
   // Mọi expense (kể cả tạo mới từ trip detail) đều có ID trước khi presign upload.
@@ -249,6 +257,33 @@ export function ExpenseFormScreen({
     if (!currentGroupId) return;
     loadMembers(currentGroupId).catch(() => {});
   }, [currentGroupId, loadMembers]);
+
+  // Resolve group_id khi vào form qua initialTripId nhưng seed sync miss (bypass entry-point:
+  // pinned card / deep link / notification / preset). fetchTripById offline-safe. Set group_id
+  // xong → effect loadMembers ở trên tự fire. Cờ `cancelled` chống set-state-after-unmount.
+  useEffect(() => {
+    if (!initialTripId || currentGroupId) return;
+    let cancelled = false;
+    resolveTripContext(initialTripId)
+      .then((ctx) => {
+        if (cancelled) return;
+        if (!ctx) {
+          setTripState('notFound');
+          return;
+        }
+        setCurrentTripId(ctx.tripId);
+        setCurrentGroupId(ctx.groupId);
+        setCurrentTripName(ctx.tripName);
+        setCurrentGroupName(ctx.groupName);
+        setTripState('resolved');
+      })
+      .catch(() => {
+        if (!cancelled) setTripState('notFound');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialTripId, currentGroupId, resolveTripContext]);
 
   // Default paidBy về member đầu khi members load xong.
   useEffect(() => {
@@ -498,7 +533,51 @@ export function ExpenseFormScreen({
         )
       : [];
 
-  const submitDisabled = busy || presetConflict || (requireTrip && !currentTripId);
+  const submitDisabled =
+    busy ||
+    presetConflict ||
+    (requireTrip && !currentTripId) ||
+    (!requireTrip && tripState !== 'resolved');
+
+  // Vào form qua initialTripId nhưng chưa resolve được group_id → KHÔNG render form điền-được
+  // (tránh fill-then-fail). Mirror pattern isHydrating của trip detail screen. Tất cả hooks đã
+  // chạy phía trên nên early-return này an toàn về thứ tự hook.
+  if (!requireTrip && tripState !== 'resolved') {
+    return (
+      <SafeAreaView edges={['bottom']} style={[styles.root, { backgroundColor: c.background }]}>
+        <Stack.Screen
+          options={{
+            headerTitle: 'Thêm khoản chi',
+            headerLeft: () => (
+              <Pressable
+                onPress={() => router.back()}
+                style={styles.headerBtn}
+                accessibilityLabel="Quay lại"
+                hitSlop={8}
+              >
+                <ChevronLeft size={24} color={c.foreground} />
+              </Pressable>
+            ),
+            headerRight: () => null,
+          }}
+        />
+        <View style={styles.hydratingWrap}>
+          {tripState === 'resolving' ? (
+            <>
+              <ActivityIndicator color={c.primaryStrong} />
+              <AppText variant="caption" tone="muted">
+                Đang tải chuyến đi...
+              </AppText>
+            </>
+          ) : (
+            <AppText variant="caption" tone="danger" center>
+              Không tải được chuyến đi. Kiểm tra kết nối hoặc mở lại từ nhóm.
+            </AppText>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['bottom']} style={[styles.root, { backgroundColor: c.background }]}>
@@ -1114,6 +1193,13 @@ const styles = StyleSheet.create({
   errorBox: {
     padding: 12,
     borderRadius: 10,
+  },
+  hydratingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 32,
   },
   savePresetRow: {
     flexDirection: 'row',

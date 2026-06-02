@@ -82,6 +82,7 @@ export function FloatingBottomSheetInput({
       error={error}
       minHeight={minHeight ?? (multiline ? 72 : 50)}
       surfaceColor={surfaceColor}
+      fillContent={multiline}
     >
       <BottomSheetTextInput
         defaultValue={defaultValue}
@@ -102,6 +103,9 @@ export function FloatingBottomSheetInput({
         textAlignVertical={multiline ? 'top' : 'center'}
         style={[
           styles.input,
+          // Multiline: input lấp đầy chiều cao box (container top-align qua fillContent)
+          // → toàn bộ vùng — kể cả dưới placeholder — đều bắt được tap để focus.
+          multiline ? styles.inputFill : null,
           {
             color: c.foreground,
             fontFamily: fonts.regular,
@@ -120,5 +124,9 @@ const styles = StyleSheet.create({
     margin: 0,
     minHeight: 20,
     includeFontPadding: false,
+  },
+  inputFill: {
+    flex: 1,
+    alignSelf: 'stretch',
   },
 });

@@ -14,7 +14,7 @@ import { getErrorMessage } from '../../utils/error';
 import { showInfo, showSuccess } from '../../utils/toast';
 import { type AvatarSource, pickAndProcessAvatar, type ProcessedAvatar } from '../../utils/imageProcessing';
 import { validateName } from '../../utils/validate';
-import { AppText, Avatar, DismissKeyboardView } from '../ui';
+import { AppText, Avatar, BouncyDialog, DismissKeyboardView } from '../ui';
 import { FloatingBottomSheetInput } from '../ui/floating';
 
 interface GroupEditSheetProps {
@@ -25,12 +25,22 @@ interface GroupEditSheetProps {
   currentAvatarUrl: string | null;
 }
 
-type AvatarState =
-  | { kind: 'choose' }
+/**
+ * Avatar được STAGE cục bộ, KHÔNG commit ngay. Nút "Lưu thay đổi" (chung với tên)
+ * mới thực sự gọi service. `picking` chỉ là trạng thái picker tạm; `newImage` /
+ * `removeExisting` là ý định đã stage (avatarDirty = true).
+ */
+type AvatarStage =
+  | { kind: 'none' }
   | { kind: 'picking' }
-  | { kind: 'preview'; processed: ProcessedAvatar }
-  | { kind: 'uploading'; processed: ProcessedAvatar }
-  | { kind: 'removing' };
+  | { kind: 'newImage'; processed: ProcessedAvatar }
+  | { kind: 'removeExisting' };
+
+type SaveOutcome =
+  | { part: 'name'; ok: true }
+  | { part: 'name'; ok: false; err: unknown }
+  | { part: 'avatar'; ok: true; pending: boolean }
+  | { part: 'avatar'; ok: false; err: unknown };
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -67,8 +77,8 @@ export function GroupEditSheet({
   const setGroupAvatar = useGroupStore((s) => s.setGroupAvatar);
   const editGroupName = useGroupStore((s) => s.editGroupName);
 
-  // Avatar section state
-  const [avatarState, setAvatarState] = useState<AvatarState>({ kind: 'choose' });
+  // Avatar section state — staged, committed bởi nút "Lưu thay đổi" chung.
+  const [avatarStage, setAvatarStage] = useState<AvatarStage>({ kind: 'none' });
   const [avatarError, setAvatarError] = useState('');
 
   // Name section state — uncontrolled to avoid Vietnamese IME bug
@@ -76,16 +86,26 @@ export function GroupEditSheet({
   const [resetKey, setResetKey] = useState(0);
   const [nameDirty, setNameDirty] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [isSavingName, setIsSavingName] = useState(false);
+
+  // Save chung + guard thoát chưa lưu
+  const [isSaving, setIsSaving] = useState(false);
+  const [exitConfirm, setExitConfirm] = useState(false);
+
+  const avatarDirty =
+    avatarStage.kind === 'newImage' || avatarStage.kind === 'removeExisting';
+  const isDirty = nameDirty || avatarDirty;
+  // Chặn đóng sheet khi đang lưu hoặc đang xử lý ảnh (picker mở).
+  const isBusy = isSaving || avatarStage.kind === 'picking';
 
   useEffect(() => {
     if (!isOpen) {
       // Reset on close so next open is clean
-      setAvatarState({ kind: 'choose' });
+      setAvatarStage({ kind: 'none' });
       setAvatarError('');
       setNameError(null);
       setNameDirty(false);
-      setIsSavingName(false);
+      setIsSaving(false);
+      setExitConfirm(false);
       nameRef.current = groupName;
       setResetKey((k) => k + 1);
     }
@@ -100,270 +120,361 @@ export function GroupEditSheet({
     if (nameError) setNameError(null);
   };
 
-  const handleSaveName = async () => {
-    const next = nameRef.current.trim();
-    const err = validateName(next, 'Tên nhóm');
-    if (err) {
-      setNameError(err);
-      return;
-    }
-    if (next === groupName.trim()) return;
-    Keyboard.dismiss();
-    setIsSavingName(true);
-    setNameError(null);
-    try {
-      await editGroupName(groupId, next);
-      showSuccess('Đã đổi tên nhóm');
-      onOpenChange(false);
-    } catch (e: unknown) {
-      setNameError(getErrorMessage(e));
-    } finally {
-      setIsSavingName(false);
-    }
-  };
-
-  // ── Avatar handlers (preserved from GroupAvatarSheet) ──
+  // ── Avatar handlers (stage-only, không gọi service tới khi Lưu) ──
 
   const handlePick = async (source: AvatarSource) => {
     setAvatarError('');
-    setAvatarState({ kind: 'picking' });
+    setAvatarStage({ kind: 'picking' });
     try {
       const processed = await pickAndProcessAvatar(source);
       if (!processed) {
-        setAvatarState({ kind: 'choose' });
+        setAvatarStage({ kind: 'none' });
         return;
       }
-      setAvatarState({ kind: 'preview', processed });
+      setAvatarStage({ kind: 'newImage', processed });
     } catch (err) {
       setAvatarError(getErrorMessage(err));
-      setAvatarState({ kind: 'choose' });
+      setAvatarStage({ kind: 'none' });
     }
   };
 
-  const handleSaveAvatar = async () => {
-    if (avatarState.kind !== 'preview') return;
-    const { processed } = avatarState;
+  const handleStageRemove = () => {
     setAvatarError('');
-    setAvatarState({ kind: 'uploading', processed });
+    setAvatarStage({ kind: 'removeExisting' });
+  };
+
+  const handleCancelAvatarChange = () => {
+    setAvatarError('');
+    setAvatarStage({ kind: 'none' });
+  };
+
+  // ── Lưu chung: tên + ảnh là 2 op độc lập, xử lý fail từng phần ──
+
+  const runAvatarOp = async (
+    stage: Extract<AvatarStage, { kind: 'newImage' } | { kind: 'removeExisting' }>
+  ): Promise<SaveOutcome> => {
     try {
-      const result = await saveGroupAvatar(groupId, processed);
-      setGroupAvatar(groupId, result.avatarUrl);
-      if (result.pending) {
-        showInfo('Đã lưu, sẽ tải lên khi có mạng');
-      } else {
-        showSuccess('Đã đổi ảnh nhóm');
+      if (stage.kind === 'newImage') {
+        const result = await saveGroupAvatar(groupId, stage.processed);
+        setGroupAvatar(groupId, result.avatarUrl);
+        return { part: 'avatar', ok: true, pending: result.pending };
       }
-      onOpenChange(false);
-    } catch (err) {
-      setAvatarError(mapUploadError(err));
-      setAvatarState({ kind: 'preview', processed });
-    }
-  };
-
-  const handleRemoveAvatar = async () => {
-    setAvatarError('');
-    setAvatarState({ kind: 'removing' });
-    try {
+      // removeExisting
       const r = await removeGroupAvatarOfflineFirst(groupId);
       if (r.revertedPending) {
         // Hủy pending upload → avatar revert về URL server. Đọc lại từ repo
         // (bypass overlay vì pending row đã xóa).
         const fresh = await groupRepo.getById(groupId);
         setGroupAvatar(groupId, fresh?.avatarUrl ?? null);
-        showSuccess('Đã hủy ảnh vừa chọn');
       } else {
         setGroupAvatar(groupId, null);
-        if (r.pending) {
-          showInfo('Đã xóa, sẽ đồng bộ khi có mạng');
-        } else {
-          showSuccess('Đã xóa ảnh nhóm');
-        }
       }
-      onOpenChange(false);
+      return { part: 'avatar', ok: true, pending: r.pending };
     } catch (err) {
-      setAvatarError(mapUploadError(err));
-      setAvatarState({ kind: 'choose' });
+      return { part: 'avatar', ok: false, err };
     }
   };
 
-  const isAvatarBusy =
-    avatarState.kind === 'picking' ||
-    avatarState.kind === 'uploading' ||
-    avatarState.kind === 'removing';
+  const handleSave = async () => {
+    if (!isDirty || isBusy) return;
 
-  const isBusy = isAvatarBusy || isSavingName;
+    const nextName = nameRef.current.trim();
+    // Validate tên trước (đồng bộ) — lỗi thì dừng toàn bộ, không đụng ảnh.
+    if (nameDirty) {
+      const err = validateName(nextName, 'Tên nhóm');
+      if (err) {
+        setNameError(err);
+        return;
+      }
+    }
+
+    Keyboard.dismiss();
+    setIsSaving(true);
+    setNameError(null);
+    setAvatarError('');
+
+    const tasks: Promise<SaveOutcome>[] = [];
+    if (nameDirty) {
+      tasks.push(
+        editGroupName(groupId, nextName)
+          .then((): SaveOutcome => ({ part: 'name', ok: true }))
+          .catch((err): SaveOutcome => ({ part: 'name', ok: false, err }))
+      );
+    }
+    if (avatarStage.kind === 'newImage' || avatarStage.kind === 'removeExisting') {
+      tasks.push(runAvatarOp(avatarStage));
+    }
+
+    const results = await Promise.all(tasks);
+    const nameRes = results.find(
+      (r): r is Extract<SaveOutcome, { part: 'name' }> => r.part === 'name'
+    );
+    const avatarRes = results.find(
+      (r): r is Extract<SaveOutcome, { part: 'avatar' }> => r.part === 'avatar'
+    );
+
+    // Clear dirty cho phần thành công → Save kế chỉ retry phần fail.
+    if (nameRes?.ok) setNameDirty(false);
+    else if (nameRes && !nameRes.ok) setNameError(getErrorMessage(nameRes.err));
+
+    if (avatarRes?.ok) setAvatarStage({ kind: 'none' });
+    else if (avatarRes && !avatarRes.ok) setAvatarError(mapUploadError(avatarRes.err));
+
+    const nameOk = !nameRes || nameRes.ok;
+    const avatarOk = !avatarRes || avatarRes.ok;
+
+    if (nameOk && avatarOk) {
+      const avatarPending = avatarRes?.ok ? avatarRes.pending : false;
+      if (avatarPending) {
+        showInfo('Đã lưu, ảnh sẽ đồng bộ khi có mạng');
+      } else {
+        showSuccess('Đã lưu thay đổi');
+      }
+      setIsSaving(false);
+      onOpenChange(false);
+      return;
+    }
+
+    // Fail từng phần → giữ sheet mở, toast phần thành công, lỗi inline phần fail.
+    if (nameRes?.ok && !avatarOk) {
+      showSuccess('Đã đổi tên nhóm');
+    } else if (avatarRes?.ok && !nameOk) {
+      showSuccess(avatarRes.pending ? 'Đã lưu ảnh, sẽ đồng bộ khi có mạng' : 'Đã cập nhật ảnh nhóm');
+    }
+    setIsSaving(false);
+  };
+
+  // ── Đóng sheet: guard thoát khi còn thay đổi chưa lưu ──
+
+  const handleOpenChange = (open: boolean) => {
+    if (open) {
+      onOpenChange(true);
+      return;
+    }
+    // Choke point chung cho mọi đường đóng (swipe, back, tap overlay).
+    // Dismiss keyboard TRƯỚC khi mở BouncyDialog (Modal) — tránh Modal restore
+    // focus rồi bật lại bàn phím khi đóng.
+    Keyboard.dismiss();
+    if (isBusy) return; // đang lưu / đang chọn ảnh → không cho đóng
+    if (isDirty) {
+      setExitConfirm(true); // nuốt close, hỏi xác nhận
+      return;
+    }
+    onOpenChange(false);
+  };
+
+  const confirmExit = () => {
+    setExitConfirm(false);
+    onOpenChange(false);
+  };
+
+  const saveLabel = isSaving ? 'Đang lưu...' : 'Lưu thay đổi';
 
   return (
-    <BottomSheet
-      isOpen={isOpen}
-      onOpenChange={(open) => {
-        if (isBusy) return;
-        onOpenChange(open);
-      }}
-    >
-      <BottomSheet.Portal>
-        <BottomSheet.Overlay />
-        <BottomSheet.Content
-          enableDynamicSizing={false}
-          snapPoints={['60%', '90%']}
-          keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-          android_keyboardInputMode="adjustResize"
-        >
-          <BottomSheetScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.container}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+    <>
+      <BottomSheet isOpen={isOpen} onOpenChange={handleOpenChange}>
+        <BottomSheet.Portal>
+          <BottomSheet.Overlay />
+          <BottomSheet.Content
+            enableDynamicSizing={false}
+            snapPoints={['60%', '90%']}
+            keyboardBehavior="extend"
+            keyboardBlurBehavior="restore"
+            android_keyboardInputMode="adjustResize"
           >
-            <DismissKeyboardView>
-            <View style={styles.header}>
-              <BottomSheet.Title>Sửa nhóm</BottomSheet.Title>
-            </View>
-
-            {/* ── Section: Tên nhóm ── */}
-            <View style={styles.section}>
-              <FloatingBottomSheetInput
-                key={resetKey}
-                label="Tên nhóm"
-                defaultValue={groupName}
-                onChangeText={handleChangeName}
-                returnKeyType="done"
-                onSubmitEditing={handleSaveName}
-                maxLength={100}
-                accessibilityLabel="Tên nhóm"
-                editable={!isSavingName}
-                surfaceColor={c.surface}
-              />
-              {nameError ? (
-                <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                  <AppText variant="caption" tone="danger">{nameError}</AppText>
+            <BottomSheetScrollView
+              style={styles.scrollView}
+              contentContainerStyle={styles.container}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <DismissKeyboardView>
+                <View style={styles.header}>
+                  <BottomSheet.Title>Sửa nhóm</BottomSheet.Title>
                 </View>
-              ) : null}
-              <Button
-                variant="primary"
-                size="md"
-                onPress={handleSaveName}
-                isDisabled={!nameDirty || isSavingName}
-              >
-                <Button.Label>{isSavingName ? 'Đang lưu...' : 'Lưu tên'}</Button.Label>
-              </Button>
-            </View>
 
-            <View style={[styles.divider, { backgroundColor: c.divider }]} />
-
-            {/* ── Section: Ảnh nhóm ── */}
-            <View style={styles.section}>
-              <AppText variant="label" tone="muted" style={styles.sectionLabel}>
-                Ảnh nhóm
-              </AppText>
-
-              {avatarState.kind === 'preview' || avatarState.kind === 'uploading' ? (
-                <View style={styles.previewBody}>
-                  <View style={styles.previewImageWrap}>
-                    <Image
-                      source={{ uri: avatarState.processed.uri }}
-                      style={styles.previewImage}
-                    />
-                  </View>
-                  <AppText variant="caption" tone="muted">
-                    {avatarState.processed.width}×{avatarState.processed.width} • {formatBytes(avatarState.processed.sizeBytes)}
-                  </AppText>
-
-                  {avatarError ? (
+                {/* ── Section: Tên nhóm ── */}
+                <View style={styles.section}>
+                  <FloatingBottomSheetInput
+                    key={resetKey}
+                    label="Tên nhóm"
+                    defaultValue={groupName}
+                    onChangeText={handleChangeName}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSave}
+                    maxLength={100}
+                    accessibilityLabel="Tên nhóm"
+                    editable={!isSaving}
+                    surfaceColor={c.surface}
+                  />
+                  {nameError ? (
                     <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                      <AppText variant="caption" tone="danger">{avatarError}</AppText>
+                      <AppText variant="caption" tone="danger">{nameError}</AppText>
                     </View>
                   ) : null}
+                </View>
 
-                  <View style={styles.actionsRow}>
-                    <View style={styles.actionFlex}>
+                <View style={[styles.divider, { backgroundColor: c.divider }]} />
+
+                {/* ── Section: Ảnh nhóm ── */}
+                <View style={styles.section}>
+                  <AppText variant="label" tone="muted" style={styles.sectionLabel}>
+                    Ảnh nhóm
+                  </AppText>
+
+                  {avatarStage.kind === 'newImage' ? (
+                    <View style={styles.previewBody}>
+                      <View style={styles.previewImageWrap}>
+                        <Image
+                          source={{ uri: avatarStage.processed.uri }}
+                          style={styles.previewImage}
+                        />
+                      </View>
+                      <AppText variant="caption" tone="muted">
+                        {avatarStage.processed.width}×{avatarStage.processed.width} • {formatBytes(avatarStage.processed.sizeBytes)}
+                      </AppText>
+
+                      {avatarError ? (
+                        <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                          <AppText variant="caption" tone="danger">{avatarError}</AppText>
+                        </View>
+                      ) : null}
+
                       <Button
                         variant="secondary"
                         size="md"
-                        onPress={() => setAvatarState({ kind: 'choose' })}
-                        isDisabled={avatarState.kind === 'uploading'}
+                        onPress={handleCancelAvatarChange}
+                        isDisabled={isSaving}
                       >
-                        <Button.Label>Đổi ảnh</Button.Label>
+                        <Button.Label>Chọn ảnh khác</Button.Label>
                       </Button>
                     </View>
-                    <View style={styles.actionFlex}>
-                      <Button
-                        variant="primary"
-                        size="md"
-                        onPress={handleSaveAvatar}
-                        isDisabled={avatarState.kind === 'uploading'}
-                      >
-                        <Button.Label>
-                          {avatarState.kind === 'uploading' ? 'Đang tải lên...' : 'Lưu'}
-                        </Button.Label>
-                      </Button>
-                    </View>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.chooseBody}>
-                  <View style={styles.currentRow}>
-                    <Avatar
-                      seed={groupId}
-                      label={groupName}
-                      photoUrl={currentAvatarUrl}
-                      size={56}
-                    />
-                    <View style={styles.currentMeta}>
-                      <AppText variant="caption" tone="muted">
-                        {currentAvatarUrl ? 'Đang dùng ảnh tùy chỉnh' : 'Đang dùng avatar mặc định'}
-                      </AppText>
-                    </View>
-                  </View>
-
-                  {avatarError ? (
-                    <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
-                      <AppText variant="caption" tone="danger">{avatarError}</AppText>
-                    </View>
-                  ) : null}
-
-                  {avatarState.kind === 'picking' ? (
-                    <View style={styles.busyRow}>
-                      <ActivityIndicator color={c.foreground} />
-                      <AppText variant="body" tone="muted">Đang xử lý ảnh...</AppText>
-                    </View>
-                  ) : (
-                    <View style={styles.actionsCol}>
-                      <View style={styles.actionsRow}>
-                        <View style={styles.actionFlex}>
-                          <Button variant="primary" size="md" onPress={() => handlePick('library')}>
-                            <Button.Label>Thư viện</Button.Label>
-                          </Button>
+                  ) : avatarStage.kind === 'removeExisting' ? (
+                    <View style={styles.chooseBody}>
+                      <View style={styles.currentRow}>
+                        <View style={styles.avatarDim}>
+                          <Avatar
+                            seed={groupId}
+                            label={groupName}
+                            photoUrl={currentAvatarUrl}
+                            size={56}
+                          />
                         </View>
-                        <View style={styles.actionFlex}>
-                          <Button variant="secondary" size="md" onPress={() => handlePick('camera')}>
-                            <Button.Label>Chụp ảnh</Button.Label>
-                          </Button>
+                        <View style={styles.currentMeta}>
+                          <AppText variant="caption" tone="danger">
+                            Ảnh sẽ bị xóa khi lưu
+                          </AppText>
                         </View>
                       </View>
-                      {currentAvatarUrl ? (
-                        <Button
-                          variant="danger"
-                          size="md"
-                          onPress={handleRemoveAvatar}
-                          isDisabled={avatarState.kind === 'removing'}
-                        >
-                          <Button.Label>
-                            {avatarState.kind === 'removing' ? 'Đang xóa...' : 'Xóa ảnh'}
-                          </Button.Label>
-                        </Button>
+
+                      {avatarError ? (
+                        <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                          <AppText variant="caption" tone="danger">{avatarError}</AppText>
+                        </View>
                       ) : null}
+
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        onPress={handleCancelAvatarChange}
+                        isDisabled={isSaving}
+                      >
+                        <Button.Label>Hoàn tác</Button.Label>
+                      </Button>
+                    </View>
+                  ) : (
+                    <View style={styles.chooseBody}>
+                      <View style={styles.currentRow}>
+                        <Avatar
+                          seed={groupId}
+                          label={groupName}
+                          photoUrl={currentAvatarUrl}
+                          size={56}
+                        />
+                        <View style={styles.currentMeta}>
+                          <AppText variant="caption" tone="muted">
+                            {currentAvatarUrl ? 'Đang dùng ảnh tùy chỉnh' : 'Đang dùng avatar mặc định'}
+                          </AppText>
+                        </View>
+                      </View>
+
+                      {avatarError ? (
+                        <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
+                          <AppText variant="caption" tone="danger">{avatarError}</AppText>
+                        </View>
+                      ) : null}
+
+                      {avatarStage.kind === 'picking' ? (
+                        <View style={styles.busyRow}>
+                          <ActivityIndicator color={c.foreground} />
+                          <AppText variant="body" tone="muted">Đang xử lý ảnh...</AppText>
+                        </View>
+                      ) : (
+                        <View style={styles.actionsCol}>
+                          <View style={styles.actionsRow}>
+                            <View style={styles.actionFlex}>
+                              <Button variant="primary" size="md" onPress={() => handlePick('library')} isDisabled={isSaving}>
+                                <Button.Label>Thư viện</Button.Label>
+                              </Button>
+                            </View>
+                            <View style={styles.actionFlex}>
+                              <Button variant="secondary" size="md" onPress={() => handlePick('camera')} isDisabled={isSaving}>
+                                <Button.Label>Chụp ảnh</Button.Label>
+                              </Button>
+                            </View>
+                          </View>
+                          {currentAvatarUrl ? (
+                            <Button
+                              variant="danger"
+                              size="md"
+                              onPress={handleStageRemove}
+                              isDisabled={isSaving}
+                            >
+                              <Button.Label>Xóa ảnh</Button.Label>
+                            </Button>
+                          ) : null}
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
-              )}
-            </View>
-            </DismissKeyboardView>
-          </BottomSheetScrollView>
-        </BottomSheet.Content>
-      </BottomSheet.Portal>
-    </BottomSheet>
+
+                {/* ── Lưu chung ── */}
+                <View style={styles.saveSection}>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onPress={handleSave}
+                    isDisabled={!isDirty || isBusy}
+                  >
+                    <Button.Label>{saveLabel}</Button.Label>
+                  </Button>
+                </View>
+              </DismissKeyboardView>
+            </BottomSheetScrollView>
+          </BottomSheet.Content>
+        </BottomSheet.Portal>
+      </BottomSheet>
+
+      {/* Render NGOÀI BottomSheet.Portal để tránh lỗi nested Modal trên Android. */}
+      <BouncyDialog
+        isOpen={exitConfirm}
+        onClose={() => setExitConfirm(false)}
+      >
+        <BouncyDialog.Title>Thay đổi chưa lưu</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          Bạn đã thay đổi nhưng chưa lưu. Thoát mà không lưu?
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setExitConfirm(false)}>
+            <Button.Label>Ở lại</Button.Label>
+          </Button>
+          <Button variant="danger" size="sm" onPress={confirmExit}>
+            <Button.Label>Thoát</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
+    </>
   );
 }
 
@@ -398,6 +509,12 @@ const styles = StyleSheet.create({
   currentMeta: {
     flex: 1,
     minWidth: 0,
+  },
+  avatarDim: {
+    opacity: 0.4,
+  },
+  saveSection: {
+    paddingTop: 20,
   },
   actionsCol: {
     gap: 10,
