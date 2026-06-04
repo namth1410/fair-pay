@@ -91,6 +91,24 @@ reference: [closeTrip](src/services/trip.service.ts) (P4) hoặc [deleteExpense]
 
 Mọi op mới thêm vào dispatcher PHẢI tuân pattern này nếu không phải P1 create thuần.
 
+### Rate limiting (chống abuse)
+- Enforcement ở **BEFORE INSERT trigger** trên 5 bảng (KHÔNG check trong RPC — RLS cho insert
+  trực tiếp né RPC). Sliding-window đếm `created_at`/`joined_at` trong cửa sổ trượt, **đếm cả
+  row soft-deleted** (chống reset create→delete→create). Trigger func `SECURITY DEFINER` +
+  `search_path` → COUNT bypass RLS. Migration `20260604130000_rate_limit_triggers.sql`.
+- Ngưỡng: expense 300/user/1h + 500/group/1h; payment 200/user/1h; trip 60/user/1d; group
+  30/user/1d; virtual member 100/group/1d. Đổi ngưỡng = `CREATE OR REPLACE` function (không đổi schema).
+- **Errcode `P0429`** (`rate_limit_exceeded`): client xử lý 2 đường — (1) queue replay:
+  `classifyError`→`failed` + `markFailed` fixed-backoff `RATE_LIMIT_BACKOFF_SECONDS` 30',
+  **KHÔNG tăng retry_count / KHÔNG dead-letter** (batch offline hợp lệ tự lành; abuser retry
+  ~1 lần/30'); (2) direct-online: toast tiếng Việt qua `getErrorMessage` (ERROR_MAP).
+- **Spoof guard** đính kèm: trigger RAISE `42501` (`actor_spoof`) nếu `created_by`/`recorded_by`
+  ≠ `auth_user_id()`, CHỈ khi `auth_user_id()` IS NOT NULL (miễn trừ service_role). Không cản
+  "member thêm khoản chi/thanh toán" — chỉ ép cột người-ghi trung thực (`paid_by`/splits không đụng).
+- **Mọi action tạo-row mới PHẢI cân nhắc thêm trigger rate-limit** + index composite
+  `(actor|group, created_at)` NON-partial cho COUNT. Auth ops (login/signup/reset/OTP) → cấu
+  hình Supabase Dashboard → Auth → Rate Limits (KHÔNG ở Postgres).
+
 ### Phân lớp file
 - **Repositories** (`src/repositories/`): 12 file đọc SQLite local. Mỗi entity có
   `getById()`, `listByX()`, `upsertFromServer()` (sync engine pull gọi).
@@ -120,6 +138,12 @@ Mọi op mới thêm vào dispatcher PHẢI tuân pattern này nếu không ph�
   `update_user_settings`, `delete_payment`.
 - `20260521xxxxxx_offline_first_security_hardening` — `SET search_path` cho 2 trigger
   funcs + `REVOKE EXECUTE ... FROM anon` cho 9 RPC mới.
+- `20260604120000_security_hardening_release.sql` — pre-release audit fix: bỏ policy INSERT
+  `notif_insert_auth` (phishing), siết `audit_logs` INSERT về `actor_id = auth_user_id()`,
+  thêm `is_member` check + lọc recipients trong `create_notifications_batch`, gỡ grant anon +
+  helper `_*` khỏi authenticated, pin search_path 5 SECURITY DEFINER func còn thiếu.
+- `20260604130000_rate_limit_triggers.sql` — rate-limit sliding-window (5 BEFORE INSERT
+  trigger) + spoof guard + 6 index composite. Xem mục "Rate limiting (chống abuse)".
 
 ### Conflict resolution UI
 - Modal hiện khi sync engine catch `P0410` → emit `ConflictEvent` → mount-time listener
@@ -206,6 +230,7 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 
 ### Authorization
 - Chỉ có 2 role: `'admin' | 'member'`. Mỗi nhóm có **đúng 1 admin** (người tạo nhóm). Admin không tự rời/bị xóa; chỉ member mới rời/bị xóa được.
+- **Tạo trip: MỌI member** (RLS `trips` INSERT = `is_member`, RPC `create_trip` check `is_member` — migration `20260604140000_member_create_trip.sql`). Nhưng **quản lý trip** (rename/close/reopen/clear/delete) **vẫn chỉ admin** (RLS UPDATE + 5 RPC `update_trip_name`/`close_trip`/`reopen_trip`/`clear_trip`/`delete_trip` giữ `is_admin`). Client: `createTrip` dùng `assertRole(['admin','member'])`, nút "Tạo chuyến" ở TripsTab bỏ gate `isAdmin`; TripManagementTab giữ gate admin.
 - Mọi hàm service thay đổi dữ liệu nhóm PHẢI gọi `assertRole()` ở đầu hàm (đã có trong `group.service.ts`).
 - `assertRole(groupId, ['admin'])` — check caller có role trong danh sách cho phép.
 - `removeMember` phải chặn xóa admin (`target.role === 'admin'`).
@@ -233,7 +258,7 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
   - `cleanup_notifications` — daily cron 03:00 ICT (pg_cron scheduled, không gọi từ TS)
 - Pattern RPC: `SECURITY DEFINER + SET search_path = public, pg_temp` + explicit `is_admin()/is_member()` check + REVOKE PUBLIC + GRANT authenticated + `COMMENT ON FUNCTION` liệt kê error codes. Tham khảo [supabase/migrations/20260511134015_trip_clear_and_delete_rpc.sql](supabase/migrations/20260511134015_trip_clear_and_delete_rpc.sql).
 - Actor luôn = `auth_user_id()` ở SQL — KHÔNG nhận `p_actor_id` từ client để chống spoofing.
-- Map Postgres error codes → tiếng Việt ở [src/utils/error.ts](src/utils/error.ts). Khi thêm errcode mới ở SQL, NHỚ thêm vào ERROR_MAP.
+- Map Postgres error codes → tiếng Việt ở [src/utils/error.ts](src/utils/error.ts). Khi thêm errcode mới ở SQL, NHỚ thêm vào ERROR_MAP. Đã map: `P0429` (rate_limit_exceeded) + `42501` (actor_spoof) từ rate-limit triggers — xem mục "Rate limiting (chống abuse)".
 - Internal SQL helpers (`_get_group_recipients`, `_format_dedup_title`, `_create_notifications_dedup`, `_log_action`) chỉ gọi từ RPC khác — KHÔNG GRANT authenticated.
 - `_format_dedup_title` SQL ↔ `formatNotificationTitle` TS ([src/utils/notificationFormat.ts](src/utils/notificationFormat.ts)) phải đồng bộ logic plural khi sửa.
 - Dedup window literal `interval '10 minutes'` trong `_create_notifications_dedup` SQL phải đồng bộ với `NOTIF_DEDUP_WINDOW_MS` ở [src/config/constants.ts](src/config/constants.ts).

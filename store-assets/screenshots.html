@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fair Pay — Trình tạo ảnh Play Store (1080×1920)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;700;800;900&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/html-to-image@1.11.11/dist/html-to-image.js"></script>
+<script src="logo-data.js"></script>
+<style>
+  :root {
+    --accent: #34D399;     /* success xanh — màu nhấn chính */
+    --accent-2: #FB7185;    /* danger hồng — dùng cho ảnh số dư nếu muốn */
+    --bg0: #0E0E11;
+    --bg1: #232328;
+    --ink: #FAFAFA;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Be Vietnam Pro', system-ui, sans-serif;
+    background: #18181b;
+    color: #e4e4e7;
+    padding: 24px;
+  }
+
+  /* ---------- Thanh điều khiển (KHÔNG xuất ra ảnh) ---------- */
+  .ui { max-width: 1100px; margin: 0 auto 28px; }
+  .ui h1 { font-size: 22px; font-weight: 800; color: #fafafa; margin-bottom: 8px; }
+  .ui p { font-size: 14px; line-height: 1.6; color: #a1a1aa; margin-bottom: 6px; }
+  .ui b { color: var(--accent); }
+  .ui .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .ui button {
+    font-family: inherit; font-weight: 700; font-size: 14px;
+    background: var(--accent); color: #0a0a0a; border: none;
+    padding: 10px 18px; border-radius: 10px; cursor: pointer;
+  }
+  .ui button.alt { background: #3f3f46; color: #fafafa; }
+  .ui label.swatch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #a1a1aa; }
+  .ui input[type=color] { width: 34px; height: 28px; border: none; background: none; border-radius: 6px; cursor: pointer; }
+
+  /* ---------- Lưới preview ---------- */
+  .grid { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  /* Hộp preview thu nhỏ — frame thật vẫn 1080×1920 */
+  .stage { width: 324px; height: 576px; overflow: hidden; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  .stage .frame { transform: scale(0.3); transform-origin: top left; }
+  .cell .dl { font-family: inherit; font-weight: 700; font-size: 13px; background: #27272a; color: #fafafa; border: 1px solid #3f3f46; padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  .cell .dl:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- FRAME thật: 1080×1920 ---------- */
+  .frame {
+    width: 1080px; height: 1920px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(900px 700px at 50% -10%, rgba(52,211,153,0.22), transparent 60%),
+      linear-gradient(165deg, var(--bg1) 0%, var(--bg0) 70%);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  /* lưới chấm mờ nền cho có chiều sâu */
+  .frame::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.05) 2px, transparent 2px);
+    background-size: 46px 46px; opacity: .5;
+  }
+  .frame > * { position: relative; z-index: 1; }
+
+  .headline {
+    text-align: center; text-transform: uppercase;
+    font-weight: 900; font-size: 92px; line-height: 1.04; letter-spacing: -1px;
+    color: var(--ink); margin: 120px 70px 0; outline: none;
+  }
+  .headline .hl { color: var(--accent); }
+
+  .subcap { margin-top: 26px; font-size: 34px; font-weight: 500; color: #a1a1aa; text-align: center; outline: none; }
+
+  /* badge nguyệt quế đơn giản */
+  .badge { margin-top: 34px; display: inline-flex; align-items: center; gap: 18px; }
+  .badge .leaf { color: var(--accent); font-size: 64px; line-height: 1; }
+  .badge .txt { font-size: 52px; font-weight: 800; color: var(--ink); letter-spacing: .5px; }
+
+  .phone-wrap { margin-top: auto; margin-bottom: auto; }
+  .phone {
+    width: 660px; aspect-ratio: 1080 / 2240; background: #0a0a0c;
+    border-radius: 76px; padding: 18px;
+    box-shadow: 0 50px 90px rgba(0,0,0,.55), inset 0 0 0 3px #2c2c30, 0 0 0 2px #000;
+    position: relative; cursor: pointer;
+  }
+  .screen { width: 100%; height: 100%; border-radius: 60px; overflow: hidden; background: #15151a; position: relative; }
+  .screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .island { position: absolute; top: 26px; left: 50%; transform: translateX(-50%); width: 150px; height: 38px; background: #000; border-radius: 20px; z-index: 2; }
+  .placeholder {
+    position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; color: #52525b; text-align: center; padding: 40px;
+  }
+  .placeholder .plus { font-size: 90px; font-weight: 300; line-height: 1; }
+  .placeholder .t { font-size: 30px; font-weight: 600; }
+  .hide-ph .placeholder { display: none; }
+
+  /* logo đáy */
+  .brand { margin-bottom: 90px; margin-top: 50px; display: flex; align-items: center; gap: 22px; }
+  .brand .mark {
+    width: 96px; height: 96px; border-radius: 24px;
+    object-fit: cover; display: block;
+    box-shadow: 0 8px 22px rgba(0,0,0,.35);
+  }
+  .brand .name { font-size: 50px; font-weight: 800; color: var(--ink); letter-spacing: -.5px; }
+
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="ui">
+  <h1>Fair Pay — Trình tạo ảnh Play Store</h1>
+  <p>1. <b>Bấm vào điện thoại</b> trong mỗi khung → chọn ảnh chụp màn hình thật của app (nên dùng ảnh dọc ~1080×2400).</p>
+  <p>2. Muốn sửa chữ: <b>click thẳng vào headline</b> rồi gõ (chữ vàng/xanh là phần nhấn — bôi đen rồi gõ vẫn giữ màu).</p>
+  <p>3. Bấm <b>Tải PNG</b> dưới mỗi khung, hoặc <b>Tải tất cả</b>. File xuất đúng 1080×1920.</p>
+  <div class="row">
+    <button onclick="downloadAll()">⬇ Tải tất cả PNG</button>
+    <label class="swatch">Màu nhấn:
+      <input type="color" value="#34D399" oninput="document.documentElement.style.setProperty('--accent', this.value)" />
+    </label>
+    <span style="font-size:13px;color:#71717a">Mặc định = màu success của app (#34D399). Đổi nếu muốn.</span>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+  // ----- Nội dung 6 ảnh: [headline HTML, subcaption|null, hasBadge] -----
+  const FRAMES = [
+    { html: 'Chia tiền nhóm<br><span class="hl">không còn đau đầu</span>', sub: null, badge: 'Sòng phẳng trong 10 giây' },
+    { html: 'Tự động tính<br><span class="hl">ai nợ ai</span>', sub: 'Số dư cập nhật ngay tức thì', badge: null },
+    { html: 'Trả nợ<br><span class="hl">gọn nhất có thể</span>', sub: 'Gợi ý quyết toán ít giao dịch nhất', badge: null },
+    { html: 'Chia đều, tỷ lệ<br><span class="hl">hay tùy chỉnh</span>', sub: 'Linh hoạt cho mọi kiểu đi chơi', badge: null },
+    { html: '<span class="hl">Mất mạng</span><br>vẫn dùng ngon', sub: 'Ghi chi tiêu offline, tự đồng bộ sau', badge: null },
+    { html: 'Chia cho cả<br><span class="hl">người chưa cài app</span>', sub: 'Thêm thành viên ảo chỉ với một chạm', badge: null },
+  ];
+
+  const grid = document.getElementById('grid');
+
+  FRAMES.forEach((f, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+
+    const frame = document.createElement('div');
+    frame.className = 'frame';
+    frame.id = 'frame' + i;
+
+    frame.innerHTML = `
+      <div class="headline" contenteditable="true">${f.html}</div>
+      ${f.sub ? `<div class="subcap" contenteditable="true">${f.sub}</div>` : ''}
+      ${f.badge ? `<div class="badge"><span class="leaf">❮</span><span class="txt" contenteditable="true">${f.badge}</span><span class="leaf">❯</span></div>` : ''}
+      <div class="phone-wrap">
+        <div class="phone" onclick="this.parentNode.parentNode.querySelector('input[type=file]').click()">
+          <div class="island"></div>
+          <div class="screen">
+            <img alt="" />
+            <div class="placeholder">
+              <div class="plus">+</div>
+              <div class="t">Bấm để chọn<br>ảnh màn hình</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="brand"><img class="mark" src="${window.FAIRPAY_LOGO || ''}" alt="" /><div class="name">Fair Pay</div></div>
+      <input type="file" accept="image/*" />
+    `;
+
+    // nạp ảnh khi chọn file
+    const input = frame.querySelector('input[type=file]');
+    const img = frame.querySelector('.screen img');
+    const screen = frame.querySelector('.screen');
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => { img.src = ev.target.result; screen.classList.add('hide-ph'); };
+      reader.readAsDataURL(file);
+    });
+
+    stage.appendChild(frame);
+    cell.appendChild(stage);
+
+    const dl = document.createElement('button');
+    dl.className = 'dl';
+    dl.textContent = `⬇ Tải PNG #${i + 1}`;
+    dl.onclick = () => downloadFrame(frame, i + 1);
+    cell.appendChild(dl);
+
+    grid.appendChild(cell);
+  });
+
+  async function downloadFrame(frame, n) {
+    const prev = frame.style.transform;
+    frame.style.transform = 'none';   // bỏ scale để xuất full 1080×1920
+    try {
+      const dataUrl = await htmlToImage.toPng(frame, {
+        width: 1080, height: 1920, pixelRatio: 1, cacheBust: true,
+      });
+      const a = document.createElement('a');
+      a.download = `fairpay_screenshot_${n}.png`;
+      a.href = dataUrl;
+      a.click();
+    } catch (err) {
+      alert('Lỗi xuất ảnh: ' + err.message + '\nThử lại sau khi ảnh đã tải xong, hoặc dùng Chrome.');
+    } finally {
+      frame.style.transform = prev;
+    }
+  }
+
+  async function downloadAll() {
+    const frames = document.querySelectorAll('.frame');
+    for (let i = 0; i < frames.length; i++) {
+      await downloadFrame(frames[i], i + 1);
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+</script>
+</body>
+</html>

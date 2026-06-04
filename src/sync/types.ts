@@ -164,6 +164,7 @@ export function classifyError(
   if (code === 'P0410') return 'conflict';
   if (code === '23505') return 'done'; // duplicate idempotency → đã apply
   if (code === '23503' || code === '42501' || code === 'P0002') return 'dead';
+  if (code === 'P0429') return 'failed'; // rate limit — retry fixed-backoff, KHÔNG dead-letter (xem markFailed)
 
   // Lỗi mạng — kiểm tra qua helper chung (msg + code + AbortError)
   if (isNetworkError({ message })) {
@@ -176,3 +177,7 @@ export function classifyError(
 
 // Max retry count trước khi chuyển sang dead
 export const MAX_QUEUE_RETRIES = 5;
+
+// Rate limit (P0429): retry với fixed backoff dài để batch offline hợp lệ tự lành khi
+// cửa sổ trượt trôi qua; KHÔNG tăng retry_count / KHÔNG dead-letter (xem markFailed).
+export const RATE_LIMIT_BACKOFF_SECONDS = 30 * 60; // 30 phút

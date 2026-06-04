@@ -149,6 +149,12 @@ Table: sync_queue (SQLite local)
 - **synced**: đã gửi thành công, sẽ xóa sau 24h
 - **failed**: gửi thất bại (conflict, network error), cần retry hoặc thông báo user
 
+> **Rate limit (P0429)**: khi server reject vì rate limit (xem §9.10), queue đặt item về
+> `failed` với fixed backoff **30 phút** và **KHÔNG tăng retry_count** → KHÔNG bao giờ
+> dead-letter. Batch offline hợp lệ tự đồng bộ lại khi cửa sổ trượt trôi qua; queue của
+> kẻ abuse chỉ retry ~1 lần/30' (vô hại). Xem `classifyError` + `markFailed` trong
+> `src/sync/`.
+
 ---
 
 ## 3. Mô hình dữ liệu — PostgreSQL Schema
@@ -507,6 +513,17 @@ CREATE INDEX idx_audit_logs_group ON audit_logs(group_id);
 
 -- Invite code lookup
 CREATE UNIQUE INDEX idx_groups_invite ON groups(invite_code) WHERE deleted_at IS NULL;
+
+-- Rate limiting (sliding-window COUNT) — composite (actor|group, created_at).
+-- NON-partial (KHÔNG filter deleted_at) vì rate-limit đếm cả row đã soft-delete.
+-- Cũng clear cảnh báo "unindexed foreign key" cho created_by/recorded_by.
+CREATE INDEX idx_expenses_created_by_created_at  ON expenses(created_by, created_at);
+CREATE INDEX idx_expenses_group_created_at       ON expenses(group_id, created_at);
+CREATE INDEX idx_payments_recorded_by_created_at ON payments(recorded_by, created_at);
+CREATE INDEX idx_trips_created_by_created_at     ON trips(created_by, created_at);
+CREATE INDEX idx_groups_created_by_created_at    ON groups(created_by, created_at);
+CREATE INDEX idx_group_members_group_joined_virtual
+  ON group_members(group_id, joined_at) WHERE is_virtual = true;
 ```
 
 ---
@@ -1066,8 +1083,10 @@ CREATE POLICY "Admins can manage members"
 CREATE POLICY "Members can view trips"
   ON trips FOR SELECT USING (is_member(group_id));
 
-CREATE POLICY "Admins can create trips"
-  ON trips FOR INSERT WITH CHECK (is_admin(group_id));
+-- Mọi member tạo được trip (đổi từ is_admin → is_member, migration 20260604140000).
+-- Quản lý trip (UPDATE: đổi tên/đóng/mở) vẫn chỉ admin.
+CREATE POLICY "Members can create trips"
+  ON trips FOR INSERT WITH CHECK (is_member(group_id));
 
 CREATE POLICY "Admins can update trips"
   ON trips FOR UPDATE USING (is_admin(group_id));
@@ -1121,6 +1140,31 @@ CREATE POLICY notif_delete_own ON notifications
 CREATE POLICY notif_insert_auth ON notifications
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 ```
+
+> ⚠️ **Đã siết ở migration `20260604120000_security_hardening_release`**: policy
+> `notif_insert_auth` ở trên ĐÃ BỎ (client không insert noti trực tiếp — chỉ qua RPC
+> definer; policy cũ cho phép spoof recipient/actor → phishing). Tương tự, INSERT
+> `audit_logs` siết về `actor_id = auth_user_id()`. Khối SQL trên giữ lại để truy vết lịch sử.
+
+### 9.10 Rate limiting & chống abuse (migration `20260604130000_rate_limit_triggers`)
+
+Vì anon key nằm trong APK, attacker/account bị chiếm có thể gọi DB trực tiếp bằng JWT hợp
+lệ (bỏ qua code RN). RLS chỉ chặn "ai được ghi", KHÔNG chặn "ghi bao nhiêu lần". Giải pháp:
+**BEFORE INSERT trigger** trên 5 bảng domain — choke point thật, fire bất kể insert qua RPC
+hay trực tiếp.
+
+- **Thuật toán**: sliding window — `COUNT(*) WHERE actor|group = X AND ts > now() - interval`.
+  Đếm **CẢ row đã soft-delete** → chặn bypass create→delete→create. Hàm `SECURITY DEFINER`
+  + `search_path` để COUNT bypass RLS, đếm chính xác toàn nhóm.
+- **Ngưỡng** (hào phóng — không phạt oan batch offline): expenses 300/user/1h + 500/group/1h;
+  payments 200/user/1h; trips 60/user/1d; groups 30/user/1d; group_members ảo 100/group/1d.
+- **Errcode `P0429`** (`rate_limit_exceeded`) → client: queue retry fixed-backoff 30' KHÔNG
+  dead-letter (§2.3); UI toast tiếng Việt (`src/utils/error.ts`).
+- **Spoof guard** (đính kèm): trigger RAISE `42501` (`actor_spoof`) nếu `created_by`/
+  `recorded_by` ≠ `auth_user_id()`, CHỈ khi `auth_user_id()` IS NOT NULL (miễn trừ
+  service_role). Đóng lỗ hổng RLS INSERT expenses/payments không ép actor = người gọi.
+- **Auth (login/signup/reset/OTP)**: KHÔNG ở Postgres — cấu hình Supabase Dashboard → Auth
+  → Rate Limits + Captcha.
 
 ---
 

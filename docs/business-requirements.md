@@ -136,14 +136,15 @@ Hệ thống 2 cấp quyền:
 
 | Vai trò | Mô tả | Quyền hạn |
 |---------|-------|-----------|
-| **Admin** (Quản trị) | Người tạo nhóm, tự động được gán. **Mỗi nhóm có đúng 1 Admin.** | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + tạo/đóng chuyến + xóa ghi nhận thanh toán + xóa nhóm |
-| **Member** (Thành viên) | Mặc định khi tham gia nhóm. | Xem tất cả + thêm khoản chi mới + ghi nhận thanh toán + sửa/xóa khoản chi do chính mình tạo + tự rời nhóm |
+| **Admin** (Quản trị) | Người tạo nhóm, tự động được gán. **Mỗi nhóm có đúng 1 Admin.** | Tất cả quyền Member + thêm/xóa thành viên + sửa/xóa mọi khoản chi + **quản lý chuyến (đổi tên/đóng/mở lại/reset/xóa)** + xóa ghi nhận thanh toán + xóa nhóm |
+| **Member** (Thành viên) | Mặc định khi tham gia nhóm. | Xem tất cả + thêm khoản chi mới + ghi nhận thanh toán + **tạo chuyến đi** + sửa/xóa khoản chi do chính mình tạo + tự rời nhóm |
 
 ### Quy tắc phân quyền bổ sung
 
 - Mỗi nhóm chỉ có tối đa **1 Admin**. Chưa hỗ trợ chuyển quyền Admin (sẽ bổ sung sau dưới dạng "Transfer Admin" — atomic swap).
 - Admin không thể tự rời nhóm và không thể bị xóa khỏi nhóm. Nếu Admin không muốn tiếp tục, họ phải xóa nhóm.
 - Member có thể tự rời nhóm hoặc bị Admin xóa.
+- **Mọi member TẠO được chuyến đi** (trip). Nhưng **quản lý** chuyến — đổi tên / đóng / mở lại / reset / xóa — **vẫn chỉ Admin** (tránh member xóa/reset nhầm làm mất khoản chi cả nhóm).
 - Khi xóa khoản chi, nếu đã có Payment liên quan → cảnh báo, không tự động xóa Payment.
 - Mọi hành động sửa/xóa đều được ghi lại trong **audit log** (ai làm gì, lúc nào).
 
@@ -175,6 +176,8 @@ Hệ thống 2 cấp quyền:
 | BR-AVATAR-02 | Quota để bảo vệ free tier R2 | Free tier R2 (10 GB storage, 1M Class A ops/tháng): mỗi **nhóm** đổi tối đa **3 lần / 7 ngày**, mỗi **user** upload tối đa **20 lần / ngày** trên toàn app. Vượt quota → hiển thị "Thử lại sau X giờ/ngày" với `retryAfter` chính xác. Quota check atomic trong Postgres function (FOR UPDATE) — không bypass được khi 2 thiết bị upload đồng thời. |
 | BR-AVATAR-03 | Ảnh tỉ lệ 1:1, max 2 MB sau xử lý | App buộc crop 1:1 trong picker. Sau crop, app tự nén progressive (q=0.95 → q=0.85 → resize 2048/1024/512) cho đến khi ≤ 2 MB. Dimension cap 2048 vì avatar render max ~150px. Ảnh không thể nén dưới 2 MB (rất hiếm) → báo lỗi "thử ảnh khác". |
 | BR-AVATAR-04 | File cũ xóa ngay khi đổi | Khi update avatar mới thành công, file R2 cũ bị xóa best-effort. Cron `group-avatar-cleanup` chạy weekly quét orphan (file R2 không có trong `groups.avatar_url` và `group_avatar_uploads` < 24h) — bảo vệ trường hợp delete fail giữa chừng hoặc presign-không-commit (mất mạng). |
+| BR-RATELIMIT-01 | Giới hạn tần suất chống spam/bloat | Anon key nằm trong APK nên kẻ xấu/account bị chiếm có thể gọi server trực tiếp. Giới hạn ở tầng DB (BEFORE INSERT trigger, sliding-window đếm cả bản ghi đã xoá mềm để chống reset): **khoản chi 300/người/giờ + 500/nhóm/giờ**, **thanh toán 200/người/giờ**, **chuyến 60/người/ngày**, **nhóm 30/người/ngày**, **thành viên ảo 100/nhóm/ngày**. Vượt ngưỡng → báo "Bạn thao tác quá nhanh, thử lại sau ít phút"; thao tác offline **tự đồng bộ lại** khi cửa sổ trôi qua (KHÔNG mất dữ liệu). Mục đích: bảo vệ DB free tier 500MB + chống dội thông báo/push. Errcode `P0429`. Auth (đăng nhập/đăng ký/reset) giới hạn riêng ở Supabase Dashboard. |
+| BR-SEC-01 | Chống giả mạo người ghi (actor) | Cột người-ghi (`created_by` khoản chi / `recorded_by` thanh toán) bị ép = người đang đăng nhập ở tầng DB → không thể đổ tội/ghi danh người khác kể cả khi gọi server trực tiếp. KHÔNG cản nghiệp vụ "member thêm khoản chi/thanh toán hộ nhóm": người trả (`paid_by`) và cách chia không bị ảnh hưởng. Errcode `42501`. |
 
 ---
 
@@ -198,7 +201,7 @@ Hệ thống 2 cấp quyền:
 | **Luồng chính** | 1. Tạo nhóm: nhập tên, chọn avatar nhóm → 2. App sinh mã mời 6 ký tự (alphanumeric, UNIQUE, không đổi) → 3. Chia sẻ mã/link qua Zalo/Messenger/copy → 4. Thành viên nhập mã → hệ thống tạo **join request** (`pending`) → 5. Admin nhận notification → duyệt hoặc từ chối → 6. Nếu duyệt → thành viên mới là `member`, danh sách cập nhật real-time |
 | **Luồng phụ 1** | Admin có thể thêm thành viên "ảo" (không có tài khoản) để ghi chi phí — họ không nhận được notification |
 | **Luồng phụ 2 — Mời qua email** | Admin vào "Thêm thành viên" → nhập email → hệ thống tìm user đã đăng ký → gửi lời mời (invitation) → user nhận notification → chấp nhận = join nhóm, từ chối = hủy |
-| **Quyền** | Chỉ Admin mới tạo được chuyến trong nhóm |
+| **Quyền** | Mọi thành viên (Admin + Member) đều tạo được chuyến trong nhóm. Quản lý chuyến (đổi tên/đóng/mở lại/reset/xóa) vẫn chỉ Admin. |
 
 ### UC-03: Ghi nhận thanh toán thực tế
 
@@ -363,7 +366,8 @@ Hệ thống 2 cấp quyền:
 | Chi phí Supabase vượt free tier | Trung bình | Supabase free: 500MB DB, 50k MAU, 200 concurrent realtime. Với app mới là đủ. VPS đã có sẵn làm backup. Monitor chặt, tối ưu query. |
 | Conflict sync gây mất dữ liệu | Cao nếu không xử lý | Soft delete toàn bộ, không bao giờ xóa cứng. Audit log ghi lại mọi thay đổi. Test kỹ kịch bản offline + conflict. |
 | FCM notification không đến | Thấp | FCM khá tin cậy trên Android. Fallback: hiển thị badge trong app khi user mở lại. |
-| Supabase RLS có lỗ hổng | Cao nếu không test | Viết test cho RLS policies, kiểm tra với nhiều role khác nhau trước khi deploy. |
+| Supabase RLS có lỗ hổng | Cao nếu không test | Viết test cho RLS policies, kiểm tra với nhiều role khác nhau trước khi deploy. Audit RLS + RPC grants định kỳ (verify trực tiếp `pg_proc`/`pg_policies`, không tin docs). |
+| Spam/abuse từ account hợp lệ (phình DB, dội thông báo) | Trung bình | Anon key trong APK → mọi enforcement đặt ở DB. Rate-limit trigger sliding-window (BR-RATELIMIT-01) + spoof guard (BR-SEC-01) + Auth rate limits + Captcha (Dashboard). Monitor usage alerts free tier. |
 | Tính toán số tiền sai do float | Cao nếu không xử lý | Lưu 100% là BIGINT (đồng). Validate tổng splits = tổng amount trước khi ghi. Test BR-01 và BR-02 tự động. |
 | App bị reject vì permission thừa | Thấp | Chỉ xin permission thực sự cần: POST_NOTIFICATIONS (FCM), INTERNET. Không xin CAMERA, CONTACTS, LOCATION. |
 

@@ -80,6 +80,11 @@ const ERROR_MAP: Record<string, string> = {
   feedback_daily_limit_exceeded:
     'Bạn đã gửi tối đa 3 góp ý hôm nay, vui lòng quay lại vào ngày mai',
 
+  // Rate limit (DB BEFORE INSERT trigger — P0429) + spoof guard (42501)
+  // xem migration 20260604130000_rate_limit_triggers
+  rate_limit_exceeded: 'Bạn thao tác quá nhanh, vui lòng thử lại sau ít phút',
+  actor_spoof: 'Bạn không có quyền thực hiện thao tác này',
+
   // Pinned trips (pin_trip / unpin_trip / reorder_pinned_trips RPCs)
   max_pinned_reached: 'Chỉ được ghim tối đa 2 chuyến đi',
   forbidden: 'Bạn không có quyền thực hiện thao tác này',

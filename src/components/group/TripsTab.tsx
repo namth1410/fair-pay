@@ -66,13 +66,12 @@ export const TripsTab = React.memo(function TripsTab({
 
   return (
     <>
-      {isAdmin && (
-        <View style={styles.sectionActions}>
-          <Button variant="primary" size="sm" onPress={() => setIsSheetOpen(true)}>
-            <Button.Label>Tạo chuyến</Button.Label>
-          </Button>
-        </View>
-      )}
+      {/* Mọi member đều tạo được chuyến đi (quản lý trip vẫn chỉ admin). */}
+      <View style={styles.sectionActions}>
+        <Button variant="primary" size="sm" onPress={() => setIsSheetOpen(true)}>
+          <Button.Label>Tạo chuyến</Button.Label>
+        </Button>
+      </View>
 
       {isLoading && trips.length === 0 ? (
         <ListSkeleton count={3} />

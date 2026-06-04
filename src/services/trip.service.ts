@@ -118,15 +118,16 @@ export async function fetchAllUserTrips(): Promise<Trip[]> {
 }
 
 /**
- * Create a trip (admin only). Offline-first: client-gen UUID + enqueue.
+ * Create a trip (any member). Offline-first: client-gen UUID + enqueue.
  * Online: INSERT trực tiếp; network fail → fallback queue.
+ * Lưu ý: chỉ TẠO mở cho member — quản lý trip (rename/close/reopen/clear/delete) vẫn chỉ admin.
  */
 export async function createTrip(
   groupId: string,
   name: string,
   type: Trip['type'] = 'other'
 ): Promise<Trip> {
-  await assertRole(groupId, ['admin']);
+  await assertRole(groupId, ['admin', 'member']);
 
   const nameErr = validateName(name, 'Tên chuyến');
   if (nameErr) throw new Error(nameErr);

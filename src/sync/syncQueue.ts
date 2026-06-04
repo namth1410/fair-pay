@@ -17,6 +17,7 @@ import type {
 import {
   classifyError,
   MAX_QUEUE_RETRIES,
+  RATE_LIMIT_BACKOFF_SECONDS,
   type EntityType,
   type OpType,
 } from './types';
@@ -259,6 +260,27 @@ export async function markFailed(
   const db = getDatabase();
   const row = await getById(id);
   if (!row) return;
+
+  // Rate limit (P0429): retry fixed-backoff 30', KHÔNG tăng retry_count → không bao giờ
+  // dead-letter vì rate limit. Batch offline hợp lệ tự lành khi cửa sổ trượt trôi qua;
+  // queue của abuser chỉ retry ~1 lần/30' (vô hại). pickPending chọn lại khi next_retry_at
+  // <= now. Nếu op thật sự hỏng, retry sau trả errcode KHÁC → rơi vào path classify thường.
+  if (errorCode === 'P0429') {
+    const nextRetryAt = new Date(
+      Date.now() + RATE_LIMIT_BACKOFF_SECONDS * 1000
+    ).toISOString();
+    await db.runAsync(
+      `UPDATE sync_queue
+          SET status = 'failed',
+              last_error = ?,
+              last_error_code = ?,
+              next_retry_at = ?,
+              updated_at = ?
+        WHERE id = ?`,
+      [errorMessage, errorCode, nextRetryAt, now(), id]
+    );
+    return;
+  }
 
   const nextRetry = row.retry_count + 1;
   if (nextRetry >= MAX_QUEUE_RETRIES) {
