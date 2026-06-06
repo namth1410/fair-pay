@@ -351,6 +351,6 @@ export async function runMigrations(
         migration.version
       );
     });
-    console.log(`[DB] Migrated to v${migration.version}`);
+    if (__DEV__) console.log(`[DB] Migrated to v${migration.version}`);
   }
 }

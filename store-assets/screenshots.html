@@ -67,8 +67,8 @@
 
   .headline {
     text-align: center; text-transform: uppercase;
-    font-weight: 900; font-size: 92px; line-height: 1.04; letter-spacing: -1px;
-    color: var(--ink); margin: 120px 70px 0; outline: none;
+    font-weight: 900; font-size: 72px; line-height: 1.22; letter-spacing: -1.5px;
+    color: var(--ink); margin: 80px 90px 0; outline: none;
   }
   .headline .hl { color: var(--accent); }
 
@@ -130,12 +130,12 @@
 <script>
   // ----- Nội dung 6 ảnh: [headline HTML, subcaption|null, hasBadge] -----
   const FRAMES = [
-    { html: 'Chia tiền nhóm<br><span class="hl">không còn đau đầu</span>', sub: null, badge: 'Sòng phẳng trong 10 giây' },
-    { html: 'Tự động tính<br><span class="hl">ai nợ ai</span>', sub: 'Số dư cập nhật ngay tức thì', badge: null },
-    { html: 'Trả nợ<br><span class="hl">gọn nhất có thể</span>', sub: 'Gợi ý quyết toán ít giao dịch nhất', badge: null },
-    { html: 'Chia đều, tỷ lệ<br><span class="hl">hay tùy chỉnh</span>', sub: 'Linh hoạt cho mọi kiểu đi chơi', badge: null },
-    { html: '<span class="hl">Mất mạng</span><br>vẫn dùng ngon', sub: 'Ghi chi tiêu offline, tự đồng bộ sau', badge: null },
-    { html: 'Chia cho cả<br><span class="hl">người chưa cài app</span>', sub: 'Thêm thành viên ảo chỉ với một chạm', badge: null },
+    { html: 'Chia tiền nhóm<br><span class="hl">không còn đau đầu</span>', sub: null, badge: null },
+    { html: 'Giao diện<br><span class="hl">hiện đại, mượt mà</span>', sub: null, badge: null },
+    { html: 'Trả nợ<br><span class="hl">gọn nhất có thể</span>', sub: null, badge: null },
+    { html: 'Chia đều, tỷ lệ<br><span class="hl">hay tùy chỉnh</span>', sub: null, badge: null },
+    { html: '<span class="hl">Mất mạng</span><br>vẫn dùng ngon', sub: null, badge: null },
+    { html: 'Một chạm<br><span class="hl">xuất PDF chi tiêu</span>', sub: null, badge: null },
   ];
 
   const grid = document.getElementById('grid');

@@ -44,13 +44,14 @@ function extractParams(url: string): URLSearchParams {
 }
 
 async function applySessionFromUrl(url: string): Promise<ParseResult> {
-  console.log('[ResetPassword] raw URL:', url);
   const params = extractParams(url);
 
   // Supabase trả về error khi link đã dùng rồi / hết hạn
   const errorCode = params.get('error_code') || params.get('error');
   if (errorCode) {
-    console.log('[ResetPassword] Supabase error:', errorCode, params.get('error_description'));
+    if (__DEV__) {
+      console.warn('[ResetPassword] Supabase error:', errorCode, params.get('error_description'));
+    }
     return { ok: false, reason: 'expired' };
   }
 
@@ -62,7 +63,7 @@ async function applySessionFromUrl(url: string): Promise<ParseResult> {
       refresh_token: refreshToken,
     });
     if (error) {
-      console.log('[ResetPassword] setSession failed:', error.message);
+      if (__DEV__) console.warn('[ResetPassword] setSession failed:', error.message);
       return { ok: false, reason: 'exchange_failed' };
     }
     return { ok: true };
@@ -72,7 +73,7 @@ async function applySessionFromUrl(url: string): Promise<ParseResult> {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      console.log('[ResetPassword] exchangeCodeForSession failed:', error.message);
+      if (__DEV__) console.warn('[ResetPassword] exchangeCodeForSession failed:', error.message);
       return { ok: false, reason: 'exchange_failed' };
     }
     return { ok: true };

@@ -53,7 +53,7 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
     await runMigrations(db, versionResult.version);
   }
 
-  console.log(`[DB] Initialized — schema v${SCHEMA_VERSION}`);
+  if (__DEV__) console.log(`[DB] Initialized — schema v${SCHEMA_VERSION}`);
   return db;
 }
 

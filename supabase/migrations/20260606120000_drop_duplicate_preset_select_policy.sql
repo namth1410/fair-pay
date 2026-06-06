@@ -1,0 +1,12 @@
+-- Gỡ policy SELECT trùng trên expense_presets.
+--
+-- Bảng có 2 policy SELECT permissive cùng role:
+--   • "Users read own presets"  →  user_id = auth_user_id() AND deleted_at IS NULL   (mới, thêm cùng soft-delete)
+--   • "Users view own presets"  →  user_id = auth_user_id()                          (cũ, quên DROP)
+--
+-- Postgres OR các policy permissive lại với nhau, nên policy cũ (không lọc deleted_at)
+-- nuốt bộ lọc deleted_at của policy mới → preset đã xoá mềm vẫn lọt qua RLS, đồng thời
+-- mỗi truy vấn phải eval cả 2 policy (advisor multiple_permissive_policies).
+--
+-- Giữ lại "Users read own presets" (đúng + có lọc deleted_at), bỏ policy cũ.
+DROP POLICY IF EXISTS "Users view own presets" ON public.expense_presets;
