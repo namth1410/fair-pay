@@ -16,10 +16,11 @@ import type {
 } from '../types/database.types';
 import {
   classifyError,
-  MAX_QUEUE_RETRIES,
-  RATE_LIMIT_BACKOFF_SECONDS,
+  ENTITY_TYPES,
   type EntityType,
+  MAX_QUEUE_RETRIES,
   type OpType,
+  RATE_LIMIT_BACKOFF_SECONDS,
 } from './types';
 
 function now(): string {
@@ -178,6 +179,22 @@ export async function countPending(): Promise<number> {
       WHERE status IN ('pending','in_flight','failed')`
   );
   return row?.c ?? 0;
+}
+
+/**
+ * Còn op chưa lên server ảnh hưởng tới balance (expense/payment/trip) không?
+ * Khi true → server đang behind local mirror, đọc balance từ server sẽ stale.
+ * KHÔNG tính 'conflict' — chờ user resolve qua modal, không tự lành.
+ */
+export async function hasPendingBalanceOps(): Promise<boolean> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM sync_queue
+      WHERE entity_type IN (?, ?, ?)
+        AND status IN ('pending','in_flight','failed')`,
+    [ENTITY_TYPES.EXPENSE, ENTITY_TYPES.PAYMENT, ENTITY_TYPES.TRIP]
+  );
+  return (row?.c ?? 0) > 0;
 }
 
 // ─── State transitions ──────────────────────────────────────────────────────

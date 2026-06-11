@@ -8,7 +8,7 @@ import type { GroupMember } from '../../services/group.service';
 import { hapticSuccess } from '../../utils/haptics';
 import { showError, showSuccess, showValidationError } from '../../utils/toast';
 import { AppText, ChipPicker, DismissKeyboardView, Money, MoneyChipsDock } from '../ui';
-import { FloatingBottomSheetInput } from '../ui/floating';
+import { FloatingBottomSheetInput, FloatingBottomSheetMoneyInput } from '../ui/floating';
 
 interface BalanceEntry {
   memberId: string;
@@ -65,19 +65,14 @@ export function RecordPaymentSheet({
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
 
-  const handleAmountChange = useCallback((text: string) => {
-    const digits = text.replace(/\D/g, '');
-    setAmountStr(digits);
-  }, []);
-
   const handleNoteChange = useCallback((text: string) => {
     noteRef.current = text;
   }, []);
 
+  // Ô tiền là controlled (number-pad không có IME compose) → set state là đủ,
+  // không cần remount như input uncontrolled.
   const handlePickAmount = useCallback((amount: number) => {
     setAmountStr(String(amount));
-    // Remount amount input để defaultValue inject lại — uncontrolled input không tự update.
-    setResetKey((k) => k + 1);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -148,14 +143,12 @@ export function RecordPaymentSheet({
               />
 
               <View style={styles.inputWrap}>
-                <FloatingBottomSheetInput
-                  key={`amount-${resetKey}`}
+                <FloatingBottomSheetMoneyInput
                   label="Số tiền (VND)"
-                  defaultValue={amountStr}
-                  onChangeText={handleAmountChange}
+                  value={amountStr}
+                  onChangeText={setAmountStr}
                   onFocus={() => setAmountFocused(true)}
                   onBlur={() => setAmountFocused(false)}
-                  keyboardType="number-pad"
                   returnKeyType="done"
                   accessibilityLabel="Số tiền thanh toán"
                   surfaceColor={c.surface}

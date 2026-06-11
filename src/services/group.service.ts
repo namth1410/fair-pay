@@ -17,8 +17,8 @@ import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
 import { computeBalances as computeBalancesPure, type ExpenseData, type PaymentData } from '../utils/balance';
-import { isNetworkError } from '../utils/network';
 import { generatePlaceholderInviteCode } from '../utils/inviteCode';
+import { isNetworkError } from '../utils/network';
 import { validateEmail, validateName } from '../utils/validate';
 import { logAction } from './audit.service';
 import { getAuthUserId } from './auth.helper';
@@ -1383,6 +1383,14 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
   const userId = await getAuthUserId();
   if (!userId) return { total: 0, groupBalances: {} };
 
+  // Queue còn op expense/payment/trip chưa push (vd 1-tap preset tạo expense
+  // local-first, runSync nền chưa xong) → server đang BEHIND local mirror,
+  // đọc server lúc này chắc chắn stale. Đọc thẳng local — mirror đã có mutation.
+  // Queue rỗng → server-first như cũ.
+  if (await syncQueue.hasPendingBalanceOps()) {
+    return computeLocalBalanceSummary(userId);
+  }
+
   return tryServerThenLocal<BalanceSummary>(
     async () => {
       // Query 1: group_member records của user (memberId per group)
@@ -1466,91 +1474,98 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
         })),
       });
     },
-    async () => {
-      const db = getDatabase();
-      const memberships = await db.getAllAsync<{ id: string; group_id: string }>(
-        `SELECT id, group_id FROM group_members
-          WHERE user_id = ? AND left_at IS NULL`,
-        [userId]
-      );
-      if (!memberships.length) return { total: 0, groupBalances: {} };
-
-      const memberIdByGroup: Record<string, string> = {};
-      const groupIds: string[] = [];
-      memberships.forEach((m) => {
-        memberIdByGroup[m.group_id] = m.id;
-        groupIds.push(m.group_id);
-      });
-
-      const groupPh = groupIds.map(() => '?').join(',');
-      const [trips, allMembers] = await Promise.all([
-        db.getAllAsync<{ id: string; group_id: string }>(
-          `SELECT id, group_id FROM trips
-            WHERE group_id IN (${groupPh})
-              AND status = 'open'
-              AND deleted_at IS NULL`,
-          groupIds
-        ),
-        db.getAllAsync<{ id: string; group_id: string; display_name: string }>(
-          `SELECT id, group_id, display_name FROM group_members
-            WHERE group_id IN (${groupPh}) AND left_at IS NULL`,
-          groupIds
-        ),
-      ]);
-      if (!trips.length) return { total: 0, groupBalances: {} };
-
-      const tripIds = trips.map((t) => t.id);
-      const tripPh = tripIds.map(() => '?').join(',');
-
-      const [expenseRows, splitRows, payments] = await Promise.all([
-        db.getAllAsync<{ id: string; trip_id: string; paid_by: string; amount: number }>(
-          `SELECT id, trip_id, paid_by, amount FROM expenses
-            WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
-          tripIds
-        ),
-        db.getAllAsync<{ expense_id: string; member_id: string; amount: number }>(
-          `SELECT s.expense_id, s.member_id, s.amount
-             FROM expense_splits s
-             INNER JOIN expenses e ON e.id = s.expense_id
-            WHERE e.trip_id IN (${tripPh}) AND e.deleted_at IS NULL`,
-          tripIds
-        ),
-        db.getAllAsync<{
-          trip_id: string;
-          from_member_id: string;
-          to_member_id: string;
-          amount: number;
-        }>(
-          `SELECT trip_id, from_member_id, to_member_id, amount FROM payments
-            WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
-          tripIds
-        ),
-      ]);
-
-      // Group splits by expense_id (server returned nested expense_splits qua join)
-      const splitsByExpense = new Map<string, { member_id: string; amount: number }[]>();
-      for (const s of splitRows) {
-        const arr = splitsByExpense.get(s.expense_id) || [];
-        arr.push({ member_id: s.member_id, amount: s.amount });
-        splitsByExpense.set(s.expense_id, arr);
-      }
-      const expenses = expenseRows.map((e) => ({
-        id: e.id,
-        trip_id: e.trip_id,
-        paid_by: e.paid_by,
-        amount: e.amount,
-        splits: splitsByExpense.get(e.id) || [],
-      }));
-
-      return aggregateBalanceSummary({
-        memberIdByGroup,
-        trips,
-        allMembers,
-        expenses,
-        payments,
-      });
-    }
+    () => computeLocalBalanceSummary(userId)
   );
+}
+
+/**
+ * Tính balance summary từ SQLite local mirror. Dùng làm offline fallback của
+ * fetchUserBalanceSummary VÀ đường đọc chính khi sync queue còn op
+ * expense/payment/trip chưa push (local ahead of server).
+ */
+async function computeLocalBalanceSummary(userId: string): Promise<BalanceSummary> {
+  const db = getDatabase();
+  const memberships = await db.getAllAsync<{ id: string; group_id: string }>(
+    `SELECT id, group_id FROM group_members
+      WHERE user_id = ? AND left_at IS NULL`,
+    [userId]
+  );
+  if (!memberships.length) return { total: 0, groupBalances: {} };
+
+  const memberIdByGroup: Record<string, string> = {};
+  const groupIds: string[] = [];
+  memberships.forEach((m) => {
+    memberIdByGroup[m.group_id] = m.id;
+    groupIds.push(m.group_id);
+  });
+
+  const groupPh = groupIds.map(() => '?').join(',');
+  const [trips, allMembers] = await Promise.all([
+    db.getAllAsync<{ id: string; group_id: string }>(
+      `SELECT id, group_id FROM trips
+        WHERE group_id IN (${groupPh})
+          AND status = 'open'
+          AND deleted_at IS NULL`,
+      groupIds
+    ),
+    db.getAllAsync<{ id: string; group_id: string; display_name: string }>(
+      `SELECT id, group_id, display_name FROM group_members
+        WHERE group_id IN (${groupPh}) AND left_at IS NULL`,
+      groupIds
+    ),
+  ]);
+  if (!trips.length) return { total: 0, groupBalances: {} };
+
+  const tripIds = trips.map((t) => t.id);
+  const tripPh = tripIds.map(() => '?').join(',');
+
+  const [expenseRows, splitRows, payments] = await Promise.all([
+    db.getAllAsync<{ id: string; trip_id: string; paid_by: string; amount: number }>(
+      `SELECT id, trip_id, paid_by, amount FROM expenses
+        WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
+      tripIds
+    ),
+    db.getAllAsync<{ expense_id: string; member_id: string; amount: number }>(
+      `SELECT s.expense_id, s.member_id, s.amount
+         FROM expense_splits s
+         INNER JOIN expenses e ON e.id = s.expense_id
+        WHERE e.trip_id IN (${tripPh}) AND e.deleted_at IS NULL`,
+      tripIds
+    ),
+    db.getAllAsync<{
+      trip_id: string;
+      from_member_id: string;
+      to_member_id: string;
+      amount: number;
+    }>(
+      `SELECT trip_id, from_member_id, to_member_id, amount FROM payments
+        WHERE trip_id IN (${tripPh}) AND deleted_at IS NULL`,
+      tripIds
+    ),
+  ]);
+
+  // Group splits by expense_id (server returned nested expense_splits qua join)
+  const splitsByExpense = new Map<string, { member_id: string; amount: number }[]>();
+  for (const s of splitRows) {
+    const arr = splitsByExpense.get(s.expense_id) || [];
+    arr.push({ member_id: s.member_id, amount: s.amount });
+    splitsByExpense.set(s.expense_id, arr);
+  }
+  const expenses = expenseRows.map((e) => ({
+    id: e.id,
+    trip_id: e.trip_id,
+    paid_by: e.paid_by,
+    amount: e.amount,
+    splits: splitsByExpense.get(e.id) || [],
+  }));
+
+  return aggregateBalanceSummary({
+    memberIdByGroup,
+    trips,
+    allMembers,
+    expenses,
+    payments,
+  });
 }
 
 // ── Helpers ─────────────────────────────────

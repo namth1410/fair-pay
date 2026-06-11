@@ -1,6 +1,6 @@
 import { Canvas, Fill, Shader, Skia, useClock } from '@shopify/react-native-skia';
-import { memo, useMemo, useState } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View, type ViewStyle } from 'react-native';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { type LayoutChangeEvent, StyleSheet, View, type ViewStyle, InteractionManager } from 'react-native';
 import { useDerivedValue } from 'react-native-reanimated';
 
 import { useAnimationsEnabled } from '../../../utils/userPreferences';
@@ -59,6 +59,14 @@ export const SkiaMeshGradient = memo(function SkiaMeshGradient({
 }: SkiaMeshGradientProps) {
   const clock = useClock();
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [isTransitionReady, setIsTransitionReady] = useState(false);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setIsTransitionReady(true);
+    });
+    return () => task.cancel();
+  }, []);
 
   const rgb = useMemo(
     () => ({
@@ -89,7 +97,7 @@ export const SkiaMeshGradient = memo(function SkiaMeshGradient({
 
   return (
     <View style={[styles.wrap, { backgroundColor: baseColor }, style]} onLayout={onLayout}>
-      {animationsEnabled && effect && size.w > 0 ? (
+      {animationsEnabled && isTransitionReady && effect && size.w > 0 ? (
         <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
           <Fill>
             <Shader source={effect} uniforms={uniforms} />

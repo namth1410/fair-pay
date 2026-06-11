@@ -1,6 +1,7 @@
 import '../polyfills/crypto';
 import '../../global.css';
 
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { BeVietnamPro_400Regular } from '@expo-google-fonts/be-vietnam-pro/400Regular';
 import { BeVietnamPro_500Medium } from '@expo-google-fonts/be-vietnam-pro/500Medium';
 import { BeVietnamPro_600SemiBold } from '@expo-google-fonts/be-vietnam-pro/600SemiBold';
@@ -221,26 +222,28 @@ export default function RootLayout() {
       <ErrorBoundary>
         <SafeAreaProvider>
           <HeroUINativeProvider>
-            <StatusBar style={isDark ? 'light' : 'dark'} />
-            <ToastBridge />
-            <OfflineBanner />
-            <AuthGate>
-              <Slot />
-            </AuthGate>
-            <NotificationRealtimeBridge />
-            <PushTapBridge />
-            <SyncBridge />
-            <ConflictResolverModal />
-            <ThemeTransitionOverlay />
-            <CameraCaptureHost />
-            {!splashDone && (
-              <SplashScene
-                onComplete={() => {
-                  __splashShown = true;
-                  setSplashDone(true);
-                }}
-              />
-            )}
+            <BottomSheetModalProvider>
+              <StatusBar style={isDark ? 'light' : 'dark'} />
+              <ToastBridge />
+              <OfflineBanner />
+              <AuthGate>
+                <Slot />
+              </AuthGate>
+              <NotificationRealtimeBridge />
+              <PushTapBridge />
+              <SyncBridge />
+              <ConflictResolverModal />
+              <ThemeTransitionOverlay />
+              <CameraCaptureHost />
+              {!splashDone && (
+                <SplashScene
+                  onComplete={() => {
+                    __splashShown = true;
+                    setSplashDone(true);
+                  }}
+                />
+              )}
+            </BottomSheetModalProvider>
           </HeroUINativeProvider>
         </SafeAreaProvider>
       </ErrorBoundary>

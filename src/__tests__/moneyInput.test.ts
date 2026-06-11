@@ -55,13 +55,8 @@ describe('computeMoneySuggestions', () => {
     expect(computeMoneySuggestions('00')).toEqual(DEFAULT_SUGGESTIONS);
   });
 
-  it('single-digit "1" → full ladder up to cap', () => {
-    expect(computeMoneySuggestions('1')).toEqual([
-      10_000,
-      100_000,
-      1_000_000,
-      10_000_000,
-    ]);
+  it('single-digit "1" → ladder up to (but excluding) cap', () => {
+    expect(computeMoneySuggestions('1')).toEqual([10_000, 100_000, 1_000_000]);
   });
 
   it('single-digit "3" → drops 30tr above cap', () => {
@@ -89,10 +84,16 @@ describe('computeMoneySuggestions', () => {
     expect(computeMoneySuggestions('150')).toEqual([15_000, 150_000, 1_500_000]);
   });
 
-  it('caps suggestions at 10 triệu', () => {
+  it('caps suggestions strictly below 10 triệu (never suggests exactly 10tr)', () => {
     const result = computeMoneySuggestions('1');
-    expect(result.every((v) => v <= 10_000_000)).toBe(true);
-    expect(result[result.length - 1]).toBe(10_000_000);
+    expect(result.every((v) => v < 10_000_000)).toBe(true);
+    expect(result).not.toContain(10_000_000);
+  });
+
+  it('returns at most 3 suggestions', () => {
+    for (const typed of ['1', '8', '35', '150', '999']) {
+      expect(computeMoneySuggestions(typed).length).toBeLessThanOrEqual(3);
+    }
   });
 
   it('every suggestion is at least 10k (floor)', () => {
@@ -103,8 +104,14 @@ describe('computeMoneySuggestions', () => {
     }
   });
 
-  it('exactly 10 triệu literal → single chip at cap', () => {
-    expect(computeMoneySuggestions('10000000')).toEqual([10_000_000]);
+  it('exactly 10 triệu literal → empty (cap is exclusive)', () => {
+    expect(computeMoneySuggestions('10000000')).toEqual([]);
+  });
+
+  it('largest possible suggestion is 9.999.000', () => {
+    expect(computeMoneySuggestions('9999')).toEqual([
+      9_999_000,
+    ]);
   });
 
   it('returns empty list when literal amount already exceeds cap', () => {

@@ -182,6 +182,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       get().loadPendingRequests(groupId),
       get().loadMembers(groupId),
     ]);
+    const newCount = get().currentGroupMembers.length;
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, member_count: newCount } : g
+      ),
+    }));
   },
 
   rejectRequest: async (requestId, groupId) => {
@@ -301,6 +307,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   kickMember: async (memberId, groupId) => {
     await removeMember(memberId);
     await get().loadMembers(groupId);
+    const newCount = get().currentGroupMembers.length;
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, member_count: newCount } : g
+      ),
+    }));
   },
 
   renameMemberInGroup: async (memberId, newName, groupId) => {
@@ -311,6 +323,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   addVirtualMember: async (groupId, displayName) => {
     await addVirtualMember(groupId, displayName);
     await get().loadMembers(groupId);
+    const newCount = get().currentGroupMembers.length;
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, member_count: newCount } : g
+      ),
+    }));
   },
 
   removeGroup: async (groupId) => {

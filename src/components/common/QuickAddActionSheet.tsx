@@ -9,7 +9,8 @@ import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
 import Plus from 'lucide-react-native/dist/esm/icons/plus';
 import Zap from 'lucide-react-native/dist/esm/icons/zap';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { createExpense } from '../../services/expense.service';
@@ -19,6 +20,7 @@ import {
   isFullPreset,
 } from '../../services/preset.service';
 import { fetchAllUserTrips, type Trip } from '../../services/trip.service';
+import { useGroupStore } from '../../stores/group.store';
 import { getPresetsForContext, usePresetStore } from '../../stores/preset.store';
 import { useTripStore } from '../../stores/trip.store';
 import { getErrorMessage } from '../../utils/error';
@@ -46,6 +48,7 @@ export function QuickAddActionSheet({
   const presetsLoaded = usePresetStore((s) => s.loaded);
   const loadPresets = usePresetStore((s) => s.loadPresets);
   const reloadTripExpenses = useTripStore((s) => s.loadExpenses);
+  const refreshBalanceSummary = useGroupStore((s) => s.loadBalanceSummary);
 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [confirmPreset, setConfirmPreset] = useState<ExpensePreset | null>(null);
@@ -163,6 +166,10 @@ export function QuickAddActionSheet({
       });
       // Best-effort refresh trip expenses để user thấy ngay khi mở trip.
       reloadTripExpenses(confirmPreset.trip_id).catch(() => {});
+      // Home không mất focus (sheet không navigate) → useFocusEffect không chạy
+      // lại → phải tự refresh HeroDebt + số dư nhóm. fetchUserBalanceSummary
+      // queue-aware: push nền chưa xong → đọc local mirror (đã có expense mới).
+      refreshBalanceSummary().catch(() => {});
 
       const desc =
         applied.warnings.length > 0

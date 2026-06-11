@@ -110,23 +110,25 @@ export function parseMoneyInput(text: string): string {
 }
 
 /** Default chip suggestions when the money input is empty. */
-export const DEFAULT_MONEY_SUGGESTIONS = [50_000, 100_000, 200_000, 500_000];
+export const DEFAULT_MONEY_SUGGESTIONS = [50_000, 100_000, 200_000];
 
-// App chia tiền nhóm, không phải app ngân hàng — gợi ý tối đa 10 triệu.
-const MAX_MONEY_SUGGESTION = 10_000_000; // 10 triệu
+// App chia tiền nhóm, không phải app ngân hàng — gợi ý dưới 10 triệu (loại trừ
+// 10tr): mức cao nhất có thể là 9.999.000đ. Cận trên dùng so sánh chặt (`>=`).
+const MAX_MONEY_SUGGESTION = 10_000_000; // 10 triệu — KHÔNG bao giờ gợi ý đúng mức này
 // Chip nhỏ nhất phải ≥ 10k — các mức 1k–9k quá nhỏ, ít gặp khi chia tiền.
 const MIN_MONEY_SUGGESTION = 10_000;
-const MONEY_SUGGESTION_COUNT = 4;
+const MONEY_SUGGESTION_COUNT = 3;
 
 /**
  * Generate quick-pick amount suggestions từ "chữ số có nghĩa" user gõ.
  * Mỗi chip = `n × 10^k` — tức số đã gõ thêm các số 0 ở những bậc khác nhau —
- * lọc theo: ≥ 10.000đ (MIN), ≤ 10 triệu (MAX), và bội số 1.000đ. Lấy 4 chip nhỏ nhất.
+ * lọc theo: ≥ 10.000đ (MIN), < 10 triệu (MAX, loại trừ 10tr → tối đa 9.999.000đ),
+ * và bội số 1.000đ. Lấy 3 chip nhỏ nhất.
  *
  * Hệ quả: các số 0 ở cuối input gần như không ảnh hưởng — cùng "8/80/800/8000/80000"
  * đều ra cùng ladder. KHÔNG bao giờ rỗng trừ khi số literal đã > 10tr.
  *  - Empty / zero  → fallback to `defaults`.
- *  - "1"           → [10_000, 100_000, 1_000_000, 10_000_000].
+ *  - "1"           → [10_000, 100_000, 1_000_000]  (10tr bị loại trừ).
  *  - "8"…"80000"   → [80_000, 800_000, 8_000_000].
  *  - "150"         → [15_000, 150_000, 1_500_000].
  *  - "20000000"    → [] (20tr literal đã vượt cap).
@@ -142,7 +144,7 @@ export function computeMoneySuggestions(
   const out: number[] = [];
   for (let m = 1; ; m *= 10) {
     const v = n * m;
-    if (v > MAX_MONEY_SUGGESTION) break; // v tăng dần → có thể dừng sớm
+    if (v >= MAX_MONEY_SUGGESTION) break; // v tăng dần → dừng sớm; loại trừ đúng 10tr
     if (v >= MIN_MONEY_SUGGESTION && v % 1000 === 0) {
       out.push(v);
       if (out.length === MONEY_SUGGESTION_COUNT) break;

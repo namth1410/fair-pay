@@ -188,6 +188,17 @@ export const useTripStore = create<TripState>((set, get) => ({
     } else {
       await reopenTrip(trip.id);
     }
+
+    if (get().currentTrip?.id === trip.id) {
+      set((state) => ({
+        currentTrip: {
+          ...state.currentTrip!,
+          status: trip.status === 'open' ? 'closed' : 'open',
+          closed_at: trip.status === 'open' ? new Date().toISOString() : null,
+        },
+      }));
+    }
+
     await Promise.all([
       get().loadTrips(trip.group_id),
       get().loadAuditLogs(trip.id),
@@ -196,6 +207,13 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   renameTrip: async (tripId, name) => {
     await updateTripName(tripId, name);
+
+    if (get().currentTrip?.id === tripId) {
+      set((state) => ({
+        currentTrip: { ...state.currentTrip!, name },
+      }));
+    }
+
     // Resolve group_id qua mọi collection + offline fallback — tránh bỏ qua refresh
     // trips list khi vào trip bypass group detail (trips array rỗng).
     const ctx = await get().resolveTripContext(tripId);

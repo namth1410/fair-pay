@@ -1,11 +1,13 @@
 import { DISPLAY_NAME_MAX_LENGTH } from '../config/constants';
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
+import * as userRepo from '../repositories/user.repo';
 import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
+import type { UserRow } from '../types/database.types';
 import { isNetworkError } from '../utils/network';
 import { getAuthUserId } from './auth.helper';
 
@@ -64,6 +66,19 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
     console.warn('[fetchCurrentUser] users table query failed:', error.message);
   }
 
+  // Seed/refresh SQLite mirror NGAY khi có server row. Tránh race: store profile
+  // sẵn sàng (đọc thẳng Supabase ở đây) TRƯỚC khi sync engine pull `users` về →
+  // UI cho toggle settings nhưng updateSettings/updateDisplayName đọc SQLite trống
+  // → throw "Hồ sơ không tồn tại" (toast đỏ). Await trước khi return → lúc
+  // setProfile chạy (toggle enabled) thì mirror đã tồn tại.
+  if (data) {
+    try {
+      await userRepo.upsertFromServer(data as unknown as UserRow);
+    } catch (e) {
+      if (__DEV__) console.warn('[fetchCurrentUser] seed local mirror failed:', e);
+    }
+  }
+
   // Build display_name with priority: DB row → auth metadata → email local-part
   const meta = (user.user_metadata ?? {}) as Record<string, string | undefined>;
   const fallbackName =
@@ -83,6 +98,55 @@ export async function fetchCurrentUser(): Promise<UserProfile | null> {
   };
 }
 
+interface LocalUserRow {
+  version: number;
+  display_name: string;
+  updated_at: string;
+  settings: string | null;
+}
+
+/**
+ * Đọc row `users` từ SQLite mirror. Nếu mirror chưa được seed (race: store
+ * profile sẵn sàng từ Supabase TRƯỚC khi sync engine pull `users` về) → dựng
+ * row tối thiểu từ store profile + session để mutation đi tiếp được (online RPC
+ * hoặc enqueue offline) thay vì throw "Hồ sơ không tồn tại". Trả null CHỈ khi
+ * thật sự chưa có identity nào (chưa đăng nhập xong) — lúc đó throw là đúng.
+ */
+async function readOrSeedLocalUser(userId: string): Promise<LocalUserRow | null> {
+  const db = getDatabase();
+  const sql =
+    `SELECT version, display_name, updated_at, settings FROM users WHERE id = ?`;
+  const existing = await db.getFirstAsync<LocalUserRow>(sql, [userId]);
+  if (existing) return existing;
+
+  // Mirror chưa seed — lấy identity từ auth store (profile do fetchCurrentUser
+  // set, đọc thẳng Supabase). Lazy require tránh circular import.
+  const { useAuthStore } = require('../stores/auth.store') as typeof import('../stores/auth.store');
+  const state = useAuthStore.getState();
+  const profile = state.profile;
+  const authId = state.session?.user.id;
+  if (!profile || !authId) return null;
+
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `INSERT OR IGNORE INTO users
+       (id, auth_id, display_name, email, photo_url, fcm_token, settings, version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    [
+      userId,
+      authId,
+      profile.display_name,
+      profile.email,
+      profile.photo_url,
+      profile.fcm_token,
+      JSON.stringify(profile.settings),
+      now,
+      now,
+    ]
+  );
+  return db.getFirstAsync<LocalUserRow>(sql, [userId]);
+}
+
 /**
  * Update display name. Offline-first: dùng RPC update_user_display_name với
  * optimistic concurrency (P3 pattern). Conflict → modal.
@@ -98,10 +162,7 @@ export async function updateDisplayName(name: string): Promise<void> {
   }
 
   const db = getDatabase();
-  const local = await db.getFirstAsync<{ version: number; display_name: string }>(
-    `SELECT version, display_name FROM users WHERE id = ?`,
-    [userId]
-  );
+  const local = await readOrSeedLocalUser(userId);
   if (!local) throw new Error('Hồ sơ không tồn tại');
   if (trimmed === local.display_name) return;
 
@@ -185,10 +246,7 @@ export async function updateSettings(patch: Partial<UserSettings>): Promise<void
   if (Object.keys(patch).length === 0) return;
 
   const db = getDatabase();
-  const local = await db.getFirstAsync<{ updated_at: string; settings: string | null }>(
-    `SELECT updated_at, settings FROM users WHERE id = ?`,
-    [userId]
-  );
+  const local = await readOrSeedLocalUser(userId);
   if (!local) throw new Error('Hồ sơ không tồn tại');
 
   const clientRequestId = globalThis.crypto.randomUUID();
