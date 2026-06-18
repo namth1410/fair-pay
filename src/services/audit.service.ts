@@ -32,6 +32,7 @@ const ACTION_LABELS: Record<string, string> = {
   'member.join_approved':  'Duyệt yêu cầu tham gia',
   'member.join_rejected':  'Từ chối yêu cầu tham gia',
   'member.virtual_add':    'Thêm thành viên ảo',
+  'member.virtual_replaced': 'Thành viên thật thay thế thành viên ảo',
   'member.rename':         'Đổi tên thành viên',
   'member.removed':        'Xóa thành viên',
 };

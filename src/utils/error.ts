@@ -48,6 +48,11 @@ const ERROR_MAP: Record<string, string> = {
   already_member: 'Bạn đã là thành viên nhóm này',
   invalid_group_name: 'Tên nhóm không hợp lệ',
 
+  // RPC custom — virtual member adoption (request_join_by_code / approve_join_request_as_adoption)
+  member_not_claimable: 'Thành viên ảo này không còn khả dụng để nhận.',
+  cannot_adopt_existing_member:
+    'Người này đã (hoặc từng) là thành viên thật của nhóm — hãy duyệt như thành viên mới.',
+
   // RPC custom — update_user_settings (validate jsonb shape)
   invalid_settings_shape: 'Dữ liệu cài đặt không hợp lệ',
   invalid_settings_type: 'Giá trị cài đặt không đúng kiểu',

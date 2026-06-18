@@ -14,6 +14,7 @@ import Animated, {
 import { useShallow } from 'zustand/react/shallow';
 
 import { AddMemberSheet } from '../../../components/common/AddMemberSheet';
+import { ApproveJoinRequestSheet } from '../../../components/group/ApproveJoinRequestSheet';
 import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
@@ -66,7 +67,7 @@ export default function GroupDetailScreen() {
     groups, currentGroupMembers, currentGroupId, pendingJoinRequests,
     pendingInvitations, isLoadingPendingInvitations,
     loadMembers, loadPendingRequests, loadPendingInvitations,
-    approveRequest, rejectRequest, revokeInvite,
+    rejectRequest, revokeInvite,
     kickMember, removeGroup,
   } = useGroupStore(
     useShallow((s) => ({
@@ -79,7 +80,6 @@ export default function GroupDetailScreen() {
       loadMembers: s.loadMembers,
       loadPendingRequests: s.loadPendingRequests,
       loadPendingInvitations: s.loadPendingInvitations,
-      approveRequest: s.approveRequest,
       rejectRequest: s.rejectRequest,
       revokeInvite: s.revokeInvite,
       kickMember: s.kickMember,
@@ -110,6 +110,8 @@ export default function GroupDetailScreen() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [memberToRename, setMemberToRename] = useState<GroupMember | null>(null);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [requestToApprove, setRequestToApprove] = useState<JoinRequest | null>(null);
   const sharingRef = useRef(false);
 
   const group = groups.find((g) => g.id === id);
@@ -237,21 +239,9 @@ export default function GroupDetailScreen() {
   };
 
   const handleApprove = (req: JoinRequest) => {
-    setConfirm({
-      isOpen: true,
-      title: 'Duyệt yêu cầu',
-      description: `Cho phép ${req.display_name} tham gia nhóm?`,
-      confirmLabel: 'Duyệt',
-      destructive: false,
-      onConfirm: async () => {
-        try {
-          await approveRequest(req.id, id!);
-          showSuccess('Đã duyệt yêu cầu');
-        } catch (e: unknown) {
-          showError(e);
-        }
-      },
-    });
+    // Mở sheet để admin chọn: thành viên mới HOẶC gán vào thành viên ảo (kế thừa số dư).
+    setRequestToApprove(req);
+    setApproveOpen(true);
   };
 
   const handleReject = (req: JoinRequest) => {
@@ -486,6 +476,18 @@ export default function GroupDetailScreen() {
           currentName={memberToRename?.display_name ?? ''}
           groupId={id}
           onSuccess={() => showSuccess('Đã đổi tên thành viên')}
+        />
+      ) : null}
+
+      {id ? (
+        <ApproveJoinRequestSheet
+          isOpen={approveOpen}
+          onOpenChange={setApproveOpen}
+          request={requestToApprove}
+          groupId={id}
+          claimableMembers={currentGroupMembers.filter(
+            (m) => m.is_virtual && !m.left_at
+          )}
         />
       ) : null}
 

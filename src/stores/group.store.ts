@@ -18,10 +18,12 @@ import {
   type GroupWithMemberCount,
   inviteMemberByEmail,
   joinGroupByCode,
+  type JoinPreview,
   type JoinRequest,
   type JoinResult,
   type MyPendingInvitation,
   type MyPendingJoinRequest,
+  previewJoinByCode,
   rejectJoinRequest,
   removeMember,
   renameMember,
@@ -57,11 +59,17 @@ interface GroupState {
   loadMyPendingJoinRequests: () => Promise<void>;
   loadMyPendingInvitations: () => Promise<void>;
   createGroup: (name: string) => Promise<void>;
-  joinByCode: (code: string) => Promise<JoinResult>;
+  joinByCode: (code: string, claimMemberId?: string | null) => Promise<JoinResult>;
+  /** Preview nhóm + thành viên ảo có thể nhận theo mã mời (không tạo request). */
+  previewJoinByCode: (code: string) => Promise<JoinPreview>;
   loadMembers: (groupId: string) => Promise<void>;
   loadPendingRequests: (groupId: string) => Promise<void>;
   loadPendingInvitations: (groupId: string) => Promise<void>;
-  approveRequest: (requestId: string, groupId: string) => Promise<void>;
+  approveRequest: (
+    requestId: string,
+    groupId: string,
+    adoptMemberId?: string | null
+  ) => Promise<void>;
   rejectRequest: (requestId: string, groupId: string) => Promise<void>;
   inviteMember: (groupId: string, email: string) => Promise<void>;
   respondToInvitationAction: (
@@ -107,17 +115,26 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   loadGroups: async () => {
     set({ isLoading: true });
     try {
-      const [groups, balanceSummary, myPendingJoinRequests, myPendingInvitations] =
-        await Promise.all([
-          fetchMyGroups(),
-          fetchUserBalanceSummary(),
-          fetchMyPendingJoinRequests(),
-          fetchMyPendingInvitations(),
-        ]);
-      set({ groups, balanceSummary, myPendingJoinRequests, myPendingInvitations });
+      // Danh sách nhóm là nội dung chính → load TRƯỚC + unblock skeleton ngay
+      // khi có. Balance summary (RPC) + ribbon (pending requests/invitations) là
+      // phụ → load nền, mỗi cái set state riêng khi về, KHÔNG chặn render list.
+      const groups = await fetchMyGroups();
+      set({ groups });
     } finally {
       set({ isLoading: false });
     }
+
+    // Secondary loads — fire-and-forget, mỗi promise tự set slice của nó để
+    // hero/ribbon nhảy vào ngay khi sẵn sàng (không chờ lẫn nhau).
+    void fetchUserBalanceSummary()
+      .then((balanceSummary) => set({ balanceSummary }))
+      .catch(() => {});
+    void fetchMyPendingJoinRequests()
+      .then((myPendingJoinRequests) => set({ myPendingJoinRequests }))
+      .catch(() => {});
+    void fetchMyPendingInvitations()
+      .then((myPendingInvitations) => set({ myPendingInvitations }))
+      .catch(() => {});
   },
 
   loadBalanceSummary: async () => {
@@ -145,12 +162,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     await get().loadGroups();
   },
 
-  joinByCode: async (code) => {
-    const result = await joinGroupByCode(code);
+  joinByCode: async (code, claimMemberId) => {
+    const result = await joinGroupByCode(code, claimMemberId);
     // Refresh pending list để Home render ribbon từ server state
     await get().loadMyPendingJoinRequests();
     return result;
   },
+
+  previewJoinByCode: async (code) => previewJoinByCode(code),
 
   loadMembers: async (groupId) => {
     // Khi đổi group: clear toàn bộ data của group cũ (members + pending) TRƯỚC fetch
@@ -176,8 +195,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set({ pendingJoinRequests: requests });
   },
 
-  approveRequest: async (requestId, groupId) => {
-    await approveJoinRequest(requestId, groupId);
+  approveRequest: async (requestId, groupId, adoptMemberId) => {
+    await approveJoinRequest(requestId, groupId, adoptMemberId);
     await Promise.all([
       get().loadPendingRequests(groupId),
       get().loadMembers(groupId),

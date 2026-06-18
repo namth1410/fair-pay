@@ -161,11 +161,15 @@ export const MembersTab = React.memo(function MembersTab({
           <AppText variant="label" tone="muted" style={styles.pendingLabel}>
             Yêu cầu tham gia ({pendingRequests.length})
           </AppText>
-          {pendingRequests.map((req) => (
+          {pendingRequests.map((req) => {
+            const claimed = req.claim_member_id
+              ? members.find((m) => m.id === req.claim_member_id)
+              : null;
+            return (
             <AppCard
               key={req.id}
               title={req.display_name}
-              subtitle="Đang chờ duyệt"
+              subtitle={claimed ? `Muốn thay cho: ${claimed.display_name}` : 'Đang chờ duyệt'}
               borderLeft={{ width: 3, color: c.warning }}
               trailing={
                 <View style={styles.memberActions}>
@@ -188,7 +192,8 @@ export const MembersTab = React.memo(function MembersTab({
                 </View>
               }
             />
-          ))}
+            );
+          })}
         </View>
       )}
 

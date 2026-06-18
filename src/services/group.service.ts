@@ -58,12 +58,25 @@ export interface JoinRequest {
   user_id: string;
   status: 'pending' | 'approved' | 'rejected';
   display_name: string;
+  /** Gợi ý slot thành viên ảo người join tự nhận (admin xác nhận khi duyệt). */
+  claim_member_id: string | null;
   reviewed_by: string | null;
   created_at: string;
   reviewed_at: string | null;
 }
 
 export type JoinResult = { type: 'pending'; group: Group; requestId: string };
+
+/** Thành viên ảo có thể nhận (claim) khi join — trả từ preview_join_by_code. */
+export interface ClaimableMember {
+  id: string;
+  display_name: string;
+}
+
+export interface JoinPreview {
+  group: Group;
+  claimableMembers: ClaimableMember[];
+}
 
 export interface GroupWithMemberCount extends Group {
   member_count: number;
@@ -303,13 +316,17 @@ export async function createGroup(name: string): Promise<Group> {
  * Mọi trường hợp (kể cả rejoin) đều cần Admin duyệt.
  * Dùng upsert để handle: first-time, rejoin, re-request sau rejection.
  */
-export async function joinGroupByCode(code: string): Promise<JoinResult> {
+export async function joinGroupByCode(
+  code: string,
+  claimMemberId?: string | null
+): Promise<JoinResult> {
   // RPC bypass RLS: non-member không thể tự query `groups` theo invite_code
   // (RLS chỉ cho is_member/created_by SELECT) cũng không tự query admin list để
-  // fan-out notify được. RPC làm atomic 4 bước: lookup group + active-member
-  // check + upsert pending request + notify admins.
+  // fan-out notify được. RPC làm atomic: lookup group + active-member check +
+  // (optional) validate claim ảo + upsert pending request + notify admins.
   const { data, error } = await supabase.rpc('request_join_by_code', {
     p_code: code,
+    p_claim_member_id: claimMemberId ?? null,
   });
   if (error) throw error;
 
@@ -320,6 +337,28 @@ export async function joinGroupByCode(code: string): Promise<JoinResult> {
   };
 
   return { type: 'pending', group: payload.group, requestId: payload.request_id };
+}
+
+/**
+ * Preview nhóm + danh sách thành viên ảo có thể nhận (claim) theo mã mời.
+ * KHÔNG tạo join request — để người join chọn danh tính trước khi gửi yêu cầu.
+ * Online-only (giống joinGroupByCode). RPC SECURITY DEFINER bypass RLS.
+ */
+export async function previewJoinByCode(code: string): Promise<JoinPreview> {
+  const { data, error } = await supabase.rpc('preview_join_by_code', {
+    p_code: code,
+  });
+  if (error) throw error;
+
+  const payload = data as {
+    group: Group;
+    claimable_members: ClaimableMember[];
+  };
+
+  return {
+    group: payload.group,
+    claimableMembers: payload.claimable_members ?? [],
+  };
 }
 
 export interface MyPendingJoinRequest {
@@ -373,10 +412,16 @@ export async function fetchPendingJoinRequests(
   );
 }
 
-/** F-23: Admin duyệt join request → thêm vào group_members */
+/**
+ * F-23: Admin duyệt join request.
+ * - `adoptMemberId` rỗng/null → thêm thành viên mới (RPC approve_join_request cũ).
+ * - `adoptMemberId` có giá trị → gán requester vào slot thành viên ảo đó
+ *   (RPC approve_join_request_as_adoption — kế thừa toàn bộ số dư/lịch sử).
+ */
 export async function approveJoinRequest(
   requestId: string,
-  groupId: string
+  groupId: string,
+  adoptMemberId?: string | null
 ): Promise<void> {
   // Pre-fetch group name để RPC render title VN ("Bạn đã được duyệt vào nhóm X")
   const { data: groupRow } = await supabase
@@ -384,6 +429,18 @@ export async function approveJoinRequest(
     .select('name')
     .eq('id', groupId)
     .maybeSingle();
+
+  if (adoptMemberId) {
+    // RPC adoption: biến đổi tại chỗ slot ảo → người thật (atomic + audit + notify)
+    const { error } = await supabase.rpc('approve_join_request_as_adoption', {
+      p_request_id: requestId,
+      p_group_id: groupId,
+      p_group_name: groupRow?.name ?? '',
+      p_member_id: adoptMemberId,
+    });
+    if (error) throw error;
+    return;
+  }
 
   // RPC approve_join_request: atomic insert/rejoin member + update status + audit + notify
   const { error } = await supabase.rpc('approve_join_request', {
@@ -1377,7 +1434,8 @@ function aggregateBalanceSummary(input: BalanceInput): BalanceSummary {
 /**
  * F-22 / BR-10: Tính số dư của user trên tất cả chuyến đang mở.
  * Trả về: tổng balance + balance riêng từng group.
- * Online: 4 queries song song qua Supabase. Offline: same shape từ SQLite mirror.
+ * Online: 1 RPC `get_user_balance_summary` (tổng hợp server-side).
+ * Offline / có pending balance op: same shape từ SQLite mirror.
  */
 export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
   const userId = await getAuthUserId();
@@ -1393,86 +1451,21 @@ export async function fetchUserBalanceSummary(): Promise<BalanceSummary> {
 
   return tryServerThenLocal<BalanceSummary>(
     async () => {
-      // Query 1: group_member records của user (memberId per group)
-      const { data: memberships, error: memErr } = await supabase
-        .from('group_members')
-        .select('id, group_id')
-        .eq('user_id', userId)
-        .is('left_at', null);
-      if (memErr) throw memErr;
-      if (!memberships?.length) return { total: 0, groupBalances: {} };
-
-      const memberIdByGroup: Record<string, string> = {};
-      const groupIds: string[] = [];
-      memberships.forEach((m) => {
-        memberIdByGroup[m.group_id] = m.id;
-        groupIds.push(m.group_id);
-      });
-
-      // Query 2 + 3 song song: open trips + all active members per group
-      const [tripsRes, allMembersRes] = await Promise.all([
-        supabase
-          .from('trips')
-          .select('id, group_id')
-          .in('group_id', groupIds)
-          .eq('status', 'open')
-          .is('deleted_at', null),
-        supabase
-          .from('group_members')
-          .select('id, group_id, display_name')
-          .in('group_id', groupIds)
-          .is('left_at', null),
-      ]);
-      if (tripsRes.error) throw tripsRes.error;
-      if (allMembersRes.error) throw allMembersRes.error;
-
-      const trips = tripsRes.data || [];
-      if (!trips.length) return { total: 0, groupBalances: {} };
-      const tripIds = trips.map((t) => t.id);
-
-      // Query 4 + 5 song song: expenses (với nested splits) + payments
-      const [expensesRes, paymentsRes] = await Promise.all([
-        supabase
-          .from('expenses')
-          .select('id, trip_id, paid_by, amount, expense_splits(member_id, amount)')
-          .in('trip_id', tripIds)
-          .is('deleted_at', null),
-        supabase
-          .from('payments')
-          .select('trip_id, from_member_id, to_member_id, amount')
-          .in('trip_id', tripIds)
-          .is('deleted_at', null),
-      ]);
-      if (expensesRes.error) throw expensesRes.error;
-      if (paymentsRes.error) throw paymentsRes.error;
-
-      const expenses = (expensesRes.data || []).map((e) => ({
-        id: e.id as string,
-        trip_id: e.trip_id as string,
-        paid_by: e.paid_by as string,
-        amount: e.amount as number,
-        splits:
-          ((e.expense_splits as { member_id: string; amount: number }[]) || []).map(
-            (s) => ({ member_id: s.member_id, amount: s.amount })
-          ),
-      }));
-
-      return aggregateBalanceSummary({
-        memberIdByGroup,
-        trips: trips.map((t) => ({ id: t.id as string, group_id: t.group_id as string })),
-        allMembers: (allMembersRes.data || []).map((m) => ({
-          id: m.id as string,
-          group_id: m.group_id as string,
-          display_name: m.display_name as string,
-        })),
-        expenses,
-        payments: (paymentsRes.data || []).map((p) => ({
-          trip_id: p.trip_id as string,
-          from_member_id: p.from_member_id as string,
-          to_member_id: p.to_member_id as string,
-          amount: p.amount as number,
-        })),
-      });
+      // RPC tổng hợp server-side: 1 round-trip, chỉ trả balance của caller mỗi
+      // group. Thay cho waterfall 3 round-trip (memberships → trips →
+      // expenses/splits/payments) + kéo toàn bộ data của người khác về máy chỉ
+      // để rút ra số của riêng user. Công thức mirror computeBalances —
+      // xem migration 20260614130000_user_balance_summary_rpc.sql.
+      const { data, error } = await supabase.rpc('get_user_balance_summary');
+      if (error) throw error;
+      const rows = (data as { group_id: string; balance: number }[] | null) ?? [];
+      const groupBalances: Record<string, number> = {};
+      let total = 0;
+      for (const r of rows) {
+        groupBalances[r.group_id] = r.balance;
+        total += r.balance;
+      }
+      return { total, groupBalances };
     },
     () => computeLocalBalanceSummary(userId)
   );

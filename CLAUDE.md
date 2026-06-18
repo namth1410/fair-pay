@@ -127,6 +127,13 @@ Mọi op mới thêm vào dispatcher PHẢI tuân pattern này nếu không ph�
   - `SyncBridge.tsx` — wire run() vào session/online/AppState triggers.
 
 ### Migrations SQL (foundation)
+- **MỌI thay đổi schema/DDL PHẢI qua `apply_migration` (MCP Supabase) — TUYỆT ĐỐI KHÔNG dùng
+  `execute_sql`.** `execute_sql` không ghi vào migration history → DB drift, không truy vết,
+  không reproduce được ở môi trường khác. `execute_sql` chỉ dùng cho read/validate tạm thời
+  (SELECT), KHÔNG cho `CREATE/ALTER/DROP/GRANT/REVOKE/COMMENT`. Luôn tạo file migration trong
+  `supabase/migrations/` + apply bằng `apply_migration` (dev trước, rồi production main). Áp
+  dụng cho cả CREATE OR REPLACE FUNCTION (idempotent nhưng vẫn phải vào history).
+
 3 migrations + 1 security hardening đã apply lên Supabase main:
 - `20260521100000_offline_first_version_columns.sql` — thêm `version` + `updated_at` +
   `client_request_id` + trigger `bump_version_and_updated_at()` cho 11 bảng mutable.
