@@ -56,7 +56,7 @@ export default function TripDetailScreen() {
     currentTrip, currentExpenses, currentPayments, balances, settlements, auditLogs,
     isLoadingExpenses, currentTripId,
     removeExpense,
-    addPayment, removePayment,
+    addPayment, addPayments, removePayment,
     loadBalances, loadAuditLogs,
   } = useTripStore();
   const { currentGroupMembers, loadMembers } = useGroupStore();
@@ -345,7 +345,9 @@ export default function TripDetailScreen() {
                 payments={currentPayments}
                 balances={balances}
                 members={currentGroupMembers}
+                myMemberId={myMemberId}
                 onAddPayment={addPayment}
+                onAddPayments={addPayments}
                 onDeletePayment={removePayment}
               />
             </View>

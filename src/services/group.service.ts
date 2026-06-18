@@ -115,43 +115,12 @@ export async function fetchMyGroups(): Promise<GroupWithMemberCount[]> {
 
   const groups = await tryServerThenLocal<GroupWithMemberCount[]>(
     async () => {
-      const { data: memberships, error: memErr } = await supabase
-        .from('group_members')
-        .select('group_id')
-        .eq('user_id', userId)
-        .is('left_at', null);
-
-      if (memErr) throw memErr;
-      if (!memberships?.length) return [];
-
-      const groupIds = memberships.map((m) => m.group_id);
-
-      const { data: groups, error: grpErr } = await supabase
-        .from('groups')
-        .select('*')
-        .in('id', groupIds)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-
-      if (grpErr) throw grpErr;
-
-      const { data: counts, error: cntErr } = await supabase
-        .from('group_members')
-        .select('group_id')
-        .in('group_id', groupIds)
-        .is('left_at', null);
-
-      if (cntErr) throw cntErr;
-
-      const countMap: Record<string, number> = {};
-      counts?.forEach((c) => {
-        countMap[c.group_id] = (countMap[c.group_id] || 0) + 1;
-      });
-
-      return (groups || []).map((g) => ({
-        ...g,
-        member_count: countMap[g.id] || 0,
-      }));
+      // 1 RPC thay 3 round-trip nối tiếp (memberships → groups → counts).
+      // get_my_groups EXISTS-filter theo auth_user_id() server-side → chỉ nhóm
+      // của caller + member_count. Xem 20260618120000_get_my_groups_rpc.sql.
+      const { data, error } = await supabase.rpc('get_my_groups');
+      if (error) throw error;
+      return (data ?? []) as GroupWithMemberCount[];
     },
     async () => {
       const db = getDatabase();

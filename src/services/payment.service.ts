@@ -67,6 +67,51 @@ export async function fetchPayments(tripId: string): Promise<Payment[]> {
   );
 }
 
+/**
+ * Mirror một payment row vào SQLite local (optimistic state + cho phép xóa/đọc offline).
+ * Dùng chung cho cả offline-enqueue path lẫn online-RPC-success path — đảm bảo local mirror
+ * luôn có row ngay sau khi tạo (nếu thiếu, deletePayment tra local sẽ báo "không tồn tại").
+ */
+async function writePaymentLocal(p: {
+  id: string;
+  trip_id: string;
+  group_id: string;
+  from_member_id: string;
+  to_member_id: string;
+  amount: number;
+  note: string | null;
+  recorded_by: string;
+  date: string;
+  version: number;
+  client_request_id: string | null;
+  created_at: string;
+  updated_at: string;
+}): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync(
+    `INSERT INTO payments
+      (id, trip_id, group_id, from_member_id, to_member_id, amount, note,
+       recorded_by, date, version, client_request_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`,
+    [
+      p.id,
+      p.trip_id,
+      p.group_id,
+      p.from_member_id,
+      p.to_member_id,
+      p.amount,
+      p.note,
+      p.recorded_by,
+      p.date,
+      p.version,
+      p.client_request_id,
+      p.created_at,
+      p.updated_at,
+    ]
+  );
+}
+
 /** Record a payment — BR-03: free-form, not bound to algorithm */
 export async function createPayment(params: {
   tripId: string;
@@ -128,28 +173,21 @@ export async function createPayment(params: {
   });
 
   const enqueueLocal = async (): Promise<Payment> => {
-    const db = getDatabase();
-    await db.runAsync(
-      `INSERT INTO payments
-        (id, trip_id, group_id, from_member_id, to_member_id, amount, note,
-         recorded_by, date, version, client_request_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-       ON CONFLICT(id) DO NOTHING`,
-      [
-        paymentId,
-        params.tripId,
-        params.groupId,
-        params.fromMemberId,
-        params.toMemberId,
-        params.amount,
-        note,
-        userId,
-        date,
-        clientRequestId,
-        clientCreatedAt,
-        clientCreatedAt,
-      ]
-    );
+    await writePaymentLocal({
+      id: paymentId,
+      trip_id: params.tripId,
+      group_id: params.groupId,
+      from_member_id: params.fromMemberId,
+      to_member_id: params.toMemberId,
+      amount: params.amount,
+      note,
+      recorded_by: userId,
+      date,
+      version: 1,
+      client_request_id: clientRequestId,
+      created_at: clientCreatedAt,
+      updated_at: clientCreatedAt,
+    });
     await syncQueue.enqueue({
       op_type: OP_TYPES.CREATE_PAYMENT,
       entity_type: ENTITY_TYPES.PAYMENT,
@@ -213,6 +251,11 @@ export async function createPayment(params: {
 
     if (error) throw error;
     if (!data) throw new Error('Ghi nhận thanh toán thất bại');
+    // Mirror server row vào SQLite local NGAY — nếu không, long-press xóa (deletePayment
+    // tra local) sẽ báo "Thanh toán không tồn tại" cho payment vừa tạo online (sync pull
+    // mirror về sau, có thể trễ). createExpense local-first nên không vướng; payment giữ
+    // online-direct-RPC path nên phải mirror thủ công.
+    await writePaymentLocal(data);
     return data;
   } catch (err) {
     if (isNetworkError(err)) {

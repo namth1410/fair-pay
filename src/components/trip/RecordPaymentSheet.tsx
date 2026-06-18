@@ -31,6 +31,11 @@ interface RecordPaymentSheetProps {
     amount: number;
     note?: string;
   }) => Promise<void>;
+  /** Prefill khi mở từ một đề xuất quyết toán (lớp "Sửa"). Rỗng = ghi nhận thủ công. */
+  initialFromMemberId?: string;
+  initialToMemberId?: string;
+  initialAmount?: number;
+  initialNote?: string;
 }
 
 export function RecordPaymentSheet({
@@ -38,6 +43,7 @@ export function RecordPaymentSheet({
   tripId, groupId,
   members, balances,
   onAddPayment,
+  initialFromMemberId, initialToMemberId, initialAmount, initialNote,
 }: RecordPaymentSheetProps) {
   const c = useAppTheme();
 
@@ -53,14 +59,14 @@ export function RecordPaymentSheet({
 
   useEffect(() => {
     if (!isOpen) return;
-    setPayFrom('');
-    setPayTo('');
-    setAmountStr('');
-    noteRef.current = '';
+    setPayFrom(initialFromMemberId ?? '');
+    setPayTo(initialToMemberId ?? '');
+    setAmountStr(initialAmount ? String(initialAmount) : '');
+    noteRef.current = initialNote ?? '';
     setAmountFocused(false);
     setBusy(false);
     setResetKey((k) => k + 1);
-  }, [isOpen]);
+  }, [isOpen, initialFromMemberId, initialToMemberId, initialAmount, initialNote]);
 
   const memberOptions = members.map((m) => ({ key: m.id, label: m.display_name }));
   const getMemberName = (id: string) => members.find((m) => m.id === id)?.display_name || '?';
@@ -159,7 +165,7 @@ export function RecordPaymentSheet({
                 <FloatingBottomSheetInput
                   key={`note-${resetKey}`}
                   label="Ghi chú (VD: Chuyển khoản Momo)"
-                  defaultValue=""
+                  defaultValue={initialNote ?? ''}
                   onChangeText={handleNoteChange}
                   returnKeyType="done"
                   accessibilityLabel="Ghi chú thanh toán"

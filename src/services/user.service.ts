@@ -53,7 +53,11 @@ export const DEFAULT_SETTINGS: UserSettings = {
  *  just because the DB query failed.
  */
 export async function fetchCurrentUser(): Promise<UserProfile | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  // getSession (local, tự refresh khi cần) thay getUser (mạng): session.user có
+  // đủ id/email/user_metadata. Bỏ 1 round-trip + thôi giữ auth-lock của
+  // supabase-js (lock này từng làm getSession() trong getAuthUserId xếp hàng sau).
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) return null;
 
   const { data, error } = await supabase

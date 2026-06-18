@@ -125,6 +125,15 @@ interface TripState {
     amount: number;
     note?: string;
   }) => Promise<void>;
+  /** Ghi nhận nhiều thanh toán song song (batch "Quyết toán tất cả") — reload + recompute 1 lần. */
+  addPayments: (paramsList: {
+    tripId: string;
+    groupId: string;
+    fromMemberId: string;
+    toMemberId: string;
+    amount: number;
+    note?: string;
+  }[]) => Promise<{ ok: number; failed: number }>;
   removePayment: (paymentId: string, tripId: string) => Promise<void>;
 
   loadBalances: (tripId: string, opts?: { quiet?: boolean }) => Promise<void>;
@@ -310,6 +319,23 @@ export const useTripStore = create<TripState>((set, get) => ({
       get().loadAuditLogs(params.tripId),
     ]);
     get().recomputeBalances();
+  },
+
+  addPayments: async (paramsList) => {
+    if (paramsList.length === 0) return { ok: 0, failed: 0 };
+    const tripId = paramsList[0]!.tripId;
+    // Song song: payment là P1 append-only idempotent (UUID + client_request_id),
+    // không phụ thuộc thứ tự. createPayment tự offline-first (online→RPC; offline/fail→enqueue local).
+    const results = await Promise.allSettled(paramsList.map((p) => createPayment(p)));
+    // Reload-from-truth: online→server (đã có cái thành công); offline→SQLite (đã enqueue).
+    // Chạy bất kể có item fail → UI luôn phản ánh đúng phần đã ghi.
+    await Promise.all([
+      get().loadPayments(tripId),
+      get().loadAuditLogs(tripId),
+    ]);
+    get().recomputeBalances();
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    return { ok: results.length - failed, failed };
   },
 
   removePayment: async (paymentId, tripId) => {

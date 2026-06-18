@@ -407,7 +407,8 @@ export interface TripBalanceData {
 }
 
 /**
- * Fetch raw data needed for balance computation — 4 queries in parallel.
+ * Fetch raw data needed for balance computation. Online: 1 RPC round-trip
+ * (get_trip_balance_data gom expenses+splits/payments/members/group_id server-side).
  * Tách khỏi compute để store có thể cache + recompute pure sau mutation,
  * tránh round-trip khi addExpense/addPayment.
  *
@@ -418,44 +419,29 @@ export interface TripBalanceData {
 export async function fetchTripBalanceData(tripId: string): Promise<TripBalanceData | null> {
   return tryServerThenLocal<TripBalanceData | null>(
     async () => {
-      const [expensesRes, paymentsRes, tripRes] = await Promise.all([
-        supabase
-          .from('expenses')
-          .select('*, expense_splits(*)')
-          .eq('trip_id', tripId)
-          .is('deleted_at', null)
-          .order('date', { ascending: false })
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('payments')
-          .select('*')
-          .eq('trip_id', tripId)
-          .is('deleted_at', null)
-          .order('date', { ascending: false }),
-        supabase
-          .from('trips')
-          .select('group_id')
-          .eq('id', tripId)
-          .single(),
-      ]);
-
-      if (expensesRes.error) throw expensesRes.error;
-      if (paymentsRes.error) throw paymentsRes.error;
-      if (!tripRes.data) return null;
-
-      const { data: members } = await supabase
-        .from('group_members')
-        .select('id, display_name, left_at')
-        .eq('group_id', tripRes.data.group_id);
-
+      // 1 round-trip: RPC gom expenses(+splits)/payments/members/group_id server-side,
+      // thay 2-wave waterfall cũ (3 query song song + group_members TUẦN TỰ theo group_id).
+      // RPC trả NULL nếu trip không tồn tại/đã xóa hoặc caller không phải member (khớp
+      // hành vi cũ: RLS giấu → null). jsonb shape khớp TripBalanceData (snake_case).
+      const { data, error } = await supabase.rpc('get_trip_balance_data', {
+        p_trip_id: tripId,
+      });
+      if (error) throw error;
+      if (!data) return null;
+      const d = data as {
+        group_id: string;
+        expenses: ExpenseWithSplits[];
+        payments: Payment[];
+        members: { id: string; display_name: string; left_at: string | null }[];
+      };
       return {
-        groupId: tripRes.data.group_id as string,
-        expenses: (expensesRes.data || []) as ExpenseWithSplits[],
-        payments: (paymentsRes.data || []) as Payment[],
-        members: (members || []).map((m) => ({
-          id: m.id as string,
-          displayName: m.display_name as string,
-          leftAt: m.left_at as string | null,
+        groupId: d.group_id,
+        expenses: d.expenses ?? [],
+        payments: d.payments ?? [],
+        members: (d.members ?? []).map((m) => ({
+          id: m.id,
+          displayName: m.display_name,
+          leftAt: m.left_at,
         })),
       };
     },
@@ -553,17 +539,4 @@ export function computeTripBalances(
   const all = computeBalancesPure(memberList, expenseData, paymentData);
   const leftMap = new Map(members.map((m) => [m.id, m.leftAt]));
   return filterInactiveZeroBalance(all, leftMap);
-}
-
-/**
- * Calculate balance for each member in a trip — fetch + compute.
- * Giữ cho backward compat. Store mới dùng fetchTripBalanceData + computeTripBalances
- * riêng để cache và recompute pure sau mutation.
- */
-export async function calculateBalances(
-  tripId: string
-): Promise<{ memberId: string; memberName: string; balance: number }[]> {
-  const data = await fetchTripBalanceData(tripId);
-  if (!data) return [];
-  return computeTripBalances(data.members, data.expenses, data.payments);
 }
