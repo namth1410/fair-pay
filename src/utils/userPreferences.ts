@@ -39,8 +39,8 @@ const setCache = (next: PrefCache) => {
 };
 
 /**
- * Hydrate cache from SecureStore. Call once at app boot, BEFORE SplashScene mounts,
- * so non-component code (haptics helper, splash, transitions) reads the user's
+ * Hydrate cache from SecureStore. Call once at app boot, BEFORE first paint,
+ * so non-component code (haptics helper, theme, transitions) reads the user's
  * persisted preference instead of falling back to defaults.
  */
 export async function bootstrapPreferences(): Promise<void> {

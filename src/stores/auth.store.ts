@@ -129,32 +129,52 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (__DEV__) console.warn('[auth] load cached identity failed:', e);
     }
 
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      set({ session, user: session?.user ?? null, isInitialized: true });
+    // Offline-first splash: đã có cached identity → mở khoá UI NGAY (AuthGate
+    // chấp nhận `session || cachedIdentity`), KHÔNG chờ getSession(). getSession()
+    // có thể trigger token refresh = 1 round-trip tới Supabase (Tokyo, RTT cao) —
+    // đẩy việc đó xuống nền để splash ẩn sớm. Session thật resolve nền +
+    // onAuthStateChange (gồm TOKEN_REFRESHED) cập nhật store sau.
+    const hasCached = !!cached;
+    if (hasCached) set({ isInitialized: true });
 
-      // Persist identity sau khi session resolved (online) — refresh cached
-      // identity với photo_url/display_name mới.
-      if (session) {
-        void persistIdentityToCache(session);
-      }
+    // Listen for auth state changes (INITIAL_SESSION, token refresh, sign out…).
+    // Subscribe TRƯỚC getSession để bắt cả event refresh chạy nền.
+    // Idempotent: nếu đã subscribe thì bỏ qua để tránh duplicate listener
+    // (mỗi event sẽ chạy `set` 2-N lần khi Fast Refresh remount RootLayout).
+    if (!authSubscription) {
+      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+        set({ session, user: session?.user ?? null });
+        if (session) void persistIdentityToCache(session);
+      });
+      authSubscription = data.subscription;
+    }
 
-      // Listen for auth state changes (token refresh, sign out, etc.).
-      // Idempotent: nếu đã subscribe thì bỏ qua để tránh duplicate listener
-      // (mỗi event sẽ chạy `set` 2-N lần khi Fast Refresh remount RootLayout).
-      if (!authSubscription) {
-        const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-          set({ session, user: session?.user ?? null });
-          if (session) void persistIdentityToCache(session);
-        });
-        authSubscription = data.subscription;
+    const resolveSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        set({ session, user: session?.user ?? null, isInitialized: true });
+
+        // Persist identity sau khi session resolved (online) — refresh cached
+        // identity với photo_url/display_name mới.
+        if (session) {
+          void persistIdentityToCache(session);
+        }
+      } catch (e) {
+        // Network error → AuthGate sẽ dùng cachedIdentity
+        if (__DEV__) console.warn('[auth] initialize failed:', e);
+        set({ isInitialized: true });
       }
-    } catch (e) {
-      // Network error → AuthGate sẽ dùng cachedIdentity
-      if (__DEV__) console.warn('[auth] initialize failed:', e);
-      set({ isInitialized: true });
+    };
+
+    if (hasCached) {
+      // Nền — KHÔNG chặn splash (UI đã mở khoá bằng cachedIdentity).
+      void resolveSession();
+    } else {
+      // Chưa từng login (không có cache) → PHẢI chờ getSession để biết route
+      // login hay main (tránh nháy login rồi mới vào main).
+      await resolveSession();
     }
   },
 

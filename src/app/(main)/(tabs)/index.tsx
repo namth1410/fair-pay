@@ -35,6 +35,7 @@ import { useGroupStore } from '../../../stores/group.store';
 import { useNotificationStore } from '../../../stores/notification.store';
 import { useTripStore } from '../../../stores/trip.store';
 import { useUIStore } from '../../../stores/ui.store';
+import * as syncBus from '../../../sync/syncBus';
 import { hapticLight } from '../../../utils/haptics';
 import { setHomeViewMode, useHomeViewMode } from '../../../utils/userPreferences';
 import { hasWelcomed, markWelcomed } from '../../../utils/welcomeFlag';
@@ -66,6 +67,17 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadGroups();
+  }, []);
+
+  // Revalidate khi sync nền pull về thay đổi (resume từ background sau lâu,
+  // offline→online, hoặc thay đổi từ thiết bị khác). quiet=true → không nháy
+  // skeleton/spinner, chỉ âm thầm cập nhật. Trước đây home KHÔNG tự cập nhật khi
+  // resume vì useFocusEffect không fire qua AppState (không có navigation focus)
+  // → đứng yên data cũ cho tới khi user rời màn rồi quay lại / kéo refresh tay.
+  useEffect(() => {
+    return syncBus.subscribe(() => {
+      void useGroupStore.getState().loadGroups({ quiet: true });
+    });
   }, []);
 
   useEffect(() => {

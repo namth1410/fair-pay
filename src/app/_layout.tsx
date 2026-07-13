@@ -10,7 +10,7 @@ import { useFonts } from '@expo-google-fonts/be-vietnam-pro/useFonts';
 import { Slot, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { HeroUINativeProvider } from 'heroui-native';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { ReducedMotionConfig,ReduceMotion } from 'react-native-reanimated';
@@ -20,7 +20,6 @@ import { Uniwind } from 'uniwind';
 import { CameraCaptureHost } from '../components/common/CameraCaptureHost';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { OfflineBanner } from '../components/common/OfflineBanner';
-import { SplashScene } from '../components/common/SplashScene';
 import { ConflictResolverModal } from '../components/sync/ConflictResolverModal';
 import { ThemeTransitionOverlay } from '../components/common/ThemeTransitionOverlay';
 import { ToastBridge } from '../components/ui/toast';
@@ -87,11 +86,6 @@ function PushTapBridge() {
   }, [router]);
   return null;
 }
-
-// Module-level flag: splash chỉ chạy 1 lần / cold boot. Nếu RootLayout có remount
-// (theme change, navigation cross-group khi login/logout, hot reload…), state
-// component sẽ reset nhưng cờ này giữ nguyên → splash không phát lại.
-let __splashShown = false;
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const session = useAuthStore((s) => s.session);
@@ -169,7 +163,6 @@ export default function RootLayout() {
   const { isDark, ...c } = useAppTheme();
   const initialize = useAuthStore((s) => s.initialize);
   const setDatabaseReady = useAppStore((s) => s.setDatabaseReady);
-  const [splashDone, setSplashDone] = useState(__splashShown);
 
   const [fontsLoaded] = useFonts({
     BeVietnamPro_400Regular,
@@ -180,27 +173,35 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function boot() {
-      // Hydrate haptics/animations/dark-mode preferences from SecureStore BEFORE
-      // Splash mounts, so non-component code (haptics helper, splash, transitions)
-      // reads the user's persisted choice instead of defaults — and so the theme
-      // is applied synchronously instead of flashing system → user-pref after
-      // the Supabase round-trip on first paint.
-      await bootstrapPreferences();
-      Uniwind.setTheme(getDarkMode());
-      // Sync isOnline với current network state TRƯỚC khi DB init + SyncBridge
-      // mount, để service đầu tiên (vd createGroup) đọc cờ chính xác khi cold
-      // start offline. `addEventListener` ko phát current state nên cần fetch.
-      await initNetworkSync();
-      try {
-        await initDatabase();
+      // 3 I/O độc lập chạy SONG SONG (trước đây tuần tự, mỗi cái chặn cái sau):
+      //   - bootstrapPreferences(): đọc haptics/animations/dark-mode từ SecureStore.
+      //   - initNetworkSync(): NetInfo.fetch() dò trạng thái mạng hiện tại.
+      //   - initDatabase(): mở SQLite + migrations.
+      // Theme áp NGAY khi prefs xong (vẫn trước first paint vì render bị gate bởi
+      // isDatabaseReady) → không flash system→user-pref. NetInfo KHÔNG còn chặn DB
+      // init. initNetworkSync vẫn resolve TRƯỚC setDatabaseReady (Promise.all) nên
+      // SyncBridge + service đầu tiên đọc cờ isOnline chính xác.
+      const prefsReady = bootstrapPreferences().then(() => {
+        Uniwind.setTheme(getDarkMode());
+      });
+      const dbReady = (async () => {
+        try {
+          await initDatabase();
+          return true;
+        } catch (err) {
+          console.error('[Boot] DB init failed:', err);
+          return false;
+        }
+      })();
+      const [, , dbOk] = await Promise.all([prefsReady, initNetworkSync(), dbReady]);
+
+      if (dbOk) {
         setDatabaseReady(true);
         // Dọn pending image uploads mồ côi (addExpense fail sau stage, app
         // crash giữa stage và write, hoặc rows kẹt retry_count >= MAX).
         sweepStagedOrphans().catch((e) => {
           if (__DEV__) console.warn('[Boot] sweepStagedOrphans failed', e);
         });
-      } catch (err) {
-        console.error('[Boot] DB init failed:', err);
       }
       await initialize();
     }
@@ -235,14 +236,6 @@ export default function RootLayout() {
               <ConflictResolverModal />
               <ThemeTransitionOverlay />
               <CameraCaptureHost />
-              {!splashDone && (
-                <SplashScene
-                  onComplete={() => {
-                    __splashShown = true;
-                    setSplashDone(true);
-                  }}
-                />
-              )}
             </BottomSheetModalProvider>
           </HeroUINativeProvider>
         </SafeAreaProvider>

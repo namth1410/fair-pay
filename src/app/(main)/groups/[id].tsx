@@ -33,6 +33,7 @@ import type { Trip } from '../../../services/trip.service';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useGroupStore } from '../../../stores/group.store';
 import { useTripStore } from '../../../stores/trip.store';
+import * as syncBus from '../../../sync/syncBus';
 import { isPendingInviteCode } from '../../../utils/inviteCode';
 import { showError, showSuccess, showWarning } from '../../../utils/toast';
 
@@ -198,6 +199,22 @@ export default function GroupDetailScreen() {
       }
     }, [isAdmin, id])
   );
+
+  // Revalidate khi sync nền pull về thay đổi (resume từ background sau lâu,
+  // offline→online, hoặc thay đổi từ thiết bị khác). quiet → không nháy skeleton.
+  // Guard currentGroupId để chỉ refresh khi vẫn đang xem đúng group này.
+  useEffect(() => {
+    if (!id) return;
+    return syncBus.subscribe(() => {
+      if (useGroupStore.getState().currentGroupId !== id) return;
+      void useGroupStore.getState().loadMembers(id);
+      void useTripStore.getState().loadTrips(id, { quiet: true });
+      if (isAdmin) {
+        void useGroupStore.getState().loadPendingRequests(id);
+        void useGroupStore.getState().loadPendingInvitations(id);
+      }
+    });
+  }, [id, isAdmin]);
 
   // ── Event handlers ──
 

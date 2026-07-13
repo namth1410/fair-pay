@@ -82,7 +82,7 @@ interface TripState {
   /** Group id matching the currently loaded `trips` list. */
   currentTripsGroupId: string | null;
 
-  loadTrips: (groupId: string) => Promise<void>;
+  loadTrips: (groupId: string, opts?: { quiet?: boolean }) => Promise<void>;
   addTrip: (groupId: string, name: string) => Promise<void>;
   toggleTripStatus: (trip: Trip) => Promise<void>;
   renameTrip: (tripId: string, name: string) => Promise<void>;
@@ -168,10 +168,13 @@ export const useTripStore = create<TripState>((set, get) => ({
   allUserTrips: null,
   isLoadingAllUserTrips: false,
 
-  loadTrips: async (groupId) => {
+  loadTrips: async (groupId, opts) => {
+    // quiet=true (revalidate nền sau sync / resume): KHÔNG bật isLoadingTrips →
+    // không nháy skeleton, chỉ âm thầm cập nhật list khi data về.
+    const quiet = opts?.quiet ?? false;
     const isSwitchingGroup = get().currentTripsGroupId !== groupId;
     set({
-      isLoadingTrips: true,
+      ...(!quiet && { isLoadingTrips: true }),
       currentTripsGroupId: groupId,
       ...(isSwitchingGroup && { trips: [] }),
     });
@@ -180,7 +183,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       if (get().currentTripsGroupId !== groupId) return;
       set({ trips });
     } finally {
-      if (get().currentTripsGroupId === groupId) {
+      if (!quiet && get().currentTripsGroupId === groupId) {
         set({ isLoadingTrips: false });
       }
     }

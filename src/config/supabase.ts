@@ -1,6 +1,7 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import { AppState } from 'react-native';
 
 import { GOOGLE_WEB_CLIENT_ID, SUPABASE_ANON_KEY, SUPABASE_URL } from './constants';
 
@@ -30,3 +31,20 @@ GoogleSignin.configure({
   scopes: ['openid', 'profile', 'email'],
   offlineAccess: false,
 });
+
+// Token auto-refresh gắn với AppState (pattern chuẩn supabase-js cho React
+// Native). Trên RN không có window-visibility nên phải tự lái:
+//   - active: refresh CHỦ ĐỘNG ngay + chạy ticker → token luôn tươi khi user quay
+//     lại sau long-background. Tránh request đầu tiên (pull/realtime) kẹt vì JWT
+//     đã hết hạn — gốc của bug "data cũ → một lúc sau mới cập nhật" khi resume.
+//   - background/inactive: dừng ticker để đỡ pin (timer JS bị OS treo dù sao).
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
+// App khởi động ở trạng thái active → start ngay (idempotent; AppState 'change'
+// không phát cho lần foreground đầu tiên).
+supabase.auth.startAutoRefresh();

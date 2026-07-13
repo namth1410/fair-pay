@@ -54,7 +54,7 @@ interface GroupState {
    */
   currentGroupId: string | null;
 
-  loadGroups: () => Promise<void>;
+  loadGroups: (opts?: { quiet?: boolean }) => Promise<void>;
   loadBalanceSummary: () => Promise<void>;
   loadMyPendingJoinRequests: () => Promise<void>;
   loadMyPendingInvitations: () => Promise<void>;
@@ -112,8 +112,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   isLoading: false,
   currentGroupId: null,
 
-  loadGroups: async () => {
-    set({ isLoading: true });
+  loadGroups: async (opts) => {
+    // quiet=true (revalidate nền sau sync / resume): KHÔNG bật isLoading → không
+    // nháy skeleton/spinner refresh, chỉ âm thầm cập nhật list khi data về.
+    const quiet = opts?.quiet ?? false;
+    if (!quiet) set({ isLoading: true });
     try {
       // Danh sách nhóm là nội dung chính → load TRƯỚC + unblock skeleton ngay
       // khi có. Balance summary (RPC) + ribbon (pending requests/invitations) là
@@ -121,7 +124,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       const groups = await fetchMyGroups();
       set({ groups });
     } finally {
-      set({ isLoading: false });
+      if (!quiet) set({ isLoading: false });
     }
 
     // Secondary loads — fire-and-forget, mỗi promise tự set slice của nó để
