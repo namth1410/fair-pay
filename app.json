@@ -85,6 +85,24 @@
         {
           "color": "#10B981"
         }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Trip",
+              "label": "Fair Pay — Chuyến đi",
+              "description": "Số dư & lối tắt tới một chuyến đi",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            }
+          ]
+        }
       ]
     ],
     "extra": {

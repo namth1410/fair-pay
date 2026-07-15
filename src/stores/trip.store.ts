@@ -79,6 +79,11 @@ interface TripState {
    * is actively viewing (so we don't clobber the visible trip's data).
    */
   currentTripId: string | null;
+  /**
+   * True khi loadBalances không mở được trip (id không hợp lệ / đã xóa / lỗi fetch).
+   * Screen hiện trạng thái "không mở được" thay vì kẹt skeleton vĩnh viễn.
+   */
+  currentTripLoadError: boolean;
   /** Group id matching the currently loaded `trips` list. */
   currentTripsGroupId: string | null;
 
@@ -161,6 +166,7 @@ export const useTripStore = create<TripState>((set, get) => ({
   isLoadingTrips: false,
   isLoadingExpenses: false,
   currentTripId: null,
+  currentTripLoadError: false,
   currentTripsGroupId: null,
   pinnedTrips: [],
   pinnedTripIds: new Set<string>(),
@@ -366,7 +372,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     const isSwitchingTrip = get().currentTripId !== tripId;
     set({
       currentTripId: tripId,
-      ...(!quiet && { isLoadingExpenses: true }),
+      ...(!quiet && { isLoadingExpenses: true, currentTripLoadError: false }),
       ...(!quiet && isSwitchingTrip && {
         currentTrip: null,
         currentExpenses: [],
@@ -383,6 +389,12 @@ export const useTripStore = create<TripState>((set, get) => ({
         fetchTripById(tripId),
       ]);
       if (get().currentTripId !== tripId) return;
+      if (!trip) {
+        // Trip không tồn tại (đã xóa / id không hợp lệ — vd widget trỏ trip đã xóa).
+        // KHÔNG throw: đánh dấu lỗi để screen hiện "không mở được" thay vì kẹt skeleton.
+        if (!quiet) set({ currentTripLoadError: true });
+        return;
+      }
       if (!data) {
         set({
           currentTrip: trip,
@@ -404,6 +416,14 @@ export const useTripStore = create<TripState>((set, get) => ({
         balances,
         settlements,
       });
+    } catch (e) {
+      // Fetch reject (id sai → Postgres 22P02, network fail, RLS…). Nuốt như
+      // loadAuditLogs — KHÔNG để unhandled promise rejection nổi lên (LogBox đỏ).
+      // Non-quiet: đánh dấu lỗi để screen thoát skeleton.
+      if (__DEV__) console.warn('[Balances] Load failed:', e);
+      if (!quiet && get().currentTripId === tripId) {
+        set({ currentTripLoadError: true });
+      }
     } finally {
       if (!quiet && get().currentTripId === tripId) {
         set({ isLoadingExpenses: false });

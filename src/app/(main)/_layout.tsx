@@ -5,6 +5,14 @@ import { GlassCapsuleHeader } from '../../components/header/GlassCapsuleHeader';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAnimationsEnabled } from '../../utils/userPreferences';
 
+// Deep-link anchor: khi app mở từ deep link NGOÀI (widget `fairpay://trips/<id>`
+// hoặc cold-start) vào 1 màn sâu trong Stack này, expo-router đặt `(tabs)` (home)
+// làm route gốc bên dưới → trip detail có nút back về home, thay vì thành gốc stack
+// (kẹt, không back được). Push từ trong app (notification lúc đang chạy) không đổi.
+export const unstable_settings = {
+  initialRouteName: '(tabs)',
+};
+
 export default function MainLayout() {
   const c = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();

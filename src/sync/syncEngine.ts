@@ -11,6 +11,7 @@
 // Concurrency: chỉ 1 run() in-flight. Caller gọi liên tiếp → no-op.
 
 import { useAppStore } from '../stores/app.store';
+import { refreshAllTripWidgets } from '../widgets/widgetUpdater';
 import { uploadPendingGroupAvatars } from './groupAvatarUploadWorker';
 import { uploadPending as uploadPendingImages } from './imageUploadWorker';
 import { pullAll, type PullResult } from './pullWorker';
@@ -80,6 +81,9 @@ export async function run(force = false): Promise<SyncRunResult> {
       // Báo cho UI (vd trip detail) refresh sau khi sync nền pull về thay đổi —
       // đặc biệt audit `expense.create` do server tạo sau createExpense local-first.
       syncBus.emit({ pulled: pull2 !== undefined });
+      // Push cập nhật Android widget từ data local mới nhất (fire-and-forget,
+      // tự no-op nếu không phải Android / chưa có widget nào).
+      void refreshAllTripWidgets().catch(() => undefined);
       return { skipped: false, pull: pull2 ?? pull1 };
     })();
 

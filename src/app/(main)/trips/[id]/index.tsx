@@ -54,7 +54,7 @@ export default function TripDetailScreen() {
 
   const {
     currentTrip, currentExpenses, currentPayments, balances, settlements, auditLogs,
-    isLoadingExpenses, currentTripId,
+    isLoadingExpenses, currentTripId, currentTripLoadError,
     removeExpense,
     addPayment, addPayments, removePayment,
     loadBalances, loadAuditLogs,
@@ -249,12 +249,39 @@ export default function TripDetailScreen() {
 
   // Guard: cache trong store có thể là data của trip vừa unmount trước → render
   // loading cho tới khi loadBalances populate xong cho tripId này.
-  const isHydrating = currentTripId !== tripId || !trip;
+  const isHydrating =
+    (currentTripId !== tripId || !trip) && !currentTripLoadError;
   if (isHydrating) {
     return (
       <View style={[styles.container, { backgroundColor: c.background }]}>
         <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
         <TripDetailSkeleton />
+      </View>
+    );
+  }
+
+  // Trip không mở được (đã xóa / id không hợp lệ — vd widget trỏ trip đã xóa).
+  // Trạng thái rõ ràng + lối về Home, thay vì kẹt skeleton hay LogBox đỏ.
+  if (currentTripLoadError && !trip) {
+    return (
+      <View style={[styles.container, styles.errorFill, { backgroundColor: c.background }]}>
+        <Stack.Screen options={{ title: 'Chuyến đi' }} />
+        <Info size={36} color={c.muted} strokeWidth={1.6} />
+        <AppText variant="subtitle" weight="semibold" center style={styles.errorTitle}>
+          Không mở được chuyến đi
+        </AppText>
+        <AppText variant="body" tone="muted" center style={styles.errorBody}>
+          Chuyến đi có thể đã bị xóa hoặc không còn khả dụng.
+        </AppText>
+        <Pressable
+          onPress={() => router.replace('/(main)')}
+          hitSlop={10}
+          style={styles.errorBtn}
+        >
+          <AppText variant="body" weight="semibold" tone="primary">
+            Về trang chủ
+          </AppText>
+        </Pressable>
       </View>
     );
   }
@@ -378,6 +405,10 @@ function describeBalance(b: number): { label: string; tone: 'success' | 'danger'
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  errorFill: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  errorTitle: { marginTop: 12 },
+  errorBody: { marginTop: 4 },
+  errorBtn: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20 },
   tabViewport: { flex: 1, overflow: 'hidden' },
   tabRow: { flex: 1, flexDirection: 'row' },
   heroWrap: {
