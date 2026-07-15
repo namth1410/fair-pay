@@ -1,7 +1,7 @@
 {
   "name": "fairpay",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "./index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -51,6 +51,7 @@
     "lucide-react-native": "^1.8.0",
     "react": "19.2.0",
     "react-native": "0.83.4",
+    "react-native-android-widget": "0.21.0",
     "react-native-gesture-handler": "~2.30.0",
     "react-native-keyboard-controller": "^1.21.7",
     "react-native-reanimated": "4.2.3",

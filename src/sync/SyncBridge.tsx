@@ -10,6 +10,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { useAppStore } from '../stores/app.store';
 import { useAuthStore } from '../stores/auth.store';
+import { refreshAllTripWidgets } from '../widgets/widgetUpdater';
 import { run as runSync } from './syncEngine';
 
 export function SyncBridge() {
@@ -45,12 +46,15 @@ export function SyncBridge() {
       if (
         (prev === 'background' || prev === 'inactive') &&
         next === 'active' &&
-        useAppStore.getState().isOnline &&
         useAuthStore.getState().session
       ) {
-        void runSync().catch((err) => {
-          if (__DEV__) console.warn('[SyncBridge] foreground pull failed', err);
-        });
+        // Widget: refresh từ data local ngay khi foreground (kể cả offline).
+        void refreshAllTripWidgets().catch(() => undefined);
+        if (useAppStore.getState().isOnline) {
+          void runSync().catch((err) => {
+            if (__DEV__) console.warn('[SyncBridge] foreground pull failed', err);
+          });
+        }
       }
     });
     return () => sub.remove();

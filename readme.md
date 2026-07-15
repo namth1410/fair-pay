@@ -15,7 +15,12 @@ npm run lint          # ESLint check
 
 ## Build Android AAB (Play Console)
 
-Dự án dùng **bare workflow** — thư mục `android/` đã commit vào repo với cấu hình signing custom (xem [CLAUDE.md § Android build & signing](CLAUDE.md)). Build local trực tiếp, KHÔNG dùng EAS.
+Dự án dùng **bare workflow** với cấu hình signing custom (xem [CLAUDE.md § Android build & signing](CLAUDE.md)). Build local trực tiếp, KHÔNG dùng EAS.
+
+> ⚠️ **`android/` bị GITIGNORE — KHÔNG commit vào repo** (`.gitignore` dòng 50). Thư mục này do `expo prebuild` sinh ra từ `app.json`.
+> - **Fresh clone / máy mới PHẢI chạy `npx expo prebuild --platform android` trước khi build** (xem [§ Prebuild](#prebuild-regenerate-native-code)).
+> - **Không có lưới git cho `android/`** → không `git diff` để bắt prebuild làm hỏng config. Signing `fairpay`, `versionCode`, dòng `firebase-analytics` phải **tự verify + restore sau mỗi prebuild** (kể cả merge, không chỉ `--clean`).
+> - Widget màn hình chính (`react-native-android-widget`) cũng do prebuild sinh từ plugin trong `app.json` + entry `index.js` → không có file native nào phải commit tay (xem [§ Android widget](#android-widget-lối-tắt-tới-chuyến-đi)).
 
 ### Prerequisite (lần đầu setup)
 
@@ -192,7 +197,7 @@ Quay lại [§ Lệnh build AAB](#lệnh-build-aab) ở trên.
 
 - Khi sửa `app.json`, prebuild merge thường đủ. Chạy thử trước khi nghĩ tới `--clean`.
 - Sau prebuild, nếu chỉ `signingConfigs`/`buildTypes` bị overwrite → restore tay 30 giây, KHÔNG cần `--clean`.
-- Commit `android/` sau khi restore + bump version → lần sau diff `git status` sẽ phát hiện ngay nếu prebuild làm hỏng config.
+- `android/` **gitignore** nên KHÔNG commit được → không có `git diff`/`git status` để bắt lỗi prebuild. Sau khi restore + bump version, tự verify lại `signingConfigs` / `buildTypes` / `versionCode` / `firebase-analytics` bằng mắt (hoặc build thử). Cân nhắc giữ 1 bản copy `android/app/build.gradle` đã-work ngoài repo để đối chiếu nhanh.
 
 ### Kiểm tra AAB sau khi build
 
@@ -205,6 +210,18 @@ bundletool dump manifest --bundle=android\app\build\outputs\bundle\release\app-r
 # SHA-1 của keystore (so với fingerprint trên Google Cloud Console OAuth)
 keytool -list -v -keystore <FAIRPAY_KEYSTORE_PATH> -alias <FAIRPAY_KEY_ALIAS>
 ```
+
+## Android widget (lối tắt tới chuyến đi)
+
+Widget màn hình chính cho phép ghim 1 chuyến đi: hiện tên trip · tên nhóm · số dư của bạn, tap để mở thẳng trip. Thả được nhiều widget, mỗi cái trỏ 1 trip tùy chọn (màn cấu hình khi thả).
+
+- **Thư viện:** [`react-native-android-widget`](https://saleksovski.github.io/react-native-android-widget/) (Android-only), pin exact trong `package.json`.
+- **Code JS/TS (commit):** `src/widgets/` (layout `TripWidget`, task handler, config screen, snapshot builder, bridge) + entry `index.js` (đăng ký task handler + config screen ở AppRegistry). `main` trong `package.json` trỏ `./index.js` (KHÔNG còn `expo-router/entry` trực tiếp — file này import lại nó).
+- **Native (KHÔNG commit — prebuild sinh):** plugin `react-native-android-widget` trong `app.json` sinh `<receiver>`/`<activity>`/`<service>` trong `AndroidManifest`, `res/xml/widgetprovider_trip.xml`, và `java/.../widget/Trip.java` + `WidgetConfigurationActivity.java` khi chạy `expo prebuild`. **Không cần restore tay** (khác signing/analytics) — plugin tự sinh lại mỗi prebuild.
+- **Cầu nối data:** app ghi 1 file JSON (`documentDirectory/widget_state.json`, qua `expo-file-system`) chứa `widgetId → tripId` + snapshot; widget đọc lại khi render (headless). App push cập nhật sau mỗi sync + khi vào foreground.
+- **Deep link:** tap widget bắn `fairpay://trips/<id>`. Để deep-link NGOÀI vào màn sâu có nút back, `src/app/(main)/_layout.tsx` khai `unstable_settings.initialRouteName = '(tabs)'` (neo home dưới stack).
+- **Fresh clone:** phải `npx expo prebuild --platform android` để có native widget trước khi build.
+- ⚠️ iOS chưa hỗ trợ (WidgetKit riêng).
 
 ## Khác
 
