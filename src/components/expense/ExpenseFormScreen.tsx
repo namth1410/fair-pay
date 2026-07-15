@@ -22,7 +22,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fonts } from '../../config/fonts';
 import { useAppTheme } from '../../hooks/useAppTheme';
-import { AnimatedEntrance } from '../ui';
+import * as expenseRepo from '../../repositories/expense.repo';
+import * as groupMemberRepo from '../../repositories/groupMember.repo';
+import type { GroupMember } from '../../services/group.service';
 import type { ExpensePreset } from '../../services/preset.service';
 import { useGroupStore } from '../../stores/group.store';
 import { getPresetsForContext, usePresetStore } from '../../stores/preset.store';
@@ -31,7 +33,6 @@ import { cancelStaged, stageExpenseImage } from '../../sync/imageStaging';
 import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { hapticSuccess } from '../../utils/haptics';
-import { showError, showSuccess } from '../../utils/toast';
 import {
   type AvatarSource,
   compressForUpload,
@@ -46,7 +47,9 @@ import {
   validateAmount,
   validateSplits,
 } from '../../utils/split';
+import { showError, showSuccess } from '../../utils/toast';
 import { ImagePickerSheet } from '../common/ImagePickerSheet';
+import { AnimatedEntrance } from '../ui';
 import {
   AppText,
   BouncyDialog,
@@ -83,6 +86,8 @@ interface ExpenseFormScreenProps {
   prefillAmount?: number;
   /** Khi navigate kèm preset ID, form sẽ áp full data (paid_by + splits) khi members load xong. */
   applyPresetId?: string;
+  /** EDIT MODE: id expense cần sửa. Form pre-fill data cũ + submit gọi editExpense (P3). */
+  editExpenseId?: string;
 }
 
 export function ExpenseFormScreen({
@@ -92,13 +97,16 @@ export function ExpenseFormScreen({
   prefillTitle,
   prefillAmount,
   applyPresetId,
+  editExpenseId,
 }: ExpenseFormScreenProps) {
   const c = useAppTheme();
   const navigation = useNavigation();
+  const isEdit = !!editExpenseId;
 
   const getTripContext = useTripStore((s) => s.getTripContext);
   const resolveTripContext = useTripStore((s) => s.resolveTripContext);
   const addExpense = useTripStore((s) => s.addExpense);
+  const editExpenseAction = useTripStore((s) => s.editExpense);
   const loadMembers = useGroupStore((s) => s.loadMembers);
 
   // Seed đồng bộ best-effort: vào form từ trip detail → currentTrip đã hydrate → hit ngay,
@@ -125,13 +133,25 @@ export function ExpenseFormScreen({
   // Mọi expense (kể cả tạo mới từ trip detail) đều có ID trước khi presign upload.
   // QuickAddActionSheet đã pre-gen + truyền qua URL (presetExpenseId); nếu route khác vào
   // form mà không có sẵn → tự sinh ở đây để image upload không bị skip.
-  const [expenseId] = useState<string>(() => presetExpenseId ?? Crypto.randomUUID());
+  const [expenseId] = useState<string>(
+    () => editExpenseId ?? presetExpenseId ?? Crypto.randomUUID(),
+  );
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(
     initialImage ?? null,
   );
+  // EDIT: ảnh R2 hiện có của expense (tách với pendingImage = ảnh local mới chọn).
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [imageSheetOpen, setImageSheetOpen] = useState(false);
 
-  const members = useGroupStore((s) => s.currentGroupMembers);
+  const storeMembers = useGroupStore((s) => s.currentGroupMembers);
+  // EDIT #5: thành viên đã rời nhưng còn trong splits của expense — merge vào list để
+  // không âm thầm loại họ khỏi cách chia. Hiển thị nhãn "(đã rời)".
+  const [editExtraMembers, setEditExtraMembers] = useState<GroupMember[]>([]);
+  const members = useMemo(() => {
+    if (!isEdit || editExtraMembers.length === 0) return storeMembers;
+    const ids = new Set(storeMembers.map((m) => m.id));
+    return [...storeMembers, ...editExtraMembers.filter((m) => !ids.has(m.id))];
+  }, [isEdit, storeMembers, editExtraMembers]);
   const allPresets = usePresetStore((s) => s.presets);
   const presetsLoaded = usePresetStore((s) => s.loaded);
   const loadPresets = usePresetStore((s) => s.loadPresets);
@@ -157,7 +177,25 @@ export function ExpenseFormScreen({
   const [exitConfirm, setExitConfirm] = useState(false);
   const [presetWarnings, setPresetWarnings] = useState<string[]>([]);
   const [date, setDate] = useState<Date>(() => new Date());
+  // EDIT: dữ liệu expense gốc + trạng thái sẵn sàng (chặn render form khi chưa pre-fill).
+  const [editData, setEditData] = useState<expenseRepo.ExpenseWithSplits | null>(null);
+  const [editReady, setEditReady] = useState(false);
+  const [editNotFound, setEditNotFound] = useState(false);
   const presetAppliedRef = useRef(false);
+  const editPrefilledRef = useRef(false);
+  // Snapshot giá trị gốc để so isDirty trong edit mode (fields đã pre-fill nên không thể
+  // dùng logic "có nội dung chưa").
+  const originalRef = useRef<{
+    title: string;
+    amountStr: string;
+    note: string;
+    paidBy: string;
+    dateMs: number;
+    splitType: SplitType;
+    participantsKey: string;
+    customAmountsKey: string;
+    imageKey: string | null;
+  } | null>(null);
   const submittedRef = useRef(false);
   const bypassExitGuardRef = useRef(false);
   // Ref per split-member TextInput → tap bất kỳ đâu trong khung (kể cả suffix "phần"/"đ")
@@ -213,6 +251,21 @@ export function ExpenseFormScreen({
   }, [presetsLoaded, loadPresets]);
 
   const isDirty = useMemo(() => {
+    if (isEdit) {
+      const o = originalRef.current;
+      if (!o) return false; // chưa pre-fill xong → coi như chưa đổi
+      if (title !== o.title) return true;
+      if (amountStr !== o.amountStr) return true;
+      if (note !== o.note) return true;
+      if (paidBy !== o.paidBy) return true;
+      if (date.getTime() !== o.dateMs) return true;
+      if (splitType !== o.splitType) return true;
+      if ([...participants].sort().join(',') !== o.participantsKey) return true;
+      if (JSON.stringify(customAmounts) !== o.customAmountsKey) return true;
+      const curImageKey = pendingImage ? '__local__' : existingImageUrl;
+      if (curImageKey !== o.imageKey) return true;
+      return false;
+    }
     if (title.trim()) return true;
     if (amountStr.trim()) return true;
     if (note.trim()) return true;
@@ -223,7 +276,7 @@ export function ExpenseFormScreen({
       return true;
     if (members.length > 0 && participants.size !== members.length) return true;
     return false;
-  }, [title, amountStr, note, pendingImage, savePreset, ratios, customAmounts, members, participants]);
+  }, [isEdit, title, amountStr, note, paidBy, date, splitType, pendingImage, existingImageUrl, savePreset, ratios, customAmounts, members, participants]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', (e: { preventDefault: () => void }) => {
@@ -286,7 +339,9 @@ export function ExpenseFormScreen({
   }, [initialTripId, currentGroupId, resolveTripContext]);
 
   // Default paidBy về member đầu khi members load xong.
+  // EDIT: bỏ qua — pre-fill effect tự set paidBy/participants từ expense gốc.
   useEffect(() => {
+    if (isEdit) return;
     const first = members[0];
     if (!first) {
       if (paidBy) setPaidBy('');
@@ -299,7 +354,85 @@ export function ExpenseFormScreen({
       setCustomAmounts({});
       setParticipants(new Set(members.map((m) => m.id)));
     }
-  }, [members, paidBy]);
+  }, [members, paidBy, isEdit]);
+
+  // EDIT: load expense gốc (SQLite local, offline-safe) + set trip context + merge left-members
+  // trong splits (#5). Chạy 1 lần.
+  useEffect(() => {
+    if (!isEdit || !editExpenseId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const exp = await expenseRepo.getWithSplits(editExpenseId);
+        if (cancelled) return;
+        if (!exp) {
+          setEditNotFound(true);
+          return;
+        }
+        setEditData(exp);
+        setExistingImageUrl(exp.imageUrl);
+        setCurrentTripId(exp.tripId);
+        setCurrentGroupId(exp.groupId);
+        setTripState('resolved');
+        // Người đã rời còn trong splits (hoặc là payer) → merge để không âm thầm loại.
+        const splitIds = new Set(exp.splits.map((s) => s.memberId));
+        const all = await groupMemberRepo.listAllByGroup(exp.groupId);
+        if (cancelled) return;
+        const extras = all.filter(
+          (m) => m.leftAt && (splitIds.has(m.id) || m.id === exp.paidBy),
+        );
+        if (extras.length > 0) {
+          setEditExtraMembers(extras.map(toServiceMemberLeft));
+        }
+      } catch {
+        if (!cancelled) setEditNotFound(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, editExpenseId]);
+
+  // EDIT: pre-fill state từ expense gốc khi members đã load. Chạy 1 lần.
+  useEffect(() => {
+    if (!isEdit || editPrefilledRef.current) return;
+    if (!editData || members.length === 0) return;
+    editPrefilledRef.current = true;
+    const exp = editData;
+    setTitle(exp.title);
+    setAmountStr(String(exp.amount));
+    setNote(exp.note ?? '');
+    setDate(new Date(exp.date));
+    setPaidBy(exp.paidBy);
+    const splitIds = exp.splits.map((s) => s.memberId);
+    setParticipants(new Set(splitIds));
+    // ratio-origin KHÔNG lưu tỷ lệ (splits chỉ có final amount) → map sang 'custom' với
+    // amount chính xác (bảo toàn balance). 'equal' giữ nguyên. 'custom' giữ amount.
+    let effectiveSplitType: SplitType;
+    const customMap: Record<string, string> = {};
+    if (exp.splitType === 'equal') {
+      effectiveSplitType = 'equal';
+    } else {
+      effectiveSplitType = 'custom';
+      exp.splits.forEach((s) => {
+        customMap[s.memberId] = String(s.amount);
+      });
+    }
+    setSplitType(effectiveSplitType);
+    setCustomAmounts(customMap);
+    originalRef.current = {
+      title: exp.title,
+      amountStr: String(exp.amount),
+      note: exp.note ?? '',
+      paidBy: exp.paidBy,
+      dateMs: new Date(exp.date).getTime(),
+      splitType: effectiveSplitType,
+      participantsKey: [...splitIds].sort().join(','),
+      customAmountsKey: JSON.stringify(customMap),
+      imageKey: exp.imageUrl,
+    };
+    setEditReady(true);
+  }, [isEdit, editData, members]);
 
   /**
    * Apply full preset data (paid_by + splits) khi members load xong và preset trip match.
@@ -450,22 +583,40 @@ export function ExpenseFormScreen({
           pendingImage.height,
         );
         imageUrl = await stageExpenseImage(expenseId, compressed.uri);
+      } else if (isEdit) {
+        // Không có ảnh local mới → giữ ảnh R2 hiện có (hoặc null nếu user đã bỏ ảnh).
+        imageUrl = existingImageUrl;
       }
 
       try {
-        await addExpense({
-          id: expenseId,
-          tripId: currentTripId,
-          groupId: currentGroupId,
-          title: submittedTitle,
-          amount,
-          paidByMemberId: paidBy,
-          splitType,
-          splits,
-          note: note.trim() || undefined,
-          imageUrl,
-          date: date.toISOString(),
-        });
+        if (isEdit) {
+          await editExpenseAction({
+            expenseId,
+            tripId: currentTripId,
+            title: submittedTitle,
+            amount,
+            paidByMemberId: paidBy,
+            splitType,
+            splits,
+            note: note.trim() || undefined,
+            imageUrl,
+            date: date.toISOString(),
+          });
+        } else {
+          await addExpense({
+            id: expenseId,
+            tripId: currentTripId,
+            groupId: currentGroupId,
+            title: submittedTitle,
+            amount,
+            paidByMemberId: paidBy,
+            splitType,
+            splits,
+            note: note.trim() || undefined,
+            imageUrl,
+            date: date.toISOString(),
+          });
+        }
       } catch (insertErr) {
         if (pendingImage) {
           cancelStaged(expenseId).catch(() => {});
@@ -474,7 +625,7 @@ export function ExpenseFormScreen({
       }
 
       hapticSuccess();
-      showSuccess('Đã thêm khoản chi', submittedTitle);
+      showSuccess(isEdit ? 'Đã lưu thay đổi' : 'Đã thêm khoản chi', submittedTitle);
       submittedRef.current = true;
       if (savePreset && !globalTitlesSet.has(submittedTitle)) {
         try {
@@ -514,6 +665,9 @@ export function ExpenseFormScreen({
     pendingImage,
     expenseId,
     presetConflict,
+    isEdit,
+    editExpenseAction,
+    existingImageUrl,
   ]);
 
   const amount = parseInt(amountStr, 10) || 0;
@@ -533,21 +687,26 @@ export function ExpenseFormScreen({
         )
       : [];
 
+  const headerTitle = isEdit ? 'Sửa khoản chi' : 'Thêm khoản chi';
+  let submitLabel = isEdit ? 'Lưu thay đổi' : 'Thêm khoản chi';
+  if (busy) submitLabel = 'Đang lưu...';
   const submitDisabled =
     busy ||
     presetConflict ||
     (requireTrip && !currentTripId) ||
-    (!requireTrip && tripState !== 'resolved');
+    (!requireTrip && tripState !== 'resolved') ||
+    (isEdit && !editReady);
 
   // Vào form qua initialTripId nhưng chưa resolve được group_id → KHÔNG render form điền-được
-  // (tránh fill-then-fail). Mirror pattern isHydrating của trip detail screen. Tất cả hooks đã
-  // chạy phía trên nên early-return này an toàn về thứ tự hook.
-  if (!requireTrip && tripState !== 'resolved') {
+  // (tránh fill-then-fail). EDIT: chặn tới khi editData load + pre-fill xong (editReady).
+  // Tất cả hooks đã chạy phía trên nên early-return này an toàn về thứ tự hook.
+  if ((!requireTrip && tripState !== 'resolved') || (isEdit && !editReady)) {
+    const isError = tripState === 'notFound' || editNotFound;
     return (
       <SafeAreaView edges={['bottom']} style={[styles.root, { backgroundColor: c.background }]}>
         <Stack.Screen
           options={{
-            headerTitle: 'Thêm khoản chi',
+            headerTitle,
             headerLeft: () => (
               <Pressable
                 onPress={() => router.back()}
@@ -562,17 +721,19 @@ export function ExpenseFormScreen({
           }}
         />
         <View style={styles.hydratingWrap}>
-          {tripState === 'resolving' ? (
+          {isError ? (
+            <AppText variant="caption" tone="danger" center>
+              {isEdit
+                ? 'Không tải được khoản chi. Kiểm tra kết nối hoặc mở lại từ chuyến đi.'
+                : 'Không tải được chuyến đi. Kiểm tra kết nối hoặc mở lại từ nhóm.'}
+            </AppText>
+          ) : (
             <>
               <ActivityIndicator color={c.primaryStrong} />
               <AppText variant="caption" tone="muted">
-                Đang tải chuyến đi...
+                {isEdit ? 'Đang tải khoản chi...' : 'Đang tải chuyến đi...'}
               </AppText>
             </>
-          ) : (
-            <AppText variant="caption" tone="danger" center>
-              Không tải được chuyến đi. Kiểm tra kết nối hoặc mở lại từ nhóm.
-            </AppText>
           )}
         </View>
       </SafeAreaView>
@@ -583,7 +744,7 @@ export function ExpenseFormScreen({
     <SafeAreaView edges={['bottom']} style={[styles.root, { backgroundColor: c.background }]}>
       <Stack.Screen
         options={{
-          headerTitle: 'Thêm khoản chi',
+          headerTitle,
           headerLeft: () => (
             <Pressable
               onPress={() => router.back()}
@@ -620,8 +781,12 @@ export function ExpenseFormScreen({
 
           <ImageField
             pendingImage={pendingImage}
+            existingImageUrl={existingImageUrl}
             onOpen={() => setImageSheetOpen(true)}
-            onRemove={() => setPendingImage(null)}
+            onRemove={() => {
+              setPendingImage(null);
+              setExistingImageUrl(null);
+            }}
             c={c}
           />
 
@@ -635,7 +800,7 @@ export function ExpenseFormScreen({
             </View>
           ) : null}
 
-          {contextPresets.length > 0 ? (
+          {!isEdit && contextPresets.length > 0 ? (
             <View>
               <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
                 Preset
@@ -912,27 +1077,29 @@ export function ExpenseFormScreen({
             </>
           ) : null}
 
-          <Pressable
-            style={styles.savePresetRow}
-            onPress={() => setSavePreset((v) => !v)}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: savePreset }}
-            accessibilityLabel="Lưu làm preset"
-          >
-            <View style={styles.savePresetInfo}>
-              <AppText variant="body" weight="medium">
-                Lưu làm preset
-              </AppText>
-              <AppText variant="meta" tone="muted" style={styles.savePresetHint}>
-                {presetConflict
-                  ? 'Đã có preset tên này, đổi tên hoặc tắt tùy chọn'
-                  : 'Dùng nhanh khoản chi này lần sau (lưu làm preset toàn cục)'}
-              </AppText>
-            </View>
-            <View pointerEvents="none">
-              <Switch isSelected={savePreset} onSelectedChange={setSavePreset} />
-            </View>
-          </Pressable>
+          {!isEdit ? (
+            <Pressable
+              style={styles.savePresetRow}
+              onPress={() => setSavePreset((v) => !v)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: savePreset }}
+              accessibilityLabel="Lưu làm preset"
+            >
+              <View style={styles.savePresetInfo}>
+                <AppText variant="body" weight="medium">
+                  Lưu làm preset
+                </AppText>
+                <AppText variant="meta" tone="muted" style={styles.savePresetHint}>
+                  {presetConflict
+                    ? 'Đã có preset tên này, đổi tên hoặc tắt tùy chọn'
+                    : 'Dùng nhanh khoản chi này lần sau (lưu làm preset toàn cục)'}
+                </AppText>
+              </View>
+              <View pointerEvents="none">
+                <Switch isSelected={savePreset} onSelectedChange={setSavePreset} />
+              </View>
+            </Pressable>
+          ) : null}
 
           {formError ? (
             <View style={[styles.errorBox, { backgroundColor: c.dangerSoft }]}>
@@ -948,7 +1115,7 @@ export function ExpenseFormScreen({
             onPress={handleSubmit}
             isDisabled={submitDisabled}
           >
-            <Button.Label>{busy ? 'Đang lưu...' : 'Thêm khoản chi'}</Button.Label>
+            <Button.Label>{submitLabel}</Button.Label>
           </Button>
         </DismissKeyboardView>
         </AnimatedEntrance>
@@ -971,8 +1138,11 @@ export function ExpenseFormScreen({
         isOpen={imageSheetOpen}
         onOpenChange={setImageSheetOpen}
         onPick={handlePickImage}
-        onRemove={() => setPendingImage(null)}
-        showRemove={!!pendingImage}
+        onRemove={() => {
+          setPendingImage(null);
+          setExistingImageUrl(null);
+        }}
+        showRemove={!!pendingImage || !!existingImageUrl}
       />
       <BouncyDialog
         isOpen={exitConfirm}
@@ -1000,6 +1170,23 @@ export function ExpenseFormScreen({
       </BouncyDialog>
     </SafeAreaView>
   );
+}
+
+/**
+ * Map repo GroupMember (camelCase, có thể đã rời) → shape GroupMember (snake_case) mà form dùng.
+ * Gắn nhãn "(đã rời)" vào display_name để phân biệt trong danh sách chia (edit mode #5).
+ */
+function toServiceMemberLeft(m: groupMemberRepo.GroupMember): GroupMember {
+  return {
+    id: m.id,
+    group_id: m.groupId,
+    user_id: m.userId,
+    display_name: m.leftAt ? `${m.displayName} (đã rời)` : m.displayName,
+    role: m.role,
+    is_virtual: m.isVirtual,
+    joined_at: m.joinedAt,
+    left_at: m.leftAt,
+  };
 }
 
 /**
@@ -1056,13 +1243,16 @@ function applyPresetFullData(
 
 interface ImageFieldProps {
   pendingImage: PendingImage | null;
+  /** EDIT: ảnh R2 hiện có (hiển thị khi chưa chọn ảnh local mới). */
+  existingImageUrl?: string | null;
   onOpen: () => void;
   onRemove: () => void;
   c: ReturnType<typeof useAppTheme>;
 }
 
-function ImageField({ pendingImage, onOpen, onRemove, c }: ImageFieldProps) {
-  if (pendingImage) {
+function ImageField({ pendingImage, existingImageUrl, onOpen, onRemove, c }: ImageFieldProps) {
+  const displayUri = pendingImage?.uri ?? existingImageUrl ?? null;
+  if (displayUri) {
     return (
       <View style={styles.imagePreviewWrap}>
         <Pressable
@@ -1071,7 +1261,7 @@ function ImageField({ pendingImage, onOpen, onRemove, c }: ImageFieldProps) {
           accessibilityLabel="Đổi ảnh đính kèm"
         >
           <Image
-            source={{ uri: pendingImage.uri }}
+            source={{ uri: displayUri }}
             style={styles.imagePreview}
             resizeMode="cover"
           />

@@ -87,6 +87,12 @@ function describeEvent(event: ConflictEvent): {
         mineDesc: `Bạn sửa thành "${(payload.title as string) ?? '?'}"`,
         theirsDesc: `Server có version mới: "${(serverData?.title as string) ?? '?'}"`,
       };
+    case 'update_expense':
+      return {
+        title: 'Xung đột — Sửa khoản chi',
+        mineDesc: `Bạn sửa thành "${(payload.title as string) ?? '?'}"`,
+        theirsDesc: `Người khác đã sửa thành "${(serverData?.title as string) ?? '?'}"`,
+      };
     default:
       return {
         title: 'Xung đột đồng bộ',

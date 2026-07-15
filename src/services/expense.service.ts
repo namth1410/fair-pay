@@ -1,7 +1,7 @@
 import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import * as userRepo from '../repositories/user.repo';
-import { mirrorServerRow } from '../repositories/writeback';
+import { extractServerRow, mirrorServerRow } from '../repositories/writeback';
 import { useAppStore } from '../stores/app.store';
 import { tryServerThenLocal } from '../sync/fallback';
 import { run as runSync } from '../sync/syncEngine';
@@ -15,7 +15,7 @@ import {
 } from '../utils/balance';
 import { isNetworkError } from '../utils/network';
 import { formatNotificationTitle } from '../utils/notificationFormat';
-import { validateSplits, type SplitResult } from '../utils/split';
+import { type SplitResult,validateSplits } from '../utils/split';
 import { validateName, validatePositiveAmount } from '../utils/validate';
 import { getAuthUserId } from './auth.helper';
 import { removeExpenseImage } from './expenseImage.service';
@@ -285,6 +285,250 @@ export async function createExpense(params: {
     });
   }
   return expense;
+}
+
+/**
+ * Edit expense + splits — P3 optimistic concurrency (offline-first).
+ *
+ * Flow (bám updateTripName P3 + createExpense image staging):
+ *   - Lookup local: base_version, group_id, trip_status, category/date/image cũ.
+ *   - Chặn trip đã đóng; assertRole mọi member.
+ *   - enqueueLocal: UPDATE row + `version = version + 1` (bump optimistic — chống stale base
+ *     khi sửa offline nhiều lần) + REPLACE splits local + enqueue UPDATE_EXPENSE (base_version).
+ *   - Online & không pending → RPC update_expense trực tiếp; catch network → enqueueLocal.
+ *   - Sau RPC success → write-back version/updated_at về local mirror.
+ *
+ * `imageUrl`: R2 URL (giữ ảnh cũ) | file:// (ảnh mới đã stage, worker upload sau) | null (bỏ ảnh).
+ */
+export async function editExpense(params: {
+  expenseId: string;
+  title: string;
+  amount: number;
+  category?: string;
+  paidByMemberId: string;
+  splitType: 'equal' | 'ratio' | 'custom';
+  splits: SplitResult[];
+  note?: string | null;
+  date?: string;
+  imageUrl?: string | null;
+}): Promise<Expense> {
+  const titleErr = validateName(params.title, 'Tên khoản chi');
+  if (titleErr) throw new Error(titleErr);
+  const amountErr = validatePositiveAmount(params.amount);
+  if (amountErr) throw new Error(amountErr);
+  const splitsErr = validateSplits(params.amount, params.splits);
+  if (splitsErr) throw new Error(splitsErr);
+
+  const userId = await getAuthUserId();
+  if (!userId) throw new Error('Chưa đăng nhập');
+
+  const db = getDatabase();
+  const local = await db.getFirstAsync<{
+    group_id: string;
+    trip_id: string;
+    version: number;
+    category: string;
+    image_url: string | null;
+    date: string;
+    created_by: string;
+    created_at: string;
+    trip_status: string;
+  }>(
+    `SELECT e.group_id, e.trip_id, e.version, e.category, e.image_url, e.date,
+            e.created_by, e.created_at, t.status AS trip_status
+       FROM expenses e
+       INNER JOIN trips t ON t.id = e.trip_id
+      WHERE e.id = ? AND e.deleted_at IS NULL`,
+    [params.expenseId]
+  );
+  if (!local) throw new Error('Khoản chi không tồn tại');
+  if (local.trip_status === 'closed') {
+    throw new Error('cannot_modify_closed_trip');
+  }
+  await assertRole(local.group_id, ['admin', 'member']);
+
+  const baseVersion = local.version;
+  const category = params.category ?? local.category;
+  const date = params.date ?? local.date;
+  const note = params.note ?? null;
+  const newImageUrl = params.imageUrl ?? null;
+  const clientRequestId = globalThis.crypto.randomUUID();
+  const clientCreatedAt = new Date().toISOString();
+
+  const actor = await userRepo.getById(userId);
+  const actorName = actor?.displayName?.trim() || 'Thành viên';
+  const editedTitle = formatNotificationTitle({
+    type: 'expense.edited',
+    actorName,
+    targetTitle: params.title,
+  });
+
+  // Server payload: file:// (ảnh mới chưa upload) → null, imageUploadWorker commit R2 sau.
+  // R2 URL / null → giữ nguyên.
+  const payloadImageUrl = newImageUrl?.startsWith('file://') ? null : newImageUrl;
+
+  const buildExpense = (): Expense => ({
+    id: params.expenseId,
+    trip_id: local.trip_id,
+    group_id: local.group_id,
+    title: params.title,
+    amount: params.amount,
+    category,
+    paid_by: params.paidByMemberId,
+    split_type: params.splitType,
+    date,
+    note,
+    image_url: newImageUrl,
+    created_by: local.created_by,
+    version: baseVersion + 1,
+    created_at: local.created_at,
+    deleted_at: null,
+  });
+
+  const enqueueLocal = async (): Promise<Expense> => {
+    await db.withTransactionAsync(async () => {
+      // Bump local version (P3): base_version = local.version ĐỌC TRƯỚC; UPDATE bump +1 để
+      // lần sửa offline kế đọc version mới → enqueue base đúng, tránh false P0410 khi replay.
+      await db.runAsync(
+        `UPDATE expenses
+            SET title = ?, amount = ?, category = ?, paid_by = ?, split_type = ?,
+                date = ?, note = ?, image_url = ?, version = version + 1, updated_at = ?
+          WHERE id = ?`,
+        [
+          params.title,
+          params.amount,
+          category,
+          params.paidByMemberId,
+          params.splitType,
+          date,
+          note,
+          newImageUrl,
+          clientCreatedAt,
+          params.expenseId,
+        ]
+      );
+      // Replace splits local (delete + insert) — khớp hành vi RPC server.
+      await db.runAsync(`DELETE FROM expense_splits WHERE expense_id = ?`, [params.expenseId]);
+      for (const s of params.splits) {
+        await db.runAsync(
+          `INSERT INTO expense_splits (id, expense_id, member_id, amount) VALUES (?, ?, ?, ?)`,
+          [globalThis.crypto.randomUUID(), params.expenseId, s.memberId, s.amount]
+        );
+      }
+    });
+    await syncQueue.enqueue({
+      op_type: OP_TYPES.UPDATE_EXPENSE,
+      entity_type: ENTITY_TYPES.EXPENSE,
+      entity_id: params.expenseId,
+      client_request_id: clientRequestId,
+      payload: {
+        expense_id: params.expenseId,
+        title: params.title,
+        amount: params.amount,
+        category,
+        paid_by: params.paidByMemberId,
+        split_type: params.splitType,
+        splits: params.splits.map((s) => ({ member_id: s.memberId, amount: s.amount })),
+        note,
+        date,
+        image_url: payloadImageUrl,
+        base_version: baseVersion,
+        edited_title: editedTitle,
+        actor_name: actorName,
+        client_request_id: clientRequestId,
+        client_created_at: clientCreatedAt,
+      },
+    });
+    return buildExpense();
+  };
+
+  const isOnline = useAppStore.getState().isOnline;
+  const hasPending = await syncQueue.hasPendingForEntity(ENTITY_TYPES.EXPENSE, params.expenseId);
+  if (!isOnline || hasPending) {
+    const expense = await enqueueLocal();
+    if (isOnline) void runSync().catch(() => {});
+    return expense;
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('update_expense', {
+      p_expense_id: params.expenseId,
+      p_title: params.title,
+      p_amount: params.amount,
+      p_category: category,
+      p_paid_by: params.paidByMemberId,
+      p_split_type: params.splitType,
+      p_splits: params.splits.map((s) => ({ member_id: s.memberId, amount: s.amount })),
+      p_note: note,
+      p_date: date,
+      p_image_url: payloadImageUrl,
+      p_base_version: baseVersion,
+      p_edited_title: editedTitle,
+      p_actor_name: actorName,
+      p_client_request_id: clientRequestId,
+    });
+    if (error) throw error;
+
+    // Mirror server row (title/amount/... + version/updated_at bump) + replace splits local.
+    const serverRow = extractServerRow<{
+      version: number;
+      updated_at: string;
+      title: string;
+      amount: number;
+      category: string;
+      paid_by: string;
+      split_type: 'equal' | 'ratio' | 'custom';
+      date: string;
+      note: string | null;
+      image_url: string | null;
+    }>(data);
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(`DELETE FROM expense_splits WHERE expense_id = ?`, [params.expenseId]);
+      for (const s of params.splits) {
+        await db.runAsync(
+          `INSERT INTO expense_splits (id, expense_id, member_id, amount) VALUES (?, ?, ?, ?)`,
+          [globalThis.crypto.randomUUID(), params.expenseId, s.memberId, s.amount]
+        );
+      }
+    });
+    const stagedNewImage = newImageUrl?.startsWith('file://') ?? false;
+    if (serverRow) {
+      await mirrorServerRow('expenses', params.expenseId, serverRow, {
+        title: serverRow.title,
+        amount: serverRow.amount,
+        category: serverRow.category,
+        paid_by: serverRow.paid_by,
+        split_type: serverRow.split_type,
+        date: serverRow.date,
+        note: serverRow.note,
+        // Ảnh mới đã stage (file://): server tạm null, imageUploadWorker commit R2 sau.
+        // GIỮ file:// local để hiển thị optimistic liên tục (không nháy về ảnh trống)
+        // — worker sẽ ghi đè R2 URL khi upload xong.
+        image_url: stagedNewImage ? newImageUrl : serverRow.image_url,
+      });
+    }
+
+    // Bỏ ảnh (image mới null nhưng ảnh cũ là R2 URL) → dọn R2 best-effort (không block).
+    if (!newImageUrl && local.image_url && !local.image_url.startsWith('file://')) {
+      removeExpenseImage(params.expenseId).catch((err) => {
+        if (__DEV__) console.warn('[editExpense] removeExpenseImage failed:', err);
+      });
+    }
+
+    // Ảnh mới đã stage → trigger sync để imageUploadWorker upload+commit R2 ngay
+    // (create dùng runSync cho việc này; edit online direct-path phải tự trigger).
+    if (stagedNewImage) {
+      void runSync().catch(() => {});
+    }
+
+    return buildExpense();
+  } catch (err) {
+    if (isNetworkError(err)) {
+      if (__DEV__) console.warn('[editExpense] network fail, queueing offline');
+      return enqueueLocal();
+    }
+    throw err;
+  }
 }
 
 /**

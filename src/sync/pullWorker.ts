@@ -29,7 +29,7 @@ import {
   tripRepo,
   userRepo,
 } from '../repositories';
-import { upsertBatch } from '../repositories/_shared';
+import { getDatabase } from '../repositories/_shared';
 import type {
   AuditLogRow,
   ExpensePresetRow,
@@ -46,8 +46,8 @@ import type {
   UserRow,
 } from '../types/database.types';
 import * as syncErrors from './syncErrors';
-import * as syncState from './syncState';
 import type { SyncedTable } from './syncState';
+import * as syncState from './syncState';
 
 const PAGE_SIZE = 500;
 
@@ -159,10 +159,16 @@ async function pullExpenses(): Promise<{
   if (newWm) await syncState.setWatermark('expenses', newWm);
 
   // Splits: pull theo expense_id IN changed_expense_ids.
-  // Splits không có updated_at — phải re-fetch toàn bộ splits của expense thay đổi.
+  // Splits không có updated_at/deleted_at — phải re-fetch toàn bộ splits của expense thay đổi.
   // KHÔNG batch quá lớn để tránh URL too long.
+  //
+  // REPLACE (không chỉ upsert): DELETE splits cũ của các expense thay đổi rồi INSERT lại
+  // theo server (source of truth). Bắt buộc để bắt case edit-expense bỏ 1 member khỏi splits —
+  // upsert đơn thuần sẽ giữ split cũ đã bị xóa server-side → sai balance ở máy khác.
+  // Delete CHỈ chạy sau khi fetch thành công (nếu fetch throw → không xóa gì).
   let splitsFetched = 0;
   if (expenseRows.length > 0) {
+    const db = getDatabase();
     const expenseIds = expenseRows.map((e) => e.id);
     const CHUNK = 50;
     for (let i = 0; i < expenseIds.length; i += CHUNK) {
@@ -172,20 +178,23 @@ async function pullExpenses(): Promise<{
         .select('*')
         .in('expense_id', chunk);
       if (error) throw error;
-      if (data && data.length > 0) {
-        // Replace local splits cho mỗi expense (server là source of truth)
-        // Strategy: delete + upsert trong transaction.
-        await upsertBatch(
-          'expense_splits',
-          (data as ExpenseSplitRow[]).map((r) => ({
-            id: r.id,
-            expense_id: r.expense_id,
-            member_id: r.member_id,
-            amount: r.amount,
-          }))
+      const rows = (data as ExpenseSplitRow[]) ?? [];
+      // DELETE splits cũ + INSERT splits server trong 1 transaction (tránh expense
+      // trống splits nếu crash giữa chừng).
+      const placeholders = chunk.map(() => '?').join(',');
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          `DELETE FROM expense_splits WHERE expense_id IN (${placeholders})`,
+          chunk
         );
-        splitsFetched += data.length;
-      }
+        for (const r of rows) {
+          await db.runAsync(
+            `INSERT INTO expense_splits (id, expense_id, member_id, amount) VALUES (?, ?, ?, ?)`,
+            [r.id, r.expense_id, r.member_id, r.amount]
+          );
+        }
+      });
+      splitsFetched += rows.length;
     }
   }
 

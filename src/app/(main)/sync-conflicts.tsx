@@ -27,6 +27,7 @@ const OP_LABELS: Record<string, string> = {
   update_user_display_name: 'Đổi tên hiển thị',
   update_user_settings: 'Cài đặt',
   update_preset: 'Sửa preset',
+  update_expense: 'Sửa khoản chi',
   close_trip: 'Đóng chuyến',
   reopen_trip: 'Mở lại chuyến',
 };

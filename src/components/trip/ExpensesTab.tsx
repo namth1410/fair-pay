@@ -138,6 +138,7 @@ export const ExpensesTab = React.memo(function ExpensesTab({
         onOpenChange={(open) => { if (!open) setSelectedExpense(null); }}
         expense={selectedExpense}
         members={members}
+        canEdit={isOpen}
       />
     </View>
   );

@@ -1,5 +1,6 @@
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { BottomSheet } from 'heroui-native';
+import { router } from 'expo-router';
+import { BottomSheet, Button } from 'heroui-native';
 import { Image, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
@@ -13,6 +14,8 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   expense: ExpenseWithSplits | null;
   members: GroupMember[];
+  /** Cho phép sửa (trip đang mở). Ẩn nút Sửa khi trip đã đóng. */
+  canEdit?: boolean;
 }
 
 const SPLIT_TYPE_VN: Record<string, string> = {
@@ -21,10 +24,16 @@ const SPLIT_TYPE_VN: Record<string, string> = {
   custom: 'Tuỳ chỉnh',
 };
 
-export function ExpenseDetailSheet({ isOpen, onOpenChange, expense, members }: Props) {
+export function ExpenseDetailSheet({ isOpen, onOpenChange, expense, members, canEdit }: Props) {
   const c = useAppTheme();
   const getName = (id: string) =>
     members.find((m) => m.id === id)?.display_name || '?';
+
+  const handleEdit = () => {
+    if (!expense) return;
+    onOpenChange(false);
+    router.push(`/trips/${expense.trip_id}/expenses/${expense.id}/edit`);
+  };
 
   return (
     <BottomSheet isOpen={isOpen} onOpenChange={onOpenChange}>
@@ -40,6 +49,11 @@ export function ExpenseDetailSheet({ isOpen, onOpenChange, expense, members }: P
                 <View style={styles.header}>
                   <BottomSheet.Title>{expense.title}</BottomSheet.Title>
                   <Money value={expense.amount} variant="display" tone="primary" />
+                  {canEdit ? (
+                    <Button variant="secondary" size="sm" onPress={handleEdit}>
+                      <Button.Label>✏️ Sửa khoản chi</Button.Label>
+                    </Button>
+                  ) : null}
                 </View>
 
                 <View style={[styles.infoBox, { backgroundColor: c.surfaceAlt }]}>

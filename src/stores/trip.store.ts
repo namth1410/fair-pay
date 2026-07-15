@@ -5,6 +5,7 @@ import {
   computeTripBalances,
   createExpense,
   deleteExpense,
+  editExpense,
   type ExpenseWithSplits,
   fetchExpenses,
   fetchTripBalanceData,
@@ -116,6 +117,18 @@ interface TripState {
     splitType: 'equal' | 'ratio' | 'custom';
     splits: SplitResult[];
     note?: string;
+    imageUrl?: string | null;
+    date?: string;
+  }) => Promise<void>;
+  editExpense: (params: {
+    expenseId: string;
+    tripId: string;
+    title: string;
+    amount: number;
+    paidByMemberId: string;
+    splitType: 'equal' | 'ratio' | 'custom';
+    splits: SplitResult[];
+    note?: string | null;
     imageUrl?: string | null;
     date?: string;
   }) => Promise<void>;
@@ -303,6 +316,39 @@ export const useTripStore = create<TripState>((set, get) => ({
     };
     set((state) => ({
       currentExpenses: [optimistic, ...state.currentExpenses],
+    }));
+    get().recomputeBalances();
+  },
+
+  editExpense: async (params) => {
+    // Local-first P3: editExpense ghi SQLite + enqueue/RPC + trigger sync ngầm.
+    // Optimistic replace item theo id trong currentExpenses để UI cập nhật ngay.
+    const expense = await editExpense({
+      expenseId: params.expenseId,
+      title: params.title,
+      amount: params.amount,
+      paidByMemberId: params.paidByMemberId,
+      splitType: params.splitType,
+      splits: params.splits,
+      note: params.note,
+      imageUrl: params.imageUrl,
+      date: params.date,
+    });
+    const payer = get().currentAllMembers.find((m) => m.id === params.paidByMemberId);
+    const optimistic: ExpenseWithSplits = {
+      ...expense,
+      expense_splits: params.splits.map((s) => ({
+        id: globalThis.crypto.randomUUID(),
+        expense_id: expense.id,
+        member_id: s.memberId,
+        amount: s.amount,
+      })),
+      payer_name: payer?.displayName,
+    };
+    set((state) => ({
+      currentExpenses: state.currentExpenses.map((e) =>
+        e.id === expense.id ? optimistic : e,
+      ),
     }));
     get().recomputeBalances();
   },

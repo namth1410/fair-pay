@@ -148,6 +148,24 @@ interface DeletePaymentPayload {
   client_created_at: string;
 }
 
+interface UpdateExpensePayload {
+  expense_id: string;
+  title: string;
+  amount: number;
+  category: string;
+  paid_by: string;
+  split_type: 'equal' | 'ratio' | 'custom';
+  splits: Array<{ member_id: string; amount: number }>;
+  note: string | null;
+  date: string;
+  image_url: string | null;
+  base_version: number;
+  edited_title: string;
+  actor_name: string;
+  client_request_id: string;
+  client_created_at: string;
+}
+
 interface UpdateGroupPayload {
   group_id: string;
   name: string | null;
@@ -457,6 +475,28 @@ export async function dispatch(
         p_payment_id: p.payment_id,
         p_client_request_id: p.client_request_id,
         p_client_created_at: p.client_created_at,
+      });
+      if (error) throw error;
+      return data;
+    }
+
+    case OP_TYPES.UPDATE_EXPENSE: {
+      const p = payload as unknown as UpdateExpensePayload;
+      const { data, error } = await supabase.rpc('update_expense', {
+        p_expense_id: p.expense_id,
+        p_title: p.title,
+        p_amount: p.amount,
+        p_category: p.category,
+        p_paid_by: p.paid_by,
+        p_split_type: p.split_type,
+        p_splits: p.splits,
+        p_note: p.note,
+        p_date: p.date,
+        p_image_url: p.image_url,
+        p_base_version: p.base_version,
+        p_edited_title: p.edited_title,
+        p_actor_name: p.actor_name,
+        p_client_request_id: p.client_request_id,
       });
       if (error) throw error;
       return data;

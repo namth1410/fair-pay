@@ -34,6 +34,7 @@ export const OP_TYPES = {
   UPDATE_MEMBER_DISPLAY_NAME: 'update_member_display_name',
   UPDATE_USER_DISPLAY_NAME: 'update_user_display_name',
   UPDATE_PRESET: 'update_preset',
+  UPDATE_EXPENSE: 'update_expense',
 
   // State machine với version (P4)
   CLOSE_TRIP: 'close_trip',

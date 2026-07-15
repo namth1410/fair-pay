@@ -5,6 +5,7 @@
 //   2. keepTheirs — discard local change, update local mirror với server data
 //   3. defer — để conflict trong queue, user xử lý sau qua Conflict Inbox
 
+import { supabase } from '../config/supabase';
 import { getDatabase } from '../db/database';
 import type { SyncQueueRow } from '../types/database.types';
 import * as syncQueue from './syncQueue';
@@ -109,6 +110,22 @@ export async function keepTheirs(
     throw new Error(`Không thể áp dụng dữ liệu server: thiếu whitelist cho bảng "${table}"`);
   }
 
+  // Expense: serverData chỉ chứa row `expenses`, KHÔNG có `expense_splits` (bảng riêng,
+  // không có version/updated_at). Sau khi bỏ local edit và adopt server, phải re-fetch
+  // splits server để mirror local đúng — nếu không, splits vẫn giữ bản edit local vừa bỏ
+  // → sai balance. Fetch TRƯỚC transaction (không I/O mạng trong transaction).
+  let expenseSplits:
+    | Array<{ id: string; expense_id: string; member_id: string; amount: number }>
+    | null = null;
+  if (item.entity_type === 'expense' && serverData) {
+    const { data, error } = await supabase
+      .from('expense_splits')
+      .select('id, expense_id, member_id, amount')
+      .eq('expense_id', item.entity_id);
+    if (error) throw error;
+    expenseSplits = data ?? [];
+  }
+
   const db = getDatabase();
   await db.withTransactionAsync(async () => {
     if (serverData) {
@@ -144,6 +161,16 @@ export async function keepTheirs(
            ON CONFLICT(id) DO UPDATE SET ${updateAssignments}`
         : `INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`;
       await db.runAsync(sql, values as never[]);
+    }
+    // Replace splits local bằng server (delete-then-insert) khi resolve expense conflict.
+    if (expenseSplits) {
+      await db.runAsync(`DELETE FROM expense_splits WHERE expense_id = ?`, [item.entity_id]);
+      for (const s of expenseSplits) {
+        await db.runAsync(
+          `INSERT INTO expense_splits (id, expense_id, member_id, amount) VALUES (?, ?, ?, ?)`,
+          [s.id, s.expense_id, s.member_id, s.amount]
+        );
+      }
     }
     await db.runAsync(`DELETE FROM sync_queue WHERE id = ?`, [item.id]);
   });
