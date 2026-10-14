@@ -142,11 +142,12 @@ export function Money({
             color,
             fontSize: v.unit,
             lineHeight: v.lineHeight,
-            marginLeft: 2,
+            marginLeft: 1,
             opacity: 0.8,
           }}
         >
-          ₫
+          {/* "đ" thường cho thống nhất với formatVND (chip, bong bóng chat...) — trước dùng "₫". */}
+          đ
         </AppText>
       )}
     </View>

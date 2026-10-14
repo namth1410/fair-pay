@@ -119,7 +119,7 @@ export function BouncyDialog({
   children,
   dismissOnBackdrop = true,
 }: BouncyDialogProps) {
-  const { isDark, surface, divider, foreground } = useAppTheme();
+  const { isDark, surface, divider } = useAppTheme();
   const animationsEnabled = useAnimationsEnabled();
   const insets = useSafeAreaInsets();
   // Khoảng cách rồng phải dịch xuống để biến mất hoàn toàn dưới cạnh màn hình.
@@ -316,11 +316,12 @@ export function BouncyDialog({
     peekWiggle,
   ]);
 
-  // Recolor dragon theo palette monochrome — body neutral, wings xám, accent black/white
+  // Recolor dragon theo màu linh vật (giao diện "Hội thoại"): thân xanh rồng, cánh xanh nhạt
+  // hơn, mắt/lông mày xanh rất đậm như nét viền của sticker.
   const dragonColorFilters = useMemo(() => {
-    const bodyColor = isDark ? '#FAFAFA' : '#1A1A1F';     // snow / eclipse
-    const wingColor = isDark ? '#D4D4D8' : '#71717A';     // zinc-300 / zinc-500
-    const accentColor = isDark ? '#FFFFFF' : '#000000';   // highlight cho eye/eyebrow
+    const bodyColor = isDark ? '#5FCB8B' : '#3FA35B';
+    const wingColor = isDark ? '#9FE0B5' : '#6CC487';
+    const accentColor = isDark ? '#0F1214' : '#12301C';
 
     const bodyLayers = [
       'BODY Outlines',
@@ -402,7 +403,8 @@ export function BouncyDialog({
                 {
                   backgroundColor: surface,
                   borderColor: divider,
-                  shadowColor: foreground,
+                  // Bóng luôn đen — theo màu chữ thì thành quầng sáng ở chế độ tối.
+                  shadowColor: '#000000',
                 } as ViewStyle,
               ]}
             >

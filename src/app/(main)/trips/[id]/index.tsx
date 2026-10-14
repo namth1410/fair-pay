@@ -1,167 +1,101 @@
+import * as Crypto from 'expo-crypto';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import CircleCheck from 'lucide-react-native/dist/esm/icons/circle-check';
+import { Button } from 'heroui-native';
 import Info from 'lucide-react-native/dist/esm/icons/info';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  Easing,
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
-import { BalancesTab } from '../../../../components/trip/BalancesTab';
-import { ExpensesTab } from '../../../../components/trip/ExpensesTab';
-import { ExportScopeSheet } from '../../../../components/trip/ExportScopeSheet';
-import { HistoryTab } from '../../../../components/trip/HistoryTab';
+import { ExpenseDetailSheet } from '../../../../components/trip/ExpenseDetailSheet';
 import { MyBalanceExplanationSheet } from '../../../../components/trip/MyBalanceExplanationSheet';
-import { SettlementTab } from '../../../../components/trip/SettlementTab';
-import { TripDetailSkeleton } from '../../../../components/trip/TripDetailSkeleton';
-import { TripManagementTab } from '../../../../components/trip/TripManagementTab';
-import { AppText, Money, SectionTabs, SkiaMeshGradient } from '../../../../components/ui';
+import { ExpenseBubble } from '../../../../components/trip/thread/ExpenseBubble';
+import { PaymentBubble } from '../../../../components/trip/thread/PaymentBubble';
+import {
+  DragonMessage,
+  ThreadDaySeparator,
+  ThreadSystemNotice,
+} from '../../../../components/trip/thread/ThreadNotices';
+import { TripBalanceBanner } from '../../../../components/trip/thread/TripBalanceBanner';
+import { TripComposer } from '../../../../components/trip/thread/TripComposer';
+import { TripThreadSkeleton } from '../../../../components/trip/thread/TripThreadSkeleton';
+import { AppText, BouncyDialog } from '../../../../components/ui';
 import { useAppTheme } from '../../../../hooks/useAppTheme';
+import type { ExpenseWithSplits } from '../../../../services/expense.service';
+import type { Payment } from '../../../../services/payment.service';
 import { useAuthStore } from '../../../../stores/auth.store';
 import { useGroupStore } from '../../../../stores/group.store';
 import { useTripStore } from '../../../../stores/trip.store';
-import { useUIStore } from '../../../../stores/ui.store';
 import * as syncBus from '../../../../sync/syncBus';
 import { explainMyTripBalance } from '../../../../utils/explainBalance';
-import type { TripExportData } from '../../../../utils/exportHtml';
+import { formatDateVN, formatVND } from '../../../../utils/format';
 import { hapticLight } from '../../../../utils/haptics';
+import { pickImage } from '../../../../utils/imageProcessing';
+import { showError } from '../../../../utils/toast';
+import { buildTripThread, type ThreadItem } from '../../../../utils/tripThread';
 
-type Tab = 'expenses' | 'balances' | 'settle' | 'history' | 'manage';
+type Item = ThreadItem<ExpenseWithSplits, Payment>;
 
-const TAB_KEYS: Tab[] = ['expenses', 'balances', 'settle', 'history', 'manage'];
+const SPLIT_LABEL: Record<string, string> = {
+  equal: 'Chia đều',
+  ratio: 'Chia theo tỷ lệ',
+  custom: 'Chia tùy chỉnh',
+};
 
-const TAB_ITEMS = [
-  { key: 'expenses', label: 'Chi phí' },
-  { key: 'balances', label: 'Số dư' },
-  { key: 'settle', label: 'Quyết toán' },
-  { key: 'history', label: 'Lịch sử' },
-  { key: 'manage', label: 'Quản lý' },
-];
+/** Người "gửi" của 1 tin (người trả / người chuyển) — null với vạch ngày, tin hệ thống. */
+function senderKeyOf(item: Item | undefined): string | null {
+  if (!item) return null;
+  if (item.kind === 'expense') return item.expense.paid_by;
+  if (item.kind === 'payment') return item.payment.from_member_id;
+  return null;
+}
 
-const TAB_ANIM = { duration: 280, easing: Easing.out(Easing.cubic) } as const;
-const SWIPE_VELOCITY_THRESHOLD = 500;
-
+// Màn chuyến đi giao diện "Hội thoại" (2026-10): 1 luồng tin gộp khoản chi + thanh toán theo
+// thời gian (mới nhất sát ô soạn ở đáy). Số dư / Quyết toán / Lịch sử / Quản lý nằm ở màn
+// "Thông tin chuyến" (nút ⓘ trên header → trips/[id]/info).
 export default function TripDetailScreen() {
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const c = useAppTheme();
-  const { width: W } = useWindowDimensions();
 
   const {
-    currentTrip, currentExpenses, currentPayments, balances, settlements, auditLogs,
-    isLoadingExpenses, currentTripId, currentTripLoadError,
-    removeExpense,
-    addPayment, addPayments, removePayment,
+    currentTrip, currentExpenses, currentPayments, settlements,
+    currentTripId, currentTripLoadError,
+    removeExpense, removePayment, toggleTripStatus,
     loadBalances, loadAuditLogs,
   } = useTripStore();
   const { currentGroupMembers, loadMembers } = useGroupStore();
-  const groups = useGroupStore((s) => s.groups);
   const profile = useAuthStore((s) => s.profile);
-  const tripExportRequestSeq = useUIStore((s) => s.tripExportRequestSeq);
 
-  const [tab, setTab] = useState<Tab>('expenses');
   const [explainOpen, setExplainOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-
-  const targetIdx = TAB_KEYS.indexOf(tab);
-  const progress = useSharedValue(targetIdx);
-  const startProgress = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withTiming(targetIdx, TAB_ANIM);
-  }, [targetIdx, progress]);
-
-  const rowStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -progress.value * W }],
-  }));
-
-  // Pan gesture: vuốt ngang để chuyển tab. activeOffsetX/failOffsetY chia
-  // ranh với FlatList vertical scroll + SwipeableCard (RNGH leaf gesture).
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-12, 12])
-        .failOffsetY([-20, 20])
-        .onBegin(() => {
-          'worklet';
-          startProgress.value = progress.value;
-        })
-        .onUpdate((e) => {
-          'worklet';
-          const next = startProgress.value - e.translationX / W;
-          progress.value = Math.max(0, Math.min(TAB_KEYS.length - 1, next));
-        })
-        .onEnd((e) => {
-          'worklet';
-          const v = e.velocityX;
-          const settled =
-            v < -SWIPE_VELOCITY_THRESHOLD
-              ? Math.ceil(progress.value)
-              : v > SWIPE_VELOCITY_THRESHOLD
-                ? Math.floor(progress.value)
-                : Math.round(progress.value);
-          const clamped = Math.max(0, Math.min(TAB_KEYS.length - 1, settled));
-          progress.value = withTiming(clamped, TAB_ANIM);
-          const nextKey = TAB_KEYS[clamped] ?? TAB_KEYS[0]!;
-          if (clamped !== targetIdx) {
-            runOnJS(setTab)(nextKey);
-          }
-        }),
-    [W, progress, startProgress, targetIdx],
-  );
+  const [selectedExpense, setSelectedExpense] = useState<ExpenseWithSplits | null>(null);
+  const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<ExpenseWithSplits | null>(null);
+  const [deletePaymentTarget, setDeletePaymentTarget] = useState<Payment | null>(null);
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
 
   // currentTrip populate qua loadBalances → support entry-point bypass group detail
-  // (pinned card, deep link, notification). Tránh dùng trips.find() vì `trips` chỉ
-  // có data khi user vào group detail trước.
+  // (pinned story, deep link, notification).
   const trip = currentTrip && currentTrip.id === tripId ? currentTrip : null;
+  const isOpen = trip?.status !== 'closed';
   const totalExpenses = currentExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const groupName = useMemo(
-    () => groups.find((g) => g.id === trip?.group_id)?.name ?? '',
-    [groups, trip?.group_id],
-  );
 
-  // Builder cho ExportScopeSheet — chỉ chạy khi user nhấn xuất.
-  const getExportData = useCallback((): TripExportData => {
-    return {
-      tripName: trip?.name ?? 'Chuyến đi',
-      groupName,
-      generatedAt: new Date().toISOString(),
-      status: trip?.status ?? 'open',
-      closedAt: trip?.closed_at ?? null,
-      members: currentGroupMembers.map((m) => ({
-        id: m.id,
-        displayName: m.display_name,
-        isVirtual: !!m.is_virtual,
-      })),
-      expenses: currentExpenses.map((e) => ({
-        id: e.id,
-        title: e.title,
-        amount: e.amount,
-        paidBy: e.paid_by,
-        date: e.date,
-        note: e.note,
-        splits: e.expense_splits.map((s) => ({
-          memberId: s.member_id,
-          amount: s.amount,
-        })),
-      })),
-      payments: currentPayments.map((p) => ({
-        id: p.id,
-        fromMemberId: p.from_member_id,
-        toMemberId: p.to_member_id,
-        amount: p.amount,
-        date: p.date,
-        note: p.note,
-      })),
-      balances,
-      settlements,
-    };
-  }, [trip?.name, trip?.status, trip?.closed_at, groupName, currentGroupMembers, currentExpenses, currentPayments, balances, settlements]);
+  const memberById = useMemo(() => {
+    const map = new Map<string, (typeof currentGroupMembers)[number]>();
+    for (const m of currentGroupMembers) map.set(m.id, m);
+    return map;
+  }, [currentGroupMembers]);
+
+  // created_by / recorded_by là users.id → map sang member để hiện "do X ghi".
+  const memberByUserId = useMemo(() => {
+    const map = new Map<string, (typeof currentGroupMembers)[number]>();
+    for (const m of currentGroupMembers) if (m.user_id) map.set(m.user_id, m);
+    return map;
+  }, [currentGroupMembers]);
+
+  const nameOf = useCallback(
+    (memberId: string) => memberById.get(memberId)?.display_name || '?',
+    [memberById],
+  );
 
   const myMemberId = useMemo(() => {
     if (!profile) return null;
@@ -198,22 +132,61 @@ export default function TripDetailScreen() {
     );
   }, [myMemberId, currentGroupMembers, currentExpenses, currentPayments]);
 
-  const myBalance = explanation?.totalBalance ?? 0;
-  const showMyRow = !!explanation && explanation.lines.length > 0;
-  const { label: myLabel, tone: myTone } = describeBalance(myBalance);
+  const thread = useMemo(
+    () =>
+      buildTripThread<ExpenseWithSplits, Payment>({
+        expenses: currentExpenses,
+        payments: currentPayments,
+        closedAt: trip?.status === 'closed' ? trip.closed_at ?? null : null,
+        showSuggest: trip?.status === 'open' && settlements.length > 0,
+      }),
+    [currentExpenses, currentPayments, trip?.status, trip?.closed_at, settlements.length],
+  );
 
-  // Hero palette theo dấu balance — đỏ (nợ) / xanh (được nợ) / neutral (cân bằng).
-  // Blob bottom-center (u_c2) giữ nguyên base soft để text meta + myBalance row
-  // luôn nằm trên vùng soft, đảm bảo contrast.
-  const heroPalette = useMemo<{ base: string; colors: [string, string, string] }>(() => {
-    if (myBalance < 0) {
-      return { base: c.dangerSoft, colors: [c.danger, c.surface, c.dangerSoft] };
-    }
-    if (myBalance > 0) {
-      return { base: c.successSoft, colors: [c.success, c.surface, c.successSoft] };
-    }
-    return { base: c.tint, colors: [c.accentSoft, c.primarySoft, c.warmAccent] };
-  }, [myBalance, c.dangerSoft, c.danger, c.successSoft, c.success, c.surface, c.tint, c.accentSoft, c.primarySoft, c.warmAccent]);
+  // Gợi ý tất toán của rồng: ưu tiên lượt chuyển liên quan tới chính user.
+  const suggestText = useMemo(() => {
+    const toMe = settlements.find((s) => s.to === myMemberId);
+    if (toMe) return `${toMe.fromName} nên trả bạn ${formatVND(toMe.amount)} để cân sổ.`;
+    const fromMe = settlements.find((s) => s.from === myMemberId);
+    if (fromMe) return `Bạn nên trả ${fromMe.toName} ${formatVND(fromMe.amount)} để cân sổ.`;
+    return `Còn ${settlements.length} lượt chuyển để cả nhóm cân sổ.`;
+  }, [settlements, myMemberId]);
+
+  const expenseDetail = useCallback(
+    (e: ExpenseWithSplits): string => {
+      const n = e.expense_splits.length;
+      const isMine = e.paid_by === myMemberId;
+      let mode = `${SPLIT_LABEL[e.split_type] ?? 'Chia'} ${n} người`;
+      const parts: string[] = [];
+      if (isMine) {
+        parts.push('Bạn trả');
+        mode = mode.charAt(0).toLowerCase() + mode.slice(1);
+      }
+      parts.push(mode);
+      if (myMemberId) {
+        const mySplit = e.expense_splits.find((s) => s.member_id === myMemberId);
+        if (mySplit && mySplit.amount > 0) parts.push(`phần bạn ${formatVND(mySplit.amount)}`);
+        else if (!isMine) parts.push('bạn không tham gia');
+      }
+      // Người ghi khác người trả → nói rõ (vd Nam ghi hộ khoản Hà trả).
+      const recorder = memberByUserId.get(e.created_by);
+      const payerUserId = memberById.get(e.paid_by)?.user_id ?? null;
+      if (recorder && e.created_by !== payerUserId) {
+        parts.push(`do ${recorder.id === myMemberId ? 'bạn' : recorder.display_name} ghi`);
+      }
+      return parts.join(' · ');
+    },
+    [myMemberId, memberById, memberByUserId],
+  );
+
+  const paymentHeadline = useCallback(
+    (p: Payment): string => {
+      if (p.to_member_id === myMemberId) return 'Đã chuyển cho bạn';
+      if (p.from_member_id === myMemberId) return `Bạn đã chuyển cho ${nameOf(p.to_member_id)}`;
+      return `Đã chuyển cho ${nameOf(p.to_member_id)}`;
+    },
+    [myMemberId, nameOf],
+  );
 
   useEffect(() => {
     if (!tripId) return;
@@ -223,9 +196,8 @@ export default function TripDetailScreen() {
     loadAuditLogs(tripId);
   }, [tripId]);
 
-  // Sau khi sync nền hoàn tất (vd createExpense local-first đã push → server tạo audit
-  // expense.create), refresh ÊM Lịch sử + balances của trip đang xem — fix tab Lịch sử
-  // không tự cập nhật. Cũng cover offline→online và thay đổi từ thiết bị khác.
+  // Sau khi sync nền hoàn tất (vd createExpense local-first đã push), refresh ÊM luồng +
+  // số dư của trip đang xem. Cũng cover offline→online và thay đổi từ thiết bị khác.
   useEffect(() => {
     if (!tripId) return;
     return syncBus.subscribe(() => {
@@ -239,11 +211,101 @@ export default function TripDetailScreen() {
     if (trip?.group_id) loadMembers(trip.group_id);
   }, [trip?.group_id]);
 
-  // Header share button (qua useUIStore.requestTripExport) → mở sheet.
-  useEffect(() => {
-    if (tripExportRequestSeq === 0) return;
-    setExportOpen(true);
-  }, [tripExportRequestSeq]);
+  const handleCompose = useCallback(() => {
+    hapticLight();
+    router.push(`/trips/${tripId}/expenses/new`);
+  }, [router, tripId]);
+
+  const handleCamera = useCallback(async () => {
+    hapticLight();
+    setIsPicking(true);
+    try {
+      const picked = await pickImage('camera');
+      if (!picked) return;
+      const params = new URLSearchParams();
+      params.set('expenseId', Crypto.randomUUID());
+      params.set('imageUri', picked.uri);
+      params.set('imageSizeBytes', String(picked.sizeBytes));
+      params.set('imageWidth', String(picked.width));
+      params.set('imageHeight', String(picked.height));
+      router.push(`/trips/${tripId}/expenses/new?${params.toString()}` as never);
+    } catch (err) {
+      showError(err);
+    } finally {
+      setIsPicking(false);
+    }
+  }, [router, tripId]);
+
+  const confirmReopen = useCallback(async () => {
+    if (!trip) return;
+    setReopenBusy(true);
+    try {
+      await toggleTripStatus(trip);
+      setReopenOpen(false);
+    } catch (err) {
+      showError(err);
+    } finally {
+      setReopenBusy(false);
+    }
+  }, [trip, toggleTripStatus]);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: Item; index: number }) => {
+      // Gom tin liên tiếp cùng người gửi như app nhắn tin: tên chỉ ở tin đầu (trên cùng),
+      // avatar chỉ ở tin cuối (dưới cùng). Mảng inverted: index+1 = tin cũ hơn (phía trên),
+      // index-1 = tin mới hơn (phía dưới).
+      const key = senderKeyOf(item);
+      const showSender = senderKeyOf(thread[index + 1]) !== key;
+      const showAvatar = senderKeyOf(thread[index - 1]) !== key;
+      switch (item.kind) {
+        case 'day':
+          return <ThreadDaySeparator title={item.title} />;
+        case 'expense':
+          return (
+            <ExpenseBubble
+              expense={item.expense}
+              isMine={item.expense.paid_by === myMemberId}
+              senderName={nameOf(item.expense.paid_by)}
+              detail={expenseDetail(item.expense)}
+              onPress={setSelectedExpense}
+              onLongPress={isOpen ? setDeleteExpenseTarget : undefined}
+              showSender={showSender}
+              showAvatar={showAvatar}
+            />
+          );
+        case 'payment':
+          return (
+            <PaymentBubble
+              payment={item.payment}
+              isMine={item.payment.from_member_id === myMemberId}
+              senderName={nameOf(item.payment.from_member_id)}
+              headline={paymentHeadline(item.payment)}
+              onLongPress={isOpen ? setDeletePaymentTarget : undefined}
+              showSender={showSender}
+              showAvatar={showAvatar}
+            />
+          );
+        case 'closed':
+          return (
+            <ThreadSystemNotice
+              text={`Chuyến đi đã đóng · ${formatDateVN(new Date(item.closedAt))}`}
+            />
+          );
+        case 'suggest':
+          return (
+            <DragonMessage
+              title="Gợi ý tất toán"
+              text={suggestText}
+              actionLabel="Xem cách tất toán"
+              onAction={() => router.push(`/trips/${tripId}/info?tab=settle` as never)}
+            />
+          );
+        default:
+          return null;
+      }
+    },
+    [thread, myMemberId, nameOf, expenseDetail, paymentHeadline, isOpen, suggestText, router, tripId],
+  );
 
   if (!tripId) return null;
 
@@ -253,18 +315,17 @@ export default function TripDetailScreen() {
     (currentTripId !== tripId || !trip) && !currentTripLoadError;
   if (isHydrating) {
     return (
-      <View style={[styles.container, { backgroundColor: c.background }]}>
+      <View style={[styles.container, { backgroundColor: c.surface }]}>
         <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
-        <TripDetailSkeleton />
+        <TripThreadSkeleton />
       </View>
     );
   }
 
   // Trip không mở được (đã xóa / id không hợp lệ — vd widget trỏ trip đã xóa).
-  // Trạng thái rõ ràng + lối về Home, thay vì kẹt skeleton hay LogBox đỏ.
   if (currentTripLoadError && !trip) {
     return (
-      <View style={[styles.container, styles.errorFill, { backgroundColor: c.background }]}>
+      <View style={[styles.container, styles.errorFill, { backgroundColor: c.surface }]}>
         <Stack.Screen options={{ title: 'Chuyến đi' }} />
         <Info size={36} color={c.muted} strokeWidth={1.6} />
         <AppText variant="subtitle" weight="semibold" center style={styles.errorTitle}>
@@ -287,49 +348,54 @@ export default function TripDetailScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: c.background }]}>
+    <View style={[styles.container, { backgroundColor: c.surface }]}>
       <Stack.Screen options={{ title: trip?.name || 'Chuyến đi' }} />
 
-      {/* Summary hero — animated mesh gradient (Skia) */}
-      <SkiaMeshGradient
-        baseColor={heroPalette.base}
-        colors={heroPalette.colors}
-        speed={0.9}
-        style={styles.heroWrap}
-      >
-        <View style={styles.heroInner}>
-          {trip?.status === 'closed' ? (
-            <View style={[styles.statusPill, { backgroundColor: c.success + '18', borderColor: c.success }]}>
-              <CircleCheck size={12} color={c.success} strokeWidth={2.2} />
-              <AppText variant="meta" weight="semibold" style={{ color: c.success }}>
-                Đã hoàn thành
-              </AppText>
-            </View>
-          ) : null}
-          <AppText variant="label" tone="muted">TỔNG CHI</AppText>
-          <Money value={totalExpenses} variant="hero" tone="primary" animate />
-          <AppText variant="meta" tone="muted" style={styles.heroMeta}>
-            {currentExpenses.length} khoản · {currentPayments.length} thanh toán · {currentGroupMembers.length} người
-          </AppText>
-          {showMyRow ? (
-            <View style={[styles.heroPersonalRow, { borderTopColor: c.divider }]}>
-              <AppText variant="caption" tone="muted">{myLabel}</AppText>
-              <Money value={Math.abs(myBalance)} variant="display" tone={myTone} />
-              <Pressable
-                onPress={() => {
-                  hapticLight();
-                  setExplainOpen(true);
-                }}
-                hitSlop={10}
-                accessibilityLabel="Xem cách tính số dư của bạn"
-                style={styles.infoBtn}
-              >
-                <Info size={16} color={c.muted} />
-              </Pressable>
-            </View>
-          ) : null}
+      <TripBalanceBanner
+        myBalance={explanation ? explanation.totalBalance : null}
+        totalExpenses={totalExpenses}
+        expenseCount={currentExpenses.length}
+        memberCount={currentGroupMembers.length}
+        onPress={() => {
+          hapticLight();
+          setExplainOpen(true);
+        }}
+      />
+
+      {thread.length === 0 ? (
+        <View style={styles.emptyThread}>
+          <DragonMessage
+            title="Rồng Fair Pay"
+            text={
+              isOpen
+                ? 'Chưa có khoản chi nào. Bấm “Thêm khoản chi…” bên dưới để ghi khoản đầu tiên.'
+                : 'Chuyến đi này chưa có khoản chi nào.'
+            }
+          />
         </View>
-      </SkiaMeshGradient>
+      ) : (
+        <FlatList
+          inverted
+          data={thread}
+          keyExtractor={(item) => item.key}
+          renderItem={renderItem}
+          contentContainerStyle={styles.threadContent}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+
+      <TripComposer
+        isClosed={!isOpen}
+        isPicking={isPicking}
+        onCompose={handleCompose}
+        onCamera={handleCamera}
+        closedActionLabel={isAdmin ? 'Mở lại' : 'Thông tin'}
+        onClosedAction={
+          isAdmin
+            ? () => setReopenOpen(true)
+            : () => router.push(`/trips/${tripId}/info` as never)
+        }
+      />
 
       <MyBalanceExplanationSheet
         isOpen={explainOpen}
@@ -338,69 +404,86 @@ export default function TripDetailScreen() {
         explanation={explanation}
       />
 
-      <ExportScopeSheet
-        isOpen={exportOpen}
-        onOpenChange={setExportOpen}
-        getExportData={getExportData}
+      <ExpenseDetailSheet
+        isOpen={!!selectedExpense}
+        onOpenChange={(open) => { if (!open) setSelectedExpense(null); }}
+        expense={selectedExpense}
         members={currentGroupMembers}
+        canEdit={isOpen}
       />
 
-      <SectionTabs items={TAB_ITEMS} selected={tab} onSelect={(key) => setTab(key as Tab)} />
+      <BouncyDialog
+        isOpen={!!deleteExpenseTarget}
+        onClose={() => setDeleteExpenseTarget(null)}
+      >
+        <BouncyDialog.Title>Xóa khoản chi</BouncyDialog.Title>
+        <BouncyDialog.Description>{`Xóa "${deleteExpenseTarget?.title}"?`}</BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setDeleteExpenseTarget(null)}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onPress={() => {
+              const target = deleteExpenseTarget;
+              setDeleteExpenseTarget(null);
+              if (target) void removeExpense(target.id, tripId).catch((e: unknown) => showError(e));
+            }}
+          >
+            <Button.Label>Xóa</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
 
-      <View style={styles.tabViewport}>
-        <GestureDetector gesture={pan}>
-          <Animated.View style={[styles.tabRow, { width: W * TAB_KEYS.length }, rowStyle]}>
-            <View style={{ width: W }}>
-              <ExpensesTab
-                tripId={tripId}
-                tripStatus={trip?.status || 'open'}
-                expenses={currentExpenses}
-                members={currentGroupMembers}
-                isLoading={isLoadingExpenses}
-                onDeleteExpense={removeExpense}
-              />
-            </View>
-            <View style={{ width: W }}>
-              <BalancesTab balances={balances} />
-            </View>
-            <View style={{ width: W }}>
-              <SettlementTab
-                tripId={tripId}
-                tripStatus={trip?.status || 'open'}
-                groupId={trip?.group_id || ''}
-                settlements={settlements}
-                payments={currentPayments}
-                balances={balances}
-                members={currentGroupMembers}
-                myMemberId={myMemberId}
-                onAddPayment={addPayment}
-                onAddPayments={addPayments}
-                onDeletePayment={removePayment}
-              />
-            </View>
-            <View style={{ width: W }}>
-              <HistoryTab auditLogs={auditLogs} members={currentGroupMembers} />
-            </View>
-            <View style={{ width: W }}>
-              {trip ? (
-                <TripManagementTab
-                  trip={trip}
-                  isAdmin={isAdmin}
-                  onDeleted={() => router.back()}
-                />
-              ) : null}
-            </View>
-          </Animated.View>
-        </GestureDetector>
-      </View>
+      <BouncyDialog
+        isOpen={!!deletePaymentTarget}
+        onClose={() => setDeletePaymentTarget(null)}
+      >
+        <BouncyDialog.Title>Xóa thanh toán</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          {deletePaymentTarget
+            ? `Xóa lượt ${nameOf(deletePaymentTarget.from_member_id)} chuyển ${formatVND(deletePaymentTarget.amount)} cho ${nameOf(deletePaymentTarget.to_member_id)}?`
+            : ''}
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setDeletePaymentTarget(null)}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onPress={() => {
+              const target = deletePaymentTarget;
+              setDeletePaymentTarget(null);
+              if (target) void removePayment(target.id, tripId).catch((e: unknown) => showError(e));
+            }}
+          >
+            <Button.Label>Xóa</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
+
+      <BouncyDialog
+        isOpen={reopenOpen}
+        onClose={() => { if (!reopenBusy) setReopenOpen(false); }}
+        dismissOnBackdrop={!reopenBusy}
+      >
+        <BouncyDialog.Title>Mở lại chuyến đi?</BouncyDialog.Title>
+        <BouncyDialog.Description>
+          {`Mở lại chuyến "${trip?.name ?? ''}" để tiếp tục ghi chi phí.`}
+        </BouncyDialog.Description>
+        <BouncyDialog.Actions>
+          <Button variant="ghost" size="sm" onPress={() => setReopenOpen(false)} isDisabled={reopenBusy}>
+            <Button.Label>Hủy</Button.Label>
+          </Button>
+          <Button variant="primary" size="sm" onPress={confirmReopen} isDisabled={reopenBusy}>
+            <Button.Label>{reopenBusy ? 'Đang xử lý...' : 'Mở lại'}</Button.Label>
+          </Button>
+        </BouncyDialog.Actions>
+      </BouncyDialog>
     </View>
   );
-}
-
-function describeBalance(b: number): { label: string; tone: 'success' | 'danger' | 'muted' } {
-  if (b > 0) return { label: 'Bạn được nợ', tone: 'success' };
-  if (b < 0) return { label: 'Bạn đang nợ', tone: 'danger' };
-  return { label: 'Bạn đã cân bằng', tone: 'muted' };
 }
 
 const styles = StyleSheet.create({
@@ -409,40 +492,14 @@ const styles = StyleSheet.create({
   errorTitle: { marginTop: 12 },
   errorBody: { marginTop: 4 },
   errorBtn: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 20 },
-  tabViewport: { flex: 1, overflow: 'hidden' },
-  tabRow: { flex: 1, flexDirection: 'row' },
-  heroWrap: {
-    marginHorizontal: 16,
-    marginTop: 12,
+  threadContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  heroInner: {
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    gap: 2,
-  },
-  heroMeta: {
-    marginTop: 2,
-  },
-  heroPersonalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    alignSelf: 'stretch',
-    justifyContent: 'center',
-  },
-  infoBtn: { padding: 4, borderRadius: 12 },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 6,
+  emptyThread: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingBottom: 16,
   },
 });

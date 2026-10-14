@@ -23,7 +23,12 @@ export function GlassCapsuleHeader(props: NativeStackHeaderProps) {
 
   const title = resolveTitle(props);
   const hasBack = Boolean(back);
-  const slots = useHeaderSlots(route.name, hasBack, title);
+  const slots = useHeaderSlots(
+    route.name,
+    hasBack,
+    title,
+    route.params as Readonly<Record<string, unknown>> | undefined,
+  );
 
   return (
     <View
@@ -33,7 +38,8 @@ export function GlassCapsuleHeader(props: NativeStackHeaderProps) {
           // Banner cover status bar area khi visible → bỏ insets.top để header
           // không trông cao bất thường.
           paddingTop: bannerVisible ? 0 : insets.top,
-          backgroundColor: c.background,
+          // Header trắng + hairline kiểu app nhắn tin (giao diện "Hội thoại").
+          backgroundColor: c.surface,
           borderBottomColor: c.divider,
         },
       ]}

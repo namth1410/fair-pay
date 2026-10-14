@@ -5,7 +5,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 
 type Variant = 'display' | 'title' | 'subtitle' | 'body' | 'caption' | 'meta' | 'label';
 type Tone = 'default' | 'muted' | 'primary' | 'success' | 'danger' | 'warning' | 'inverse';
-type Weight = 'regular' | 'medium' | 'semibold' | 'bold';
+type Weight = 'regular' | 'medium' | 'semibold' | 'bold' | 'extrabold';
 
 interface AppTextProps extends TextProps {
   variant?: Variant;

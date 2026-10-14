@@ -1,10 +1,9 @@
-import { BlurView } from 'expo-blur';
 import { router, usePathname } from 'expo-router';
 import Bell from 'lucide-react-native/dist/esm/icons/bell';
-import Bookmark from 'lucide-react-native/dist/esm/icons/bookmark';
-import Home from 'lucide-react-native/dist/esm/icons/house';
+import MessagesSquare from 'lucide-react-native/dist/esm/icons/messages-square';
 import Plus from 'lucide-react-native/dist/esm/icons/plus';
-import Settings from 'lucide-react-native/dist/esm/icons/settings';
+import UserRound from 'lucide-react-native/dist/esm/icons/user-round';
+import Zap from 'lucide-react-native/dist/esm/icons/zap';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -15,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import Animated, {
-  interpolate,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -28,17 +26,11 @@ import { hapticLight } from '../../utils/haptics';
 import { useAnimationsEnabled } from '../../utils/userPreferences';
 import { AppText } from '../ui/AppText';
 
-const ITEM_SIZE = 44;
-const FAB_SIZE = 56;
-const PILL_HEIGHT = 64;
-const PILL_PADDING_H = 12;
-const ITEM_GAP = 8;
-const INDICATOR_SIZE = 38;
-
-// Layout: [Home] [Presets] [FAB] [Notif] [Settings]
-// 4 nav items + 1 FAB ở giữa; 4 gaps giữa 5 elements.
-const PILL_WIDTH =
-  PILL_PADDING_H * 2 + ITEM_SIZE * 4 + FAB_SIZE + ITEM_GAP * 4;
+// Thanh tab kiểu app nhắn tin (giao diện "Hội thoại" 2026-10): phẳng, full-width,
+// hairline phía trên, icon + nhãn; nút "+" tròn màu thương hiệu ở giữa.
+// Layout: [Nhóm] [Preset] [+] [Thông báo] [Cài đặt]
+const BAR_HEIGHT = 58;
+const FAB_SIZE = 50;
 
 const NAV_INDEX_HOME = 0;
 const NAV_INDEX_PRESETS = 1;
@@ -52,19 +44,6 @@ function pathToActiveIndex(pathname: string): number {
   if (pathname === '/settings') return NAV_INDEX_SETTINGS;
   return -1;
 }
-
-// Center x của 4 nav slots (skip FAB). Tính tuần tự từ trái:
-// Home → Presets → [FAB] → Notif → Settings
-const ITEM_CENTERS_REL = (() => {
-  const home = PILL_PADDING_H + ITEM_SIZE / 2;
-  const presets = home + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  const fabCenter = presets + ITEM_SIZE / 2 + ITEM_GAP + FAB_SIZE / 2;
-  const notif = fabCenter + FAB_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  const settings = notif + ITEM_SIZE / 2 + ITEM_GAP + ITEM_SIZE / 2;
-  return [home, presets, notif, settings];
-})();
-
-const INDICATOR_OFFSETS = ITEM_CENTERS_REL.map((x) => x - INDICATOR_SIZE / 2);
 
 interface AppDockProps {
   onPlusPress: () => void;
@@ -114,17 +93,21 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
     };
   }, []);
 
-  // Dock luôn hiển thị ở mọi route, chỉ ẩn khi keyboard mở.
+  let unreadBadge: string | null = null;
+  if (unread > 9) unreadBadge = '9+';
+  else if (unread > 0) unreadBadge = String(unread);
+
+  // Thanh tab luôn hiện ở các tab chính, chỉ ẩn khi keyboard mở.
   const visible = !keyboardOpen;
+  const bottomPad = Math.max(insets.bottom, 8);
 
   const activeIndex = useMemo(() => pathToActiveIndex(pathname), [pathname]);
 
   const translateY = useSharedValue(0);
   const fabRotation = useSharedValue(0);
-  const indicatorIndex = useSharedValue(activeIndex);
 
   useEffect(() => {
-    const target = visible ? 0 : PILL_HEIGHT + insets.bottom + 32;
+    const target = visible ? 0 : BAR_HEIGHT + bottomPad + 8;
     if (useAnim) {
       translateY.value = withSpring(target, {
         damping: 22,
@@ -134,21 +117,7 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
     } else {
       translateY.value = target;
     }
-  }, [visible, useAnim, translateY, insets.bottom]);
-
-  useEffect(() => {
-    if (activeIndex < 0) return;
-    if (useAnim) {
-      indicatorIndex.value = withSpring(activeIndex, {
-        damping: 20,
-        stiffness: 180,
-        mass: 0.8,
-        overshootClamping: false,
-      });
-    } else {
-      indicatorIndex.value = activeIndex;
-    }
-  }, [activeIndex, useAnim, indicatorIndex]);
+  }, [visible, useAnim, translateY, bottomPad]);
 
   useEffect(() => {
     const target = isPlusActive ? 1 : 0;
@@ -163,26 +132,9 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
     }
   }, [isPlusActive, useAnim, fabRotation]);
 
-  const dockAnimatedStyle = useAnimatedStyle(() => ({
+  const barAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
-
-  const indicatorAnimatedStyle = useAnimatedStyle(() => {
-    const x = interpolate(
-      indicatorIndex.value,
-      [
-        NAV_INDEX_HOME,
-        NAV_INDEX_PRESETS,
-        NAV_INDEX_NOTIF,
-        NAV_INDEX_SETTINGS,
-      ],
-      INDICATOR_OFFSETS,
-    );
-    return {
-      opacity: activeIndex < 0 ? 0 : 1,
-      transform: [{ translateX: x }],
-    };
-  });
 
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${fabRotation.value * 45}deg` }],
@@ -202,155 +154,96 @@ export function AppDock({ onPlusPress, isPlusActive = false }: AppDockProps) {
     onPlusPress();
   };
 
-  // Glass: BlurView làm phần frosted; overlay rất nhạt chỉ để tăng tương phản
-  // icon, KHÔNG đè lấp blur. Alpha thấp = thấy rõ blur của nội dung bên dưới.
-  const dockOverlay = c.isDark
-    ? 'rgba(28,28,32,0.18)'
-    : 'rgba(255,255,255,0.22)';
-  const dockBorderColor = c.isDark
-    ? 'rgba(255,255,255,0.16)'
-    : 'rgba(255,255,255,0.45)';
-  const indicatorBg = c.isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.08)';
-  const fabBg = c.primary;
-  const fabFg = c.inverseForeground;
-  const iconColor = c.foreground;
-  const inactiveIconColor = c.muted;
-
   return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.wrap, { paddingBottom: insets.bottom + 16 }]}
+    <Animated.View
+      style={[
+        styles.bar,
+        {
+          backgroundColor: c.surface,
+          borderTopColor: c.divider,
+          paddingBottom: bottomPad,
+        },
+        barAnimatedStyle,
+      ]}
     >
-      <Animated.View
-        style={[
-          styles.pill,
-          {
-            shadowColor: c.isDark ? '#000' : '#1A1A1F',
-            borderColor: dockBorderColor,
-          },
-          dockAnimatedStyle,
-        ]}
-      >
-        <BlurView
-          intensity={100}
-          tint={c.isDark ? 'dark' : 'light'}
-          blurMethod="dimezisBlurViewSdk31Plus"
-          blurReductionFactor={1}
-          style={StyleSheet.absoluteFill}
-        />
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: dockOverlay },
-          ]}
-        />
+      <DockNavItem
+        Icon={MessagesSquare}
+        label="Nhóm"
+        isActive={activeIndex === NAV_INDEX_HOME}
+        accessibilityLabel="Nhóm của bạn"
+        onPress={() => navigateTo('/')}
+      />
 
-        <Animated.View
-          style={[
-            styles.indicator,
-            { backgroundColor: indicatorBg },
-            indicatorAnimatedStyle,
-          ]}
-          pointerEvents="none"
-        />
+      <DockNavItem
+        Icon={Zap}
+        label="Preset"
+        isActive={activeIndex === NAV_INDEX_PRESETS}
+        accessibilityLabel="Preset khoản chi"
+        onPress={() => navigateTo('/presets')}
+      />
 
-        <DockNavItem
-          Icon={Home}
-          isActive={activeIndex === NAV_INDEX_HOME}
-          color={
-            activeIndex === NAV_INDEX_HOME ? iconColor : inactiveIconColor
-          }
-          accessibilityLabel="Trang chủ"
-          onPress={() => navigateTo('/')}
-        />
-
-        <DockNavItem
-          Icon={Bookmark}
-          isActive={activeIndex === NAV_INDEX_PRESETS}
-          color={
-            activeIndex === NAV_INDEX_PRESETS ? iconColor : inactiveIconColor
-          }
-          accessibilityLabel="Preset khoản chi"
-          onPress={() => navigateTo('/presets')}
-        />
-
+      <View style={styles.fabSlot}>
         <Pressable
           onPress={handlePlus}
           accessibilityRole="button"
           accessibilityLabel="Thêm khoản chi mới"
           accessibilityState={{ expanded: isPlusActive }}
-          style={styles.fabPressable}
+          hitSlop={6}
           android_ripple={{
-            color: c.divider,
+            color: c.primarySoft,
             borderless: true,
             radius: FAB_SIZE / 2,
           }}
         >
           <Animated.View
-            style={[
-              styles.fab,
-              {
-                backgroundColor: fabBg,
-                shadowColor: c.isDark ? '#000' : c.primary,
-              },
-              fabAnimatedStyle,
-            ]}
+            style={[styles.fab, { backgroundColor: c.primary }, fabAnimatedStyle]}
           >
-            <Plus size={28} color={fabFg} strokeWidth={2.4} />
+            <Plus size={26} color={c.inverseForeground} strokeWidth={2.4} />
           </Animated.View>
         </Pressable>
+      </View>
 
-        <DockNavItem
-          Icon={Bell}
-          isActive={activeIndex === NAV_INDEX_NOTIF}
-          color={
-            activeIndex === NAV_INDEX_NOTIF ? iconColor : inactiveIconColor
-          }
-          accessibilityLabel={`Thông báo${unread > 0 ? `, ${unread} chưa đọc` : ''}`}
-          onPress={() => navigateTo('/notifications')}
-          badge={unread > 0 ? (unread > 9 ? '9+' : String(unread)) : null}
-          badgeBg={c.danger}
-          badgeBorder={c.background}
-        />
+      <DockNavItem
+        Icon={Bell}
+        label="Thông báo"
+        isActive={activeIndex === NAV_INDEX_NOTIF}
+        accessibilityLabel={`Thông báo${unread > 0 ? `, ${unread} chưa đọc` : ''}`}
+        onPress={() => navigateTo('/notifications')}
+        badge={unreadBadge}
+      />
 
-        <DockNavItem
-          Icon={Settings}
-          isActive={activeIndex === NAV_INDEX_SETTINGS}
-          color={
-            activeIndex === NAV_INDEX_SETTINGS ? iconColor : inactiveIconColor
-          }
-          accessibilityLabel="Cài đặt"
-          onPress={() => navigateTo('/settings')}
-        />
-      </Animated.View>
-    </View>
+      <DockNavItem
+        Icon={UserRound}
+        label="Cài đặt"
+        isActive={activeIndex === NAV_INDEX_SETTINGS}
+        accessibilityLabel="Cài đặt"
+        onPress={() => navigateTo('/settings')}
+      />
+    </Animated.View>
   );
 }
 
 interface DockNavItemProps {
-  Icon: typeof Home;
+  Icon: typeof Bell;
+  label: string;
   isActive: boolean;
-  color: string;
   accessibilityLabel: string;
   onPress: () => void;
   badge?: string | null;
-  badgeBg?: string;
-  badgeBorder?: string;
 }
 
 function DockNavItem({
   Icon,
+  label,
   isActive,
-  color,
   accessibilityLabel,
   onPress,
   badge,
-  badgeBg,
-  badgeBorder,
 }: DockNavItemProps) {
+  const c = useAppTheme();
   const scale = useSharedValue(1);
   const animationsEnabled = useAnimationsEnabled();
+  const color = isActive ? c.primary : c.muted;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -358,7 +251,7 @@ function DockNavItem({
 
   const onPressIn = () => {
     if (animationsEnabled) {
-      scale.value = withSpring(0.9, { damping: 14, stiffness: 320 });
+      scale.value = withSpring(0.92, { damping: 14, stiffness: 320 });
     }
   };
   const onPressOut = () => {
@@ -372,85 +265,73 @@ function DockNavItem({
       onPress={onPress}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
-      accessibilityRole="button"
+      accessibilityRole="tab"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: isActive }}
-      style={styles.navItemPressable}
-      hitSlop={6}
+      style={styles.navItem}
     >
       <Animated.View style={[styles.navItemInner, animatedStyle]}>
-        <Icon size={22} color={color} strokeWidth={isActive ? 2.4 : 1.9} />
-        {badge && badgeBg && badgeBorder ? (
-          <View
-            style={[
-              styles.badge,
-              { backgroundColor: badgeBg, borderColor: badgeBorder },
-            ]}
-          >
-            <AppText
-              variant="meta"
-              weight="bold"
-              tone="inverse"
-              style={styles.badgeText}
+        <View>
+          <Icon size={22} color={color} strokeWidth={isActive ? 2.3 : 1.9} />
+          {badge ? (
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: c.danger, borderColor: c.surface },
+              ]}
             >
-              {badge}
-            </AppText>
-          </View>
-        ) : null}
+              <AppText
+                variant="meta"
+                weight="bold"
+                style={[styles.badgeText, { color: c.isDark ? c.background : '#FFFFFF' }]}
+              >
+                {badge}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+        <AppText
+          variant="meta"
+          weight={isActive ? 'bold' : 'medium'}
+          numberOfLines={1}
+          style={[styles.label, { color }]}
+        >
+          {label}
+        </AppText>
       </Animated.View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  bar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  pill: {
-    width: PILL_WIDTH,
-    height: PILL_HEIGHT,
-    borderRadius: PILL_HEIGHT / 2,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: PILL_PADDING_H,
-    gap: ITEM_GAP,
-    borderWidth: StyleSheet.hairlineWidth,
-    // overflow:hidden để clip BlurView/overlay theo bo tròn. Trên Android,
-    // elevation shadow vẫn render bên ngoài nên không bị mất.
-    overflow: 'hidden',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 6,
+    paddingTop: 4,
+    paddingHorizontal: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  indicator: {
-    position: 'absolute',
-    width: INDICATOR_SIZE,
-    height: INDICATOR_SIZE,
-    borderRadius: INDICATOR_SIZE / 2,
-    top: (PILL_HEIGHT - INDICATOR_SIZE) / 2,
-    left: 0,
-  },
-  navItemPressable: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
+  navItem: {
+    flex: 1,
+    height: BAR_HEIGHT - 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
   navItemInner: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
   },
-  fabPressable: {
-    width: FAB_SIZE,
-    height: FAB_SIZE,
+  label: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  fabSlot: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -460,18 +341,14 @@ const styles = StyleSheet.create({
     borderRadius: FAB_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.32,
-    shadowRadius: 10,
-    elevation: 8,
   },
   badge: {
     position: 'absolute',
-    top: 2,
-    right: 2,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -5,
+    right: -9,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',

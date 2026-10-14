@@ -151,6 +151,11 @@ Mọi op mới thêm vào dispatcher PHẢI tuân pattern này nếu không ph�
   helper `_*` khỏi authenticated, pin search_path 5 SECURITY DEFINER func còn thiếu.
 - `20260604130000_rate_limit_triggers.sql` — rate-limit sliding-window (5 BEFORE INSERT
   trigger) + spoof guard + 6 index composite. Xem mục "Rate limiting (chống abuse)".
+- `20261014120000_pinned_trips_raise_limit.sql` — ghim chuyến 2 → 20, pin mới lên đầu hàng,
+  reorder nhận >= 2 id. Xem mục "Chuyến đi ghim (home)".
+- `20261014130000_preset_select_policy_allow_soft_deleted.sql` — sửa lỗi KHÔNG xoá được preset
+  (từ 27/05/2026): policy SELECT có `deleted_at IS NULL` làm UPDATE xoá mềm trượt RLS (Postgres
+  áp USING của SELECT lên hàng mới khi UPDATE có WHERE). Xem mục "Preset khoản chi".
 
 ### Conflict resolution UI
 - Modal hiện khi sync engine catch `P0410` → emit `ConflictEvent` → mount-time listener
@@ -293,6 +298,17 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Screens lớn (>300 dòng) PHẢI tách thành sub-components theo tab/section.
 - Sub-components dùng `React.memo()`. Nguồn data linh hoạt: props, store (Zustand), context — chọn cái hợp lý nhất theo từng case (data đã có sẵn ở parent → props; cross-tree shared state → store/context). Không có quy tắc cứng.
 - `useAppTheme()` trả về `{ isDark, ...colors }` — KHÔNG import `useIsDark()` riêng (deprecated).
+- Bóng đổ (`shadowColor`) luôn `'#000000'` — KHÔNG dùng `c.foreground` (ở chế độ tối là màu sáng → quầng sáng quanh thẻ).
+
+### Loading / skeleton
+- Trạng thái tải toàn màn dùng skeleton dựng từ [Skeleton.tsx](src/components/ui/Skeleton.tsx): `SkeletonPulse` (gốc, 1 nhịp opacity chung, tự đứng yên khi tắt "Hiệu ứng chuyển động"/giảm chuyển động) + `Bone` (khối) + `RowsSkeleton` (dòng kiểu chat: avatar tròn hoặc ô bo góc + 2 dòng chữ + đường kẻ). Mỗi màn lớn có skeleton riêng khớp hình học màn thật: `HomeSkeleton`, `TripThreadSkeleton`, `TripInfoSkeleton`, `GroupDetailSkeleton`. Sửa layout màn nào → sửa skeleton màn đó cùng lúc.
+- **KHÔNG dùng `Skeleton`/`SkeletonGroup` của heroui-native**: chúng gắn layout animation `entering`/`exiting` (FadeIn/FadeOut) — loại animation từng crash bản release trên OPPO/ColorOS — và lúc unmount còn mờ dần đè lên nội dung thật.
+- Spinner (`ActivityIndicator`) chỉ dùng cho nút/sheet nhỏ, không cho cả màn.
+
+### Chuyến đi ghim (home)
+- Tối đa `MAX_PINNED_TRIPS = 20` ([constants.ts](src/config/constants.ts)) — PHẢI khớp số trong RPC `pin_trip` (migration `20261014120000_pinned_trips_raise_limit.sql`). Hàng "story" cuộn ngang ở home (`TripStoriesRow`), ô "Ghim/Sửa ghim" đứng đầu hàng.
+- Chuyến vừa ghim lên ĐẦU hàng (position 0, pin cũ dời +1); unpin dồn lại 0..n-1; `reorder_pinned_trips` nhận >= 2 id và hoán vị trong chính các slot chúng chiếm (client cũ gửi 2 id vẫn đúng). Local mirror trong `trip.service.ts` làm y hệt.
+- `TripStoriesRow` dùng `ScrollView` của **react-native-gesture-handler** (không phải RN): tab Home nằm trong `reanimated-tab-view` có Pan ngang, ScrollView RN thường bị Pan đó cướp cử chỉ → vuốt hàng ghim lại nhảy tab. Mọi list cuộn ngang trong tab chính cũng phải làm vậy.
 
 ### Nút xoá nhanh (clear "x") trong ô input
 - `AppTextField` (heroui `InputGroup` + `Suffix`) và `FloatingLabelInput` (`TextInput` thuần + row) hiện nút `circle-x` ở cuối ô khi **focus + có nội dung**. Prop `clearable` mặc định `true`.
@@ -327,7 +343,7 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - Pattern: chip render là sibling của `BottomSheet.Content` trong `<BottomSheet.Portal>`, dùng `<KeyboardStickyView offset={{ closed: 0, opened: 0 }}>` từ `react-native-keyboard-controller`. Component này tự dock chip ở mép trên keyboard, animation worklet đồng bộ frame-by-frame, đã handle cross-OEM (Xiaomi MIUI, Oppo, Samsung) — không cần tự tính `kbHeight + insets.bottom`.
 - Track focus của input tiền qua `onFocus`/`onBlur` → render chip có điều kiện `isOpen && amountFocused` để không hiện khi user focus input khác.
 - `KeyboardProvider` đã wrap ở root layout (`src/app/_layout.tsx`) — bắt buộc trước khi dùng bất kỳ API nào của keyboard-controller.
-- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — model "chữ số có nghĩa": chip = `n × 10^k` (số gõ thêm các số 0 ở nhiều bậc), lọc theo `≥ 10.000đ` (MIN, bỏ mức 1k–9k) + `≤ 10 triệu` (MAX, app chia tiền không phải ngân hàng) + bội số 1.000đ, lấy 4 chip nhỏ nhất. Gõ rỗng → defaults `[50k, 100k, 200k, 500k]`. Ví dụ: "1" → `[10k, 100k, 1tr, 10tr]`; "8"/"80"/"800"/"8000"/"80000" đều → `[80k, 800k, 8tr]` (số 0 cuối không đổi ladder); "35" → `[35k, 350k, 3.5tr]`; "150" → `[15k, 150k, 1.5tr]`. List rỗng KHI số literal đã > 10tr (vd "20000000"). Đây là fix cho bug cũ: model "đơn vị nghìn" (smallest = n×1.000) làm "80000" → 80tr vượt cap → rỗng hết.
+- Logic suggestions ở `computeMoneySuggestions()` trong `src/utils/format.ts` — model "chữ số có nghĩa": chip = `n × 10^k` (số gõ thêm các số 0 ở nhiều bậc), lọc theo `≥ 10.000đ` (MIN, bỏ mức 1k–9k) + `< 10 triệu` (MAX loại trừ, app chia tiền không phải ngân hàng) + bội số 1.000đ, lấy 3 chip nhỏ nhất, và **KHÔNG gợi ý lại số đang có trong ô**. Gõ rỗng → defaults `[50k, 100k, 200k]`. Ví dụ: "1" → `[10k, 100k, 1tr]`; "8"/"80"/"800"/"8000" đều → `[80k, 800k, 8tr]` (số 0 cuối không đổi ladder); "80000" → `[800k, 8tr]` (bỏ 80k = số đang gõ); "450000" → `[4.5tr]`; "35" → `[35k, 350k, 3.5tr]`; "150" → `[15k, 150k, 1.5tr]`. List rỗng (dock tự ẩn) KHI không còn bậc nào < 10tr ngoài chính số đang gõ (vd "2000000", "20000000"). Đây là fix cho bug cũ: model "đơn vị nghìn" (smallest = n×1.000) làm "80000" → 80tr vượt cap → rỗng hết.
 - Reference implementation: `src/components/common/PresetFormModal.tsx`.
 
 ### User profile
@@ -366,7 +382,7 @@ Rate-limited: 5s minimum giữa 2 run, single-flight (1 run-at-a-time).
 - "Full" preset = trip-pinned có đủ `paid_by + splits` → enable 1-tap submit từ dock qua confirm dialog. Check qua `isFullPreset()`.
 - Apply preset vào trip qua `applyPresetToTrip()` ở [preset.service.ts](src/services/preset.service.ts): validate paid_by + splits members còn `left_at IS NULL`, fallback graceful (current user / chia đều all active) + warnings inline.
 - 2 partial unique indexes thay vì `UNIQUE(user_id, title)`: `(user_id, title) WHERE trip_id IS NULL` cho global, `(user_id, title, trip_id) WHERE trip_id IS NOT NULL` cho trip-pinned. Service catch `23505` → throw "Đã có preset trùng tên trong phạm vi này".
-- Hard delete (không có `deleted_at`). Xóa có confirm qua `BouncyDialog`.
+- Xoá = **soft delete** (`deleted_at`, migration `20260521100100`), có confirm qua `BouncyDialog`. Policy SELECT chỉ kiểm chủ sở hữu (KHÔNG lọc `deleted_at` — nếu lọc thì UPDATE xoá mềm bị RLS chặn, xem migration `20261014130000`) → **mọi chỗ đọc preset PHẢI tự lọc `deleted_at IS NULL`** (service `.is('deleted_at', null)`, SQLite `deleted_at IS NULL`). Pull delta nhờ vậy thấy được hàng đã xoá → xoá từ thiết bị khác về được mirror local.
 - `paid_by_member_id` ON DELETE SET NULL (member rời không phải xóa hard); validate runtime + fallback ở apply-time.
 - Reuse `validateAmount` (từ `src/utils/split.ts`, bội 1.000đ) + `validateName` (từ `src/utils/validate.ts`) + `splitEqual`/`splitByRatio` để resolve final amounts khi apply.
 - Sort theo `updated_at DESC`. Cột `updated_at` tự động refresh qua trigger `set_updated_at`.

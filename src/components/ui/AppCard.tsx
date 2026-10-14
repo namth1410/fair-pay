@@ -74,7 +74,11 @@ export function AppCard({
     styles.card,
     {
       backgroundColor: c.surface,
-      shadowColor: c.foreground,
+      // Bóng luôn đen: shadowColor theo màu chữ sẽ thành quầng sáng quanh thẻ ở chế độ tối.
+      shadowColor: '#000000',
+      // Hairline để thẻ vẫn tách nền khi nằm trên màn trắng (giao diện "Hội thoại").
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.divider,
     },
     borderLeft && { borderLeftWidth: borderLeft.width, borderLeftColor: borderLeft.color },
     style,
@@ -106,7 +110,6 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     marginBottom: 8,
-    // Subtle soft shadow — pink undertone set via shadowColor above
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 3,

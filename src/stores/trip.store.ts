@@ -104,7 +104,7 @@ interface TripState {
   loadPinnedTrips: () => Promise<void>;
   togglePin: (tripId: string) => Promise<void>;
   loadAllUserTrips: () => Promise<void>;
-  reorderPinnedTripsLocal: (orderedTripIds: [string, string]) => Promise<void>;
+  reorderPinnedTripsLocal: (orderedTripIds: string[]) => Promise<void>;
 
   loadExpenses: (tripId: string) => Promise<void>;
   addExpense: (params: {
@@ -404,7 +404,7 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   loadBalances: async (tripId, opts) => {
     // Initial fetch (mount trip detail) hoặc post-RPC mass-delete: populate cache đầy đủ.
-    // Toggle isLoadingExpenses để ExpensesTab hiện skeleton — tránh phải gọi
+    // Toggle isLoadingExpenses để màn chuyến đi biết đang nạp — tránh phải gọi
     // loadExpenses/loadPayments riêng (sẽ trùng query + race ordering, gây flicker).
     // Khi đổi trip: clear cache cũ TRƯỚC fetch để screen detail không render data trip
     // trước. Race-guard sau await tránh fetch chậm ghi đè data của trip mới.
@@ -557,7 +557,12 @@ export const useTripStore = create<TripState>((set, get) => ({
       });
     } else {
       nextIds.add(tripId);
-      set({ pinnedTripIds: nextIds });
+      // Server đưa chuyến mới ghim lên đầu hàng → hiện ngay ở đầu nếu đã có data trip.
+      const trip = get().allUserTrips?.find((t) => t.id === tripId);
+      set({
+        pinnedTripIds: nextIds,
+        ...(trip ? { pinnedTrips: [trip, ...pinnedTrips] } : {}),
+      });
     }
 
     try {
@@ -566,7 +571,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       } else {
         await pinTrip(tripId);
       }
-      // Refetch để đồng bộ position (đặc biệt sau unpin có thể compact pos 1 → 0)
+      // Refetch để đồng bộ position với server (pin mới lên đầu, unpin dồn lại 0..n-1).
       await get().loadPinnedTrips();
     } catch (e) {
       // Rollback
@@ -589,13 +594,18 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   reorderPinnedTripsLocal: async (orderedTripIds) => {
     const { pinnedTrips } = get();
-    const [idA, idB] = orderedTripIds;
-    const tripA = pinnedTrips.find((t) => t.id === idA);
-    const tripB = pinnedTrips.find((t) => t.id === idB);
-    if (!tripA || !tripB) return;
+    const byId = new Map(pinnedTrips.map((t) => [t.id, t]));
+    const queue = orderedTripIds.map((id) => byId.get(id));
+    if (queue.length < 2 || queue.some((t) => !t)) return;
 
-    // Optimistic swap
-    set({ pinnedTrips: [tripA, tripB] });
+    // Optimistic: hoán vị các trip được liệt kê trong chính các slot chúng chiếm (khớp RPC).
+    const listed = new Set(orderedTripIds);
+    let k = 0;
+    set({
+      pinnedTrips: pinnedTrips.map((t) =>
+        listed.has(t.id) ? (queue[k++] as TripWithGroup) : t
+      ),
+    });
 
     try {
       await reorderPinnedTrips(orderedTripIds);

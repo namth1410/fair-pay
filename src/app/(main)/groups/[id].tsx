@@ -2,7 +2,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { Button } from 'heroui-native';
 import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -15,13 +15,14 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { AddMemberSheet } from '../../../components/common/AddMemberSheet';
 import { ApproveJoinRequestSheet } from '../../../components/group/ApproveJoinRequestSheet';
+import { GroupDetailSkeleton } from '../../../components/group/GroupDetailSkeleton';
 import { GroupEditSheet } from '../../../components/group/GroupEditSheet';
 import { GroupSettingsTab } from '../../../components/group/GroupSettingsTab';
 import { MembersTab } from '../../../components/group/MembersTab';
 import { RenameMemberSheet } from '../../../components/group/RenameMemberSheet';
 import { TripsTab } from '../../../components/group/TripsTab';
 import { TripActionSheet } from '../../../components/trip/TripActionSheet';
-import { Avatar, BouncyDialog, SectionTabs } from '../../../components/ui';
+import { AppText, Avatar, BouncyDialog, SectionTabs } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import { getAuthUserId } from '../../../services/auth.helper';
 import type {
@@ -124,7 +125,10 @@ export default function GroupDetailScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (!user || !currentGroupMembers.length) return;
+    // Lượt render đầu, store còn giữ thành viên của nhóm vừa xem trước → tính vai trò từ đó
+    // sẽ "mượn" quyền admin nhóm cũ và gọi API chỉ-admin cho nhóm này (assertRole ném lỗi
+    // không ai bắt). Chỉ tính khi store đã chuyển sang đúng nhóm này.
+    if (!user || currentGroupId !== id || !currentGroupMembers.length) return;
     const findMyRole = async () => {
       const appUserId = await getAuthUserId();
       if (appUserId) {
@@ -133,7 +137,7 @@ export default function GroupDetailScreen() {
       }
     };
     findMyRole();
-  }, [user, currentGroupMembers]);
+  }, [user, currentGroupMembers, currentGroupId, id]);
 
   const isAdmin = myRole === 'admin';
 
@@ -341,15 +345,15 @@ export default function GroupDetailScreen() {
   const isHydrating = currentGroupId !== id || !group;
   if (isHydrating) {
     return (
-      <View style={[styles.container, styles.hydrating, { backgroundColor: c.background }]}>
+      <View style={[styles.container, { backgroundColor: c.surface }]}>
         <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
-        <ActivityIndicator size="large" color={c.tint} />
+        <GroupDetailSkeleton />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: c.background }]}>
+    <View style={[styles.container, { backgroundColor: c.surface }]}>
       <Stack.Screen options={{ title: group?.name || 'Nhóm' }} />
 
       {group ? (
@@ -368,18 +372,27 @@ export default function GroupDetailScreen() {
               seed={group.id}
               label={group.name}
               photoUrl={group.avatar_url}
-              size={96}
+              size={84}
             />
             {isAdmin ? (
               <View
                 style={[
                   styles.editBadge,
-                  { backgroundColor: c.primary, borderColor: c.background },
+                  { backgroundColor: c.primary, borderColor: c.surface },
                 ]}
               >
-                <Pencil size={12} color={c.background} />
+                <Pencil size={12} color={c.inverseForeground} />
               </View>
             ) : null}
+          </View>
+          <View style={styles.heroTexts}>
+            <AppText variant="title" weight="extrabold" numberOfLines={1} center>
+              {group.name}
+            </AppText>
+            <AppText variant="caption" tone="muted" center>
+              {currentGroupMembers.length} thành viên · {trips.length} chuyến đi
+              {isAdmin ? ' · bạn là quản trị' : ''}
+            </AppText>
           </View>
         </Pressable>
       ) : null}
@@ -579,7 +592,6 @@ export default function GroupDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  hydrating: { justifyContent: 'center', alignItems: 'center' },
   tabViewport: { flex: 1, overflow: 'hidden' },
   tabRow: { flex: 1, flexDirection: 'row' },
   settingsContent: { padding: 16, gap: 16 },
@@ -592,6 +604,11 @@ const styles = StyleSheet.create({
   },
   heroAvatarWrap: {
     position: 'relative',
+  },
+  heroTexts: {
+    alignItems: 'center',
+    gap: 2,
+    maxWidth: '100%',
   },
   editBadge: {
     position: 'absolute',

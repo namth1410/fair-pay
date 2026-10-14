@@ -1,17 +1,20 @@
 import { Button } from 'heroui-native';
+import Lock from 'lucide-react-native/dist/esm/icons/lock';
 import MapPin from 'lucide-react-native/dist/esm/icons/map-pin';
+import Pin from 'lucide-react-native/dist/esm/icons/pin';
 import React, { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
 import type { Trip } from '../../services/trip.service';
 import { useTripStore } from '../../stores/trip.store';
+import { hapticLight } from '../../utils/haptics';
+import { pickPastel } from '../../utils/seedGradient';
 import { CreateTripSheet } from '../trip/CreateTripSheet';
 import {
-  AppCard,
   AppText,
   EmptyState,
-  ListSkeleton,
+  RowsSkeleton,
 } from '../ui';
 
 interface TripsTabProps {
@@ -25,6 +28,7 @@ interface TripsTabProps {
   onCreateSuccess?: (name: string) => void;
 }
 
+// Danh sách chuyến của nhóm như các "luồng" chat (giao diện "Hội thoại" 2026-10).
 export const TripsTab = React.memo(function TripsTab({
   trips, isLoading, isAdmin, groupId, onTripPress, onToggleStatus, onTripLongPress, onCreateSuccess,
 }: TripsTabProps) {
@@ -32,49 +36,68 @@ export const TripsTab = React.memo(function TripsTab({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const pinnedTripIds = useTripStore((s) => s.pinnedTripIds);
 
-  const renderTrip = ({ item }: { item: Trip }) => {
+  const renderTrip = ({ item, index }: { item: Trip; index: number }) => {
     const isPinned = pinnedTripIds.has(item.id);
-    const statusLabel = item.status === 'open' ? 'Đang mở' : 'Đã đóng';
+    const isClosed = item.status !== 'open';
+    const pastel = pickPastel(item.id, c.isDark);
+    const isLast = index === trips.length - 1;
     return (
-    <AppCard
-      title={item.name}
-      subtitle={isPinned ? `📌 ${statusLabel}` : statusLabel}
-      onPress={() => onTripPress(item.id)}
-      onLongPress={onTripLongPress ? () => onTripLongPress(item) : undefined}
-      leading={
-        <View style={[styles.iconWrap, { backgroundColor: c.primarySoft }]}>
-          <MapPin size={20} color={c.foreground} strokeWidth={1.75} />
+      <Pressable
+        onPress={() => {
+          hapticLight();
+          onTripPress(item.id);
+        }}
+        onLongPress={onTripLongPress ? () => onTripLongPress(item) : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`Chuyến ${item.name}, ${isClosed ? 'đã đóng' : 'đang mở'}${isPinned ? ', đã ghim' : ''}`}
+        android_ripple={{ color: c.surfaceAlt }}
+        style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.surfaceAlt }]}
+      >
+        <View style={[styles.icon, { backgroundColor: pastel.bg }]}>
+          <MapPin size={22} color={pastel.fg} strokeWidth={2} />
+          {!isClosed ? (
+            <View style={[styles.liveDot, { backgroundColor: c.success, borderColor: c.surface }]} />
+          ) : null}
         </View>
-      }
-      trailing={
-        isAdmin ? (
-          <Pressable
-            onPress={() => onToggleStatus(item)}
-            accessibilityRole="button"
-            accessibilityLabel={item.status === 'open' ? 'Đóng' : 'Mở lại'}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <AppText variant="caption" weight="semibold" tone={item.status === 'open' ? 'danger' : 'success'}>
-              {item.status === 'open' ? 'Đóng' : 'Mở lại'}
+        <View
+          style={[
+            styles.content,
+            !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.divider },
+          ]}
+        >
+          <View style={styles.titleRow}>
+            <AppText variant="subtitle" weight="bold" numberOfLines={1} style={styles.flex}>
+              {item.name}
             </AppText>
-          </Pressable>
-        ) : undefined
-      }
-    />
+            {isPinned ? <Pin size={14} color={c.muted} strokeWidth={2.2} /> : null}
+          </View>
+          <View style={styles.metaRow}>
+            {isClosed ? <Lock size={12} color={c.muted} strokeWidth={2.4} /> : null}
+            <AppText variant="caption" tone="muted" style={styles.flex} numberOfLines={1}>
+              {isClosed ? 'Đã đóng' : 'Đang mở'}
+            </AppText>
+            {isAdmin ? (
+              <Pressable
+                onPress={() => onToggleStatus(item)}
+                accessibilityRole="button"
+                accessibilityLabel={isClosed ? `Mở lại chuyến ${item.name}` : `Đóng chuyến ${item.name}`}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <AppText variant="caption" weight="semibold" tone={isClosed ? 'success' : 'danger'}>
+                  {isClosed ? 'Mở lại' : 'Đóng'}
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </Pressable>
     );
   };
 
   return (
     <>
-      {/* Mọi member đều tạo được chuyến đi (quản lý trip vẫn chỉ admin). */}
-      <View style={styles.sectionActions}>
-        <Button variant="primary" size="sm" onPress={() => setIsSheetOpen(true)}>
-          <Button.Label>Tạo chuyến</Button.Label>
-        </Button>
-      </View>
-
       {isLoading && trips.length === 0 ? (
-        <ListSkeleton count={3} />
+        <RowsSkeleton count={3} leading="tile" leadingSize={52} minHeight={74} />
       ) : (
         <FlatList
           data={trips}
@@ -84,6 +107,13 @@ export const TripsTab = React.memo(function TripsTab({
           ListEmptyComponent={<EmptyState icon={MapPin} title="Chưa có chuyến đi nào" />}
         />
       )}
+
+      {/* Mọi member đều tạo được chuyến đi (quản lý trip vẫn chỉ admin). */}
+      <View style={[styles.footer, { borderTopColor: c.divider, backgroundColor: c.surface }]}>
+        <Button variant="primary" onPress={() => setIsSheetOpen(true)}>
+          <Button.Label>Tạo chuyến đi mới</Button.Label>
+        </Button>
+      </View>
 
       <CreateTripSheet
         isOpen={isSheetOpen}
@@ -96,14 +126,53 @@ export const TripsTab = React.memo(function TripsTab({
 });
 
 const styles = StyleSheet.create({
-  sectionActions: { paddingHorizontal: 16, paddingBottom: 8 },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
+  list: { paddingBottom: 16 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingLeft: 16,
+    minHeight: 74,
+  },
+  icon: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  liveDot: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2.5,
+  },
+  content: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 13,
+    paddingRight: 16,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaRow: {
+    marginTop: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  flex: { flex: 1, minWidth: 0 },
+  footer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

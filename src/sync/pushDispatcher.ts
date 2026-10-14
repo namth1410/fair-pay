@@ -233,7 +233,7 @@ interface UnpinTripPayload {
 }
 
 interface ReorderPinnedTripsPayload {
-  trip_ids: [string, string];
+  trip_ids: string[];
   client_request_id: string;
 }
 

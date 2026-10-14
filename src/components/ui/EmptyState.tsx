@@ -19,27 +19,19 @@ interface EmptyStateProps {
   action?: EmptyStateAction;
 }
 
-// Soft decorative halo behind the icon — 3 pastel pink blobs xen kẽ, chỉ hint subtle.
+// Quầng mềm sau icon: 1 vầng xanh linh vật (primarySoft) loang ra mép. Trước là 3 đốm
+// pastel, trong đó đốm warmAccent — nay là xám chữ phụ — thành vệt xám sáng trên nền tối.
 const Halo = memo(function Halo({ c }: { c: ReturnType<typeof useAppTheme> }) {
   return (
     <Svg width={140} height={140} viewBox="0 0 140 140" style={styles.halo}>
       <Defs>
-        <RadialGradient id="halo-a" cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0%" stopColor={c.primarySoft} stopOpacity={0.9} />
+        <RadialGradient id="halo" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset="0%" stopColor={c.primarySoft} stopOpacity={1} />
+          <Stop offset="62%" stopColor={c.primarySoft} stopOpacity={0.85} />
           <Stop offset="100%" stopColor={c.primarySoft} stopOpacity={0} />
         </RadialGradient>
-        <RadialGradient id="halo-b" cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0%" stopColor={c.warmAccent} stopOpacity={0.6} />
-          <Stop offset="100%" stopColor={c.warmAccent} stopOpacity={0} />
-        </RadialGradient>
-        <RadialGradient id="halo-c" cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0%" stopColor={c.accentSoft} stopOpacity={0.8} />
-          <Stop offset="100%" stopColor={c.accentSoft} stopOpacity={0} />
-        </RadialGradient>
       </Defs>
-      <Circle cx={42} cy={58} r={40} fill="url(#halo-a)" />
-      <Circle cx={98} cy={50} r={34} fill="url(#halo-b)" />
-      <Circle cx={70} cy={95} r={44} fill="url(#halo-c)" />
+      <Circle cx={70} cy={70} r={66} fill="url(#halo)" />
     </Svg>
   );
 });

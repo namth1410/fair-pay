@@ -7,7 +7,7 @@ import { tryServerThenLocal } from '../sync/fallback';
 import { run as runSync } from '../sync/syncEngine';
 import * as syncQueue from '../sync/syncQueue';
 import { ENTITY_TYPES, OP_TYPES } from '../sync/types';
-import type { TripWithGroup } from '../types/database.types';
+import type { PinnedTripRow, TripWithGroup } from '../types/database.types';
 import { isNetworkError } from '../utils/network';
 import { validateName } from '../utils/validate';
 import { logAction } from './audit.service';
@@ -740,31 +740,42 @@ export async function fetchPinnedTrips(): Promise<TripWithGroup[]> {
 
 /**
  * Pin a trip — idempotent. Offline-first: optimistic update local pinned_trips +
- * enqueue. RPC pin_trip server-side đã handle limit 2 + ghost cleanup.
+ * enqueue. RPC pin_trip server-side đã handle limit MAX_PINNED_TRIPS + ghost cleanup và
+ * đưa chuyến mới lên đầu hàng (position 0, pin cũ dời +1) — local mirror làm y hệt.
  */
 export async function pinTrip(tripId: string): Promise<void> {
   const clientRequestId = globalThis.crypto.randomUUID();
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
 
-  const writeLocal = async (): Promise<void> => {
+  // serverRow = row RPC trả về (Flow A) → giữ đúng id server, để pull về sau upsert trùng id
+  // thay vì đụng UNIQUE(user_id, trip_id) với row local id random.
+  const writeLocal = async (serverRow?: PinnedTripRow | null): Promise<void> => {
     const db = getDatabase();
-    // Pick next position (0 hoặc 1). Nếu đã có 2 pin → server reject hoặc replace.
-    const existing = await db.getAllAsync<{ position: number }>(
-      `SELECT position FROM pinned_trips WHERE user_id = ? ORDER BY position`,
-      [userId]
-    );
-    const usedPositions = new Set(existing.map((p) => p.position));
-    let nextPos = 0;
-    while (usedPositions.has(nextPos) && nextPos < 2) nextPos++;
-    const id = globalThis.crypto.randomUUID();
     const now = new Date().toISOString();
-    await db.runAsync(
-      `INSERT INTO pinned_trips (id, user_id, trip_id, position, pinned_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, trip_id) DO NOTHING`,
-      [id, userId, tripId, nextPos, now, now]
-    );
+    await db.withTransactionAsync(async () => {
+      const existing = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM pinned_trips WHERE user_id = ? AND trip_id = ?`,
+        [userId, tripId]
+      );
+      if (existing) return;
+      // Local không có UNIQUE(user_id, position) → dời thẳng, không cần slot tạm.
+      await db.runAsync(
+        `UPDATE pinned_trips SET position = position + 1 WHERE user_id = ?`,
+        [userId]
+      );
+      await db.runAsync(
+        `INSERT INTO pinned_trips (id, user_id, trip_id, position, pinned_at, updated_at)
+         VALUES (?, ?, ?, 0, ?, ?)`,
+        [
+          serverRow?.id ?? globalThis.crypto.randomUUID(),
+          userId,
+          tripId,
+          serverRow?.pinned_at ?? now,
+          serverRow?.updated_at ?? now,
+        ]
+      );
+    });
   };
 
   const enqueueLocal = async (): Promise<void> => {
@@ -788,9 +799,9 @@ export async function pinTrip(tripId: string): Promise<void> {
     return;
   }
   try {
-    const { error } = await supabase.rpc('pin_trip', { p_trip_id: tripId });
+    const { data, error } = await supabase.rpc('pin_trip', { p_trip_id: tripId });
     if (error) throw error;
-    await writeLocal();
+    await writeLocal(data as PinnedTripRow | null);
   } catch (err) {
     if (isNetworkError(err)) {
       if (__DEV__) console.warn('[pinTrip] network fail, queueing offline');
@@ -850,11 +861,13 @@ export async function unpinTrip(tripId: string): Promise<void> {
 }
 
 /**
- * Reorder 2 pin theo thứ tự mới: [pos0, pos1]. LWW theo timestamp cuối khi sync.
+ * Sắp lại thứ tự pin (>= 2 trip khác nhau, theo thứ tự mới). Khớp RPC
+ * reorder_pinned_trips: các trip được liệt kê hoán vị trong chính các slot chúng đang
+ * chiếm, pin không liệt kê giữ nguyên → truyền đủ mọi pin = sắp lại cả hàng.
+ * LWW theo timestamp cuối khi sync.
  */
-export async function reorderPinnedTrips(
-  orderedTripIds: [string, string]
-): Promise<void> {
+export async function reorderPinnedTrips(orderedTripIds: string[]): Promise<void> {
+  if (orderedTripIds.length < 2) return;
   const clientRequestId = globalThis.crypto.randomUUID();
   const userId = await getAuthUserId();
   if (!userId) throw new Error('Chưa đăng nhập');
@@ -864,28 +877,24 @@ export async function reorderPinnedTrips(
   const writeLocal = async (): Promise<void> => {
     const db = getDatabase();
     const now = new Date().toISOString();
-    // Local swap: tạm dùng position -1 / -2 tránh UNIQUE conflict trong transaction
+    const placeholders = orderedTripIds.map(() => '?').join(', ');
     await db.withTransactionAsync(async () => {
-      await db.runAsync(
-        `UPDATE pinned_trips SET position = -1, updated_at = ?
-          WHERE user_id = ? AND trip_id = ?`,
-        [now, userId, orderedTripIds[0]]
+      const slots = await db.getAllAsync<{ position: number }>(
+        `SELECT position FROM pinned_trips
+          WHERE user_id = ? AND trip_id IN (${placeholders})
+          ORDER BY position`,
+        [userId, ...orderedTripIds]
       );
-      await db.runAsync(
-        `UPDATE pinned_trips SET position = -2, updated_at = ?
-          WHERE user_id = ? AND trip_id = ?`,
-        [now, userId, orderedTripIds[1]]
-      );
-      await db.runAsync(
-        `UPDATE pinned_trips SET position = 0
-          WHERE user_id = ? AND trip_id = ?`,
-        [userId, orderedTripIds[0]]
-      );
-      await db.runAsync(
-        `UPDATE pinned_trips SET position = 1
-          WHERE user_id = ? AND trip_id = ?`,
-        [userId, orderedTripIds[1]]
-      );
+      // Mirror local thiếu pin nào đó → bỏ qua, pull kế tiếp lấy thứ tự server.
+      if (slots.length !== orderedTripIds.length) return;
+      // Local không có UNIQUE(user_id, position) → gán thẳng, không cần slot tạm.
+      for (const [i, slot] of slots.entries()) {
+        await db.runAsync(
+          `UPDATE pinned_trips SET position = ?, updated_at = ?
+            WHERE user_id = ? AND trip_id = ?`,
+          [slot.position, now, userId, orderedTripIds[i] ?? '']
+        );
+      }
     });
   };
 

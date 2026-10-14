@@ -3,7 +3,7 @@ import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { useAppTheme } from '../../hooks/useAppTheme';
-import { AnimatedEntrance, AppCard, EmptyState, Money } from '../ui';
+import { AnimatedEntrance, AppText, Avatar, EmptyState, Money } from '../ui';
 
 interface BalanceEntry {
   memberId: string;
@@ -15,6 +15,14 @@ interface BalancesTabProps {
   balances: BalanceEntry[];
 }
 
+function balanceCaption(balance: number): string {
+  if (balance > 0) return 'Được nhận';
+  if (balance < 0) return 'Đang nợ';
+  return 'Cân bằng';
+}
+
+// Số dư từng người dạng danh sách (giao diện "Hội thoại"). Dấu theo quy ước: truyền RAW
+// signed balance vào <Money showSign> — '+' được nhận, '-' đang nợ, 0 → "Cân bằng".
 export const BalancesTab = React.memo(function BalancesTab({ balances }: BalancesTabProps) {
   const c = useAppTheme();
 
@@ -29,26 +37,48 @@ export const BalancesTab = React.memo(function BalancesTab({ balances }: Balance
   return (
     <View style={styles.tabContent}>
       <ScrollView contentContainerStyle={styles.list}>
-        {balances.map((item, index) => {
-          const positive = item.balance >= 0;
-          return (
-            <AnimatedEntrance key={item.memberId} delay={Math.min(index * 60, 500)}>
-              <AppCard
-                title={item.memberName}
-                subtitle={positive ? 'Được nợ' : 'Đang nợ'}
-                borderLeft={{ width: 3, color: positive ? c.success : c.danger }}
-                trailing={
-                  <Money
-                    value={Math.abs(item.balance)}
-                    variant="default"
-                    tone={positive ? 'success' : 'danger'}
-                    showSign
-                  />
-                }
-              />
-            </AnimatedEntrance>
-          );
-        })}
+        <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
+          {balances.map((item, index) => {
+            const settled = item.balance === 0;
+            const positive = item.balance > 0;
+            const isLast = index === balances.length - 1;
+            return (
+              <AnimatedEntrance key={item.memberId} delay={Math.min(index * 45, 400)}>
+                <View
+                  style={[
+                    styles.row,
+                    !isLast && {
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: c.divider,
+                    },
+                  ]}
+                >
+                  <Avatar seed={item.memberId} label={item.memberName} size={36} />
+                  <View style={styles.texts}>
+                    <AppText variant="body" weight="semibold" numberOfLines={1}>
+                      {item.memberName}
+                    </AppText>
+                    <AppText variant="meta" tone="muted">
+                      {balanceCaption(item.balance)}
+                    </AppText>
+                  </View>
+                  {settled ? (
+                    <AppText variant="caption" weight="semibold" tone="muted">
+                      0đ
+                    </AppText>
+                  ) : (
+                    <Money
+                      value={item.balance}
+                      variant="default"
+                      tone={positive ? 'success' : 'danger'}
+                      showSign
+                    />
+                  )}
+                </View>
+              </AnimatedEntrance>
+            );
+          })}
+        </View>
       </ScrollView>
     </View>
   );
@@ -58,4 +88,17 @@ const styles = StyleSheet.create({
   tabContent: { flex: 1 },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
+  card: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 60,
+    paddingVertical: 10,
+  },
+  texts: { flex: 1, minWidth: 0 },
 });

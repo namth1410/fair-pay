@@ -31,7 +31,7 @@ import { getPresetsForContext, usePresetStore } from '../../stores/preset.store'
 import { useTripStore } from '../../stores/trip.store';
 import { cancelStaged, stageExpenseImage } from '../../sync/imageStaging';
 import { getErrorMessage } from '../../utils/error';
-import { formatThousands, parseMoneyInput } from '../../utils/format';
+import { formatThousands, formatVND, parseMoneyInput } from '../../utils/format';
 import { hapticSuccess } from '../../utils/haptics';
 import {
   type AvatarSource,
@@ -52,6 +52,7 @@ import { ImagePickerSheet } from '../common/ImagePickerSheet';
 import { AnimatedEntrance } from '../ui';
 import {
   AppText,
+  Avatar,
   BouncyDialog,
   ChipPicker,
   DismissKeyboardView,
@@ -61,6 +62,7 @@ import {
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 import { AddToField } from './AddToField';
 import { DateTimeField } from './DateTimeField';
+import { MemberAvatarPicker } from './MemberAvatarPicker';
 
 const SPLIT_TYPE_OPTIONS = [
   { key: 'equal' as const, label: 'Đều' },
@@ -859,11 +861,11 @@ export function ExpenseFormScreen({
 
           <DateTimeField value={date} onChange={setDate} maxDate={new Date()} />
 
-          <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-            Người trả
+          <AppText variant="caption" weight="bold" tone="muted" style={styles.fieldLabel}>
+            Ai trả?
           </AppText>
           {members.length > 0 ? (
-            <ChipPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
+            <MemberAvatarPicker options={memberOptions} selected={paidBy} onSelect={setPaidBy} />
           ) : (
             <AppText variant="caption" tone="muted">
               {requireTrip && !currentTripId
@@ -882,8 +884,8 @@ export function ExpenseFormScreen({
 
           {members.length > 0 && amount > 0 ? (
             <>
-              <AppText variant="meta" tone="muted" style={styles.fieldLabel}>
-                Cách chia
+              <AppText variant="caption" weight="bold" tone="muted" style={styles.fieldLabel}>
+                Chia thế nào?
               </AppText>
               <ChipPicker
                 options={SPLIT_TYPE_OPTIONS}
@@ -926,23 +928,29 @@ export function ExpenseFormScreen({
                       key={m.id}
                       style={[styles.splitRow, !selected && styles.splitRowDimmed]}
                     >
+                      {/* Avatar + dấu tích thay ô checkbox vuông (giao diện "Hội thoại"). */}
                       <Pressable
                         onPress={() => toggleParticipant(m.id)}
                         accessibilityRole="checkbox"
                         accessibilityState={{ checked: selected }}
                         accessibilityLabel={m.display_name}
                         hitSlop={6}
-                        style={[
-                          styles.checkbox,
-                          {
-                            borderColor: selected ? c.primaryStrong : c.divider,
-                            backgroundColor: selected ? c.primaryStrong : 'transparent',
-                          },
-                        ]}
+                        style={styles.splitAvatar}
                       >
-                        {selected ? (
-                          <Check size={14} color={c.background} strokeWidth={3} />
-                        ) : null}
+                        <Avatar seed={m.id} label={m.display_name} size={36} />
+                        <View
+                          style={[
+                            styles.splitCheck,
+                            {
+                              backgroundColor: selected ? c.primary : c.surface,
+                              borderColor: selected ? c.surface : c.divider,
+                            },
+                          ]}
+                        >
+                          {selected ? (
+                            <Check size={10} color={c.inverseForeground} strokeWidth={3.5} />
+                          ) : null}
+                        </View>
                       </Pressable>
                       <Pressable
                         onPress={() => toggleParticipant(m.id)}
@@ -1039,7 +1047,7 @@ export function ExpenseFormScreen({
                     {participants.size > 0 ? (
                       <AppText variant="caption" tone="muted" center>
                         Chia đều cho {participants.size} người ·{' '}
-                        {Math.floor(amount / participants.size).toLocaleString('vi-VN')}₫/người
+                        {Math.floor(amount / participants.size).toLocaleString('vi-VN')}đ/người
                       </AppText>
                     ) : (
                       <AppText variant="caption" tone="danger" weight="medium" center>
@@ -1067,8 +1075,8 @@ export function ExpenseFormScreen({
                           weight="medium"
                           center
                         >
-                          Tổng chia: {sum.toLocaleString('vi-VN')}₫ /{' '}
-                          {amount.toLocaleString('vi-VN')}₫
+                          Tổng chia: {formatVND(sum)} /{' '}
+                          {formatVND(amount)}
                         </AppText>
                       </View>
                     );
@@ -1422,10 +1430,19 @@ const styles = StyleSheet.create({
   splitRowDimmed: {
     opacity: 0.45,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+  splitAvatar: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitCheck: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',

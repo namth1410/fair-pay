@@ -1,6 +1,7 @@
-import { useNavigation } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import ArrowLeft from 'lucide-react-native/dist/esm/icons/arrow-left';
 import FileDown from 'lucide-react-native/dist/esm/icons/file-down';
+import Info from 'lucide-react-native/dist/esm/icons/info';
 import Plus from 'lucide-react-native/dist/esm/icons/plus';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
@@ -27,7 +28,9 @@ export function useHeaderSlots(
   routeName: string,
   hasBack: boolean,
   _title: string,
+  routeParams?: Readonly<Record<string, unknown>>,
 ): RouteSlots {
+  const routeId = typeof routeParams?.id === 'string' ? routeParams.id : null;
   const c = useAppTheme();
   const navigation = useNavigation();
   const requestPresetsAdd = useUIStore((s) => s.requestPresetsAdd);
@@ -93,10 +96,32 @@ export function useHeaderSlots(
       render: () => <MarkAllReadButton />,
     };
 
+    // Luồng chuyến đi → nút ⓘ mở "Thông tin chuyến" (số dư, quyết toán, lịch sử, quản lý).
+    const tripInfoSlot: Slot = {
+      id: 'trip-info',
+      render: () => (
+        <Pressable
+          onPress={() => {
+            if (!routeId) return;
+            hapticLight();
+            router.push(`/trips/${routeId}/info` as never);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Thông tin chuyến đi"
+          android_ripple={{ color: c.divider, borderless: true, radius: 22 }}
+          style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.5 }]}
+        >
+          <Info size={22} color={c.primary} strokeWidth={2} />
+        </Pressable>
+      ),
+    };
+
     const rightBalls: Slot[] = [];
     if (routeName === 'presets') {
       rightBalls.push(presetsAddSlot);
     } else if (routeName === 'trips/[id]/index') {
+      rightBalls.push(tripInfoSlot);
+    } else if (routeName === 'trips/[id]/info') {
       rightBalls.push(tripExportSlot);
     } else if (routeName === 'notifications') {
       rightBalls.push(markAllReadSlot);
@@ -109,7 +134,9 @@ export function useHeaderSlots(
   }, [
     hasBack,
     routeName,
+    routeId,
     c.foreground,
+    c.primary,
     c.divider,
     navigation,
     requestPresetsAdd,

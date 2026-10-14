@@ -3,6 +3,8 @@
  * Không bao giờ hiển thị lỗi raw cho người dùng.
  */
 
+import { MAX_PINNED_TRIPS } from '../config/constants';
+
 const ERROR_MAP: Record<string, string> = {
   // Supabase Auth
   'Invalid login credentials': 'Email hoặc mật khẩu không đúng',
@@ -91,10 +93,10 @@ const ERROR_MAP: Record<string, string> = {
   actor_spoof: 'Bạn không có quyền thực hiện thao tác này',
 
   // Pinned trips (pin_trip / unpin_trip / reorder_pinned_trips RPCs)
-  max_pinned_reached: 'Chỉ được ghim tối đa 2 chuyến đi',
+  max_pinned_reached: `Chỉ được ghim tối đa ${MAX_PINNED_TRIPS} chuyến đi`,
   forbidden: 'Bạn không có quyền thực hiện thao tác này',
-  'reorder requires exactly 2 trip ids': 'Cần đúng 2 chuyến đi để sắp xếp',
-  'reorder requires 2 distinct trip ids': 'Hai chuyến đi phải khác nhau',
+  'reorder requires at least 2 trip ids': 'Cần ít nhất 2 chuyến đi để sắp xếp',
+  'reorder requires distinct trip ids': 'Các chuyến đi sắp xếp phải khác nhau',
   'pin not found': 'Chuyến đi chưa được ghim',
 
   // Network

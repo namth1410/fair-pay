@@ -33,8 +33,9 @@ export const DISPLAY_NAME_MAX_LENGTH = 30;
 // Trip
 export const TRIP_NAME_MAX_LENGTH = 50;
 
-// Pinned trips (home shortcut)
-export const MAX_PINNED_TRIPS = 2;
+// Pinned trips (hàng "story" cuộn ngang ở home). PHẢI đồng bộ với limit trong RPC
+// pin_trip (migration 20261014120000_pinned_trips_raise_limit.sql).
+export const MAX_PINNED_TRIPS = 20;
 
 // Home — số nhóm tối thiểu để bật carousel/arc mode (khớp biên `allowLoop = total >= 3`
 // trong GroupCarousel/GroupArcCarousel). Dưới ngưỡng này, home ép `list` + ẩn toggle:

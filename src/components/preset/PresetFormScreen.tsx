@@ -19,7 +19,8 @@ import { getErrorMessage } from '../../utils/error';
 import { formatThousands, parseMoneyInput } from '../../utils/format';
 import { resolveRatio } from '../../utils/split';
 import { showSuccess } from '../../utils/toast';
-import { AppText, BouncyDialog, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
+import { MemberAvatarPicker } from '../expense/MemberAvatarPicker';
+import { AppText, Avatar, BouncyDialog, ChipPicker, DismissKeyboardView, MoneyChipsDock } from '../ui';
 import { FloatingLabelInput, FloatingMoneyInput } from '../ui/floating';
 
 interface PresetFormScreenProps {
@@ -574,11 +575,11 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                   </View>
 
                   <View style={styles.sectionField}>
-                    <AppText variant="meta" tone="muted">Người trả</AppText>
+                    <AppText variant="caption" weight="bold" tone="muted">Ai trả?</AppText>
                     {membersLoading ? (
                       <AppText variant="caption" tone="muted">Đang tải...</AppText>
                     ) : (
-                      <ChipPicker
+                      <MemberAvatarPicker
                         options={paidByOptions}
                         selected={paidByMemberId ?? '__none__'}
                         onSelect={(k) => setPaidByMemberId(k === '__none__' ? null : k)}
@@ -587,7 +588,7 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                   </View>
 
                   <View style={styles.sectionField}>
-                    <AppText variant="meta" tone="muted">Cách chia</AppText>
+                    <AppText variant="caption" weight="bold" tone="muted">Chia thế nào?</AppText>
                     <ChipPicker
                       options={SPLIT_OPTIONS}
                       selected={splitOpt}
@@ -611,21 +612,29 @@ export function PresetFormScreen({ presetId }: PresetFormScreenProps) {
                           const customVal = customAmounts[m.id] || '';
                           return (
                             <View key={m.id} style={styles.splitRow}>
+                              {/* Avatar + dấu tích thay ô checkbox vuông (giao diện "Hội thoại"). */}
                               <Pressable
                                 onPress={() => toggleSplitMember(m.id)}
                                 accessibilityRole="checkbox"
                                 accessibilityState={{ checked: selected }}
-                                style={[
-                                  styles.checkbox,
-                                  {
-                                    borderColor: selected ? c.primaryStrong : c.divider,
-                                    backgroundColor: selected ? c.primaryStrong : 'transparent',
-                                  },
-                                ]}
+                                accessibilityLabel={m.display_name}
+                                hitSlop={6}
+                                style={[styles.splitAvatar, !selected && styles.splitAvatarDimmed]}
                               >
-                                {selected ? (
-                                  <Check size={14} color={c.background} strokeWidth={3} />
-                                ) : null}
+                                <Avatar seed={m.id} label={m.display_name} size={36} />
+                                <View
+                                  style={[
+                                    styles.splitCheck,
+                                    {
+                                      backgroundColor: selected ? c.primary : c.surface,
+                                      borderColor: selected ? c.surface : c.divider,
+                                    },
+                                  ]}
+                                >
+                                  {selected ? (
+                                    <Check size={10} color={c.inverseForeground} strokeWidth={3.5} />
+                                  ) : null}
+                                </View>
                               </Pressable>
                               <Pressable
                                 onPress={() => toggleSplitMember(m.id)}
@@ -846,10 +855,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+  splitAvatar: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitAvatarDimmed: { opacity: 0.45 },
+  splitCheck: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',

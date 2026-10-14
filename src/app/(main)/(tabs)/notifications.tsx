@@ -12,10 +12,10 @@ import {
 } from 'react-native';
 
 import { InvitationConfirmDialog } from '../../../components/group/InvitationConfirmDialog';
-import { TabHeader } from '../../../components/header/TabHeader';
+import { LargeTitleHeader } from '../../../components/header/LargeTitleHeader';
+import { MarkAllReadButton } from '../../../components/header/MarkAllReadButton';
 import { NotificationRow } from '../../../components/notifications/NotificationRow';
-import { AppText, EmptyState, ListSkeleton } from '../../../components/ui';
-import { SkiaFireBorder } from '../../../components/ui/skia';
+import { AppText, EmptyState, RowsSkeleton } from '../../../components/ui';
 import { useAppTheme } from '../../../hooks/useAppTheme';
 import {
   fetchMyGroups,
@@ -236,15 +236,14 @@ export default function NotificationsScreen() {
         style={[
           styles.chip,
           {
-            backgroundColor: isSelected ? c.accentSoft : 'transparent',
-            borderColor: isSelected ? c.primaryStrong : c.divider,
+            backgroundColor: isSelected ? c.primarySoft : c.surfaceAlt,
           },
         ]}
       >
         <AppText
           variant="caption"
           weight={isSelected ? 'semibold' : 'medium'}
-          style={{ color: isSelected ? c.primaryStrong : c.muted }}
+          style={{ color: isSelected ? c.primary : c.foreground }}
         >
           {label}
         </AppText>
@@ -261,15 +260,14 @@ export default function NotificationsScreen() {
       style={[
         styles.chip,
         {
-          backgroundColor: isGroupActive ? c.accentSoft : 'transparent',
-          borderColor: isGroupActive ? c.primaryStrong : c.divider,
+          backgroundColor: isGroupActive ? c.primarySoft : c.surfaceAlt,
         },
       ]}
     >
       <AppText
         variant="caption"
         weight={isGroupActive ? 'semibold' : 'medium'}
-        style={{ color: isGroupActive ? c.primaryStrong : c.muted }}
+        style={{ color: isGroupActive ? c.primary : c.foreground }}
       >
         {groupChipLabel}
       </AppText>
@@ -277,20 +275,21 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: c.background }]}>
-      <TabHeader routeName="notifications" title="Thông báo" />
+    <View style={[styles.root, { backgroundColor: c.surface }]}>
+      <LargeTitleHeader
+        title="Thông báo"
+        right={
+          <View style={[styles.headerBtn, { backgroundColor: c.surfaceAlt }]}>
+            <MarkAllReadButton />
+          </View>
+        }
+      />
       {/* Filter chips */}
       <View style={styles.filterBar}>
         <View style={styles.chipRow}>
           {renderScopeChip('all', 'Tất cả')}
           {renderScopeChip('unread', 'Chưa đọc')}
-          {isGroupActive ? (
-            <SkiaFireBorder thickness={8} intensity={1.0}>
-              {groupChip}
-            </SkiaFireBorder>
-          ) : (
-            groupChip
-          )}
+          {groupChip}
         </View>
         {isGroupActive ? (
           <View style={styles.scopeRow}>
@@ -316,7 +315,7 @@ export default function NotificationsScreen() {
       {/* List */}
       {(() => {
         if (isRefreshing && items.length === 0) {
-          return <ListSkeleton count={8} />;
+          return <RowsSkeleton count={8} leadingSize={48} minHeight={72} />;
         }
         if (items.length === 0) {
           return (
@@ -333,8 +332,8 @@ export default function NotificationsScreen() {
           sections={sections}
           keyExtractor={keyExtractor}
           renderSectionHeader={({ section }) => (
-            <View style={[styles.sectionHeader, { backgroundColor: c.background }]}>
-              <AppText variant="label" tone="muted">
+            <View style={[styles.sectionHeader, { backgroundColor: c.surface }]}>
+              <AppText variant="caption" weight="bold" tone="muted">
                 {section.title}
               </AppText>
             </View>
@@ -353,11 +352,12 @@ export default function NotificationsScreen() {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={() => refresh().catch(() => undefined)}
-              tintColor={c.primaryStrong}
+              tintColor={c.primary}
+              colors={[c.primary]}
             />
           }
           ListFooterComponent={
-            isLoading ? <ListSkeleton count={2} /> : <View style={styles.footerSpace} />
+            isLoading ? <RowsSkeleton count={2} leadingSize={48} minHeight={72} /> : <View style={styles.footerSpace} />
           }
         />
         );
@@ -470,10 +470,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
-    borderWidth: 1,
+  },
+  headerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scopeRow: {
     flexDirection: 'row',
@@ -482,8 +488,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 6,
   },
   emptyWrap: { flex: 1, justifyContent: 'center' },
   footerSpace: { height: 120 },

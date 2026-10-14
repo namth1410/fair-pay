@@ -1,16 +1,14 @@
 import { router } from 'expo-router';
 import { Button } from 'heroui-native';
-import AlertTriangle from 'lucide-react-native/dist/esm/icons/triangle-alert';
 import ChevronRight from 'lucide-react-native/dist/esm/icons/chevron-right';
 import MessageCircle from 'lucide-react-native/dist/esm/icons/message-circle';
 import Pencil from 'lucide-react-native/dist/esm/icons/pencil';
+import AlertTriangle from 'lucide-react-native/dist/esm/icons/triangle-alert';
 import { useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { useQueueStats } from '../../../hooks/useQueueStats';
-
 import { FeedbackSheet } from '../../../components/common/FeedbackSheet';
-import { TabHeader } from '../../../components/header/TabHeader';
+import { LargeTitleHeader } from '../../../components/header/LargeTitleHeader';
 import {
   AppText,
   Avatar,
@@ -20,6 +18,7 @@ import { BouncyDialog } from '../../../components/ui/BouncyDialog';
 import { FloatingLabelInput } from '../../../components/ui/floating';
 import { DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants';
 import { useAppTheme } from '../../../hooks/useAppTheme';
+import { useQueueStats } from '../../../hooks/useQueueStats';
 import {
   registerForPushNotifications,
   unregisterPushToken,
@@ -166,7 +165,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
-      <TabHeader routeName="settings" title="Cài đặt" />
+      <LargeTitleHeader title="Cài đặt" />
       <ScrollView
         style={{ flex: 1, backgroundColor: c.background }}
         contentContainerStyle={styles.content}
@@ -175,8 +174,8 @@ export default function SettingsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* ── Hồ sơ ── */}
-        <AppText variant="label" tone="muted" style={styles.firstSectionTitle}>
-          HỒ SƠ
+        <AppText variant="caption" weight="bold" tone="muted" style={styles.firstSectionTitle}>
+          Hồ sơ
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
           <View style={styles.profileRow}>
@@ -184,7 +183,7 @@ export default function SettingsScreen() {
               seed={avatarSeed}
               label={profile?.display_name}
               photoUrl={profile?.photo_url}
-              size={56}
+              size={60}
             />
             <View style={styles.profileInfo}>
               <AppText
@@ -263,8 +262,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── Tùy chỉnh ── */}
-        <AppText variant="label" tone="muted" style={styles.sectionTitle}>
-          TÙY CHỈNH
+        <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionTitle}>
+          Tùy chỉnh
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
           <SettingRow
@@ -294,8 +293,8 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── Thông báo ── */}
-        <AppText variant="label" tone="muted" style={styles.sectionTitle}>
-          THÔNG BÁO
+        <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionTitle}>
+          Thông báo
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
           <SettingRow
@@ -337,8 +336,8 @@ export default function SettingsScreen() {
         {/* ── Đồng bộ ── */}
         {conflictCount > 0 && (
           <>
-            <AppText variant="label" tone="muted" style={styles.sectionTitle}>
-              ĐỒNG BỘ
+            <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionTitle}>
+              Đồng bộ
             </AppText>
             <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
               <Pressable
@@ -371,8 +370,8 @@ export default function SettingsScreen() {
         )}
 
         {/* ── Phản hồi ── */}
-        <AppText variant="label" tone="muted" style={styles.sectionTitle}>
-          PHẢN HỒI
+        <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionTitle}>
+          Phản hồi
         </AppText>
         <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.divider }]}>
           <Pressable
@@ -403,7 +402,7 @@ export default function SettingsScreen() {
 
         {/* ── Đăng xuất ── */}
         <View style={styles.logoutSection}>
-          <Button variant="danger" size="md" onPress={handleSignOut}>
+          <Button variant="danger-soft" size="md" onPress={handleSignOut}>
             <Button.Label>Đăng xuất</Button.Label>
           </Button>
         </View>
@@ -462,8 +461,8 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
   card: {
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: 16,
     marginBottom: 4,
   },
@@ -481,7 +480,7 @@ const styles = StyleSheet.create({
   editBlock: { marginTop: 16, gap: 8 },
   counter: { textAlign: 'right' },
   editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
-  divider: { height: 1, marginVertical: 14 },
+  divider: { height: StyleSheet.hairlineWidth, marginVertical: 14 },
   logoutSection: { marginTop: 28, paddingHorizontal: 4 },
   feedbackRow: {
     flexDirection: 'row',

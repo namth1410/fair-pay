@@ -35,6 +35,7 @@ export default function MainLayout() {
         {/* Deep pages — push từ tabs, kế thừa animation global ở screenOptions */}
         <Stack.Screen name="groups/[id]" options={{ title: 'Nhóm' }} />
         <Stack.Screen name="trips/[id]/index" options={{ title: 'Chuyến đi' }} />
+        <Stack.Screen name="trips/[id]/info" options={{ title: 'Thông tin chuyến' }} />
         <Stack.Screen
           name="trips/[id]/expenses/new"
           options={{ title: 'Thêm khoản chi' }}

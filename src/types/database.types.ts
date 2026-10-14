@@ -189,7 +189,7 @@ export interface PinnedTripRow {
   id: string;
   user_id: string;
   trip_id: string;
-  position: number; // 0 = card trái, 1 = card phải
+  position: number; // thứ tự trên hàng ghim ở home, 0 = đầu hàng (ghim gần nhất)
   pinned_at: string;
   updated_at: string;
 }

@@ -83,6 +83,19 @@ export function formatBalance(amount: number): string {
 }
 
 /**
+ * Số tiền dạng gọn cho chỗ chật (danh sách chat, story): KHÔNG kèm dấu — caller tự thêm
+ * "+"/"−" theo quy ước số dư. 860000 → "860k", 1250000 → "1,25tr", 12000000 → "12tr",
+ * 500 → "500đ". Triệu giữ tối đa 2 chữ số thập phân (cắt số 0 thừa).
+ */
+export function formatShortVND(amount: number): string {
+  const abs = Math.abs(Math.round(amount));
+  if (abs < 1_000) return `${abs}đ`;
+  if (abs < 1_000_000) return `${Math.round(abs / 1_000)}k`;
+  const millions = (abs / 1_000_000).toFixed(2).replace(/\.?0+$/, '');
+  return `${millions.replace('.', ',')}tr`;
+}
+
+/**
  * Insert dot separators every 3 digits from the right (1234567 → "1.234.567").
  * JS-thread mirror of the worklet formatter in components/ui/Money.tsx —
  * kept separate because Reanimated UI thread cannot call `Number.toLocaleString`.
@@ -125,12 +138,18 @@ const MONEY_SUGGESTION_COUNT = 3;
  * lọc theo: ≥ 10.000đ (MIN), < 10 triệu (MAX, loại trừ 10tr → tối đa 9.999.000đ),
  * và bội số 1.000đ. Lấy 3 chip nhỏ nhất.
  *
- * Hệ quả: các số 0 ở cuối input gần như không ảnh hưởng — cùng "8/80/800/8000/80000"
- * đều ra cùng ladder. KHÔNG bao giờ rỗng trừ khi số literal đã > 10tr.
+ * KHÔNG gợi ý lại đúng số đang có trong ô (vd ô "450000" thì bỏ chip 450.000 — chạm vào
+ * cũng chẳng đổi gì).
+ *
+ * Hệ quả: các số 0 ở cuối input gần như không ảnh hưởng — "8/80/800/8000" đều ra cùng
+ * ladder; riêng "80000" bỏ mức 80.000 vì ô đã là 80.000. Rỗng khi không còn mức nào
+ * < 10tr ngoài chính số đang gõ.
  *  - Empty / zero  → fallback to `defaults`.
  *  - "1"           → [10_000, 100_000, 1_000_000]  (10tr bị loại trừ).
- *  - "8"…"80000"   → [80_000, 800_000, 8_000_000].
+ *  - "8"…"8000"    → [80_000, 800_000, 8_000_000].
+ *  - "80000"       → [800_000, 8_000_000]  (bỏ 80.000 = số đang gõ).
  *  - "150"         → [15_000, 150_000, 1_500_000].
+ *  - "450000"      → [4_500_000].
  *  - "20000000"    → [] (20tr literal đã vượt cap).
  */
 export function computeMoneySuggestions(
@@ -145,6 +164,7 @@ export function computeMoneySuggestions(
   for (let m = 1; ; m *= 10) {
     const v = n * m;
     if (v >= MAX_MONEY_SUGGESTION) break; // v tăng dần → dừng sớm; loại trừ đúng 10tr
+    if (v === n) continue; // số đang có trong ô — gợi ý lại là thừa
     if (v >= MIN_MONEY_SUGGESTION && v % 1000 === 0) {
       out.push(v);
       if (out.length === MONEY_SUGGESTION_COUNT) break;

@@ -31,6 +31,35 @@ export function pickGradient(seed: string): SeedGradient {
   };
 }
 
+export interface PastelColor {
+  bg: string;
+  fg: string;
+}
+
+// Pastel đặc (không gradient) cho avatar kiểu app nhắn tin — mỗi nhóm/người 1 màu dễ phân biệt.
+// Cặp bg/fg đều tương phản ≥ 7:1. Thứ tự 2 bảng phải khớp nhau để 1 seed giữ cùng "màu" ở 2 theme.
+const PASTEL_LIGHT: PastelColor[] = [
+  { bg: '#CDEFD8', fg: '#14532D' }, // bạc hà
+  { bg: '#FFE9A8', fg: '#6B4E00' }, // vàng bơ
+  { bg: '#DCE9FF', fg: '#1D3F7A' }, // xanh trời
+  { bg: '#FFDCD2', fg: '#7A1E14' }, // đào
+  { bg: '#EFE6FF', fg: '#4A2B8A' }, // tím nhạt
+  { bg: '#D7F2F0', fg: '#0F4F4A' }, // xanh ngọc
+];
+const PASTEL_DARK: PastelColor[] = [
+  { bg: '#1E3B2A', fg: '#9FE0B5' },
+  { bg: '#3A3216', fg: '#F2D675' },
+  { bg: '#1C2B44', fg: '#A9C8FF' },
+  { bg: '#3D211C', fg: '#FFB4A6' },
+  { bg: '#2C2342', fg: '#CDB8FF' },
+  { bg: '#163533', fg: '#8EDBD3' },
+];
+
+export function pickPastel(seed: string, isDark: boolean): PastelColor {
+  const list = isDark ? PASTEL_DARK : PASTEL_LIGHT;
+  return list[hashSeed(seed) % list.length] as PastelColor;
+}
+
 export interface HeroGradient {
   from: string;
   to: string;

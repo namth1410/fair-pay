@@ -7,7 +7,7 @@ export interface PinnedTrip {
   id: string;
   userId: string;
   tripId: string;
-  position: number; // 0 = card trái, 1 = card phải
+  position: number; // thứ tự trên hàng ghim ở home, 0 = đầu hàng (ghim gần nhất)
   pinnedAt: string;
   updatedAt: string;
 }
@@ -47,6 +47,13 @@ export async function findByTrip(
 }
 
 export async function upsertFromServer(row: PinnedTripRow): Promise<void> {
+  // Row local tạo lúc offline mang id random khác id server cho cùng (user, trip) →
+  // upsert theo id đụng UNIQUE(user_id, trip_id) và làm pull pinned_trips lỗi mãi
+  // (watermark không tiến). Bỏ row local đó trước, row server thay thế.
+  await getDatabase().runAsync(
+    `DELETE FROM pinned_trips WHERE user_id = ? AND trip_id = ? AND id <> ?`,
+    [row.user_id, row.trip_id, row.id]
+  );
   await upsertRow('pinned_trips', {
     id: row.id,
     user_id: row.user_id,

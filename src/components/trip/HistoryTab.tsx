@@ -5,6 +5,7 @@ import { SectionList, StyleSheet, View } from 'react-native';
 import type { AuditLog } from '../../services/audit.service';
 import { getActionLabel } from '../../services/audit.service';
 import type { GroupMember } from '../../services/group.service';
+import { formatVND } from '../../utils/format';
 import { AnimatedEntrance, AppCard, AppText, EmptyState } from '../ui';
 
 interface HistoryTabProps {
@@ -23,13 +24,13 @@ function getActionDetail(log: AuditLog, members: GroupMember[]): string | undefi
   if (log.action === 'expense.create' && after) {
     const title = after.title as string | undefined;
     const amount = after.amount as number | undefined;
-    if (title && amount) return `"${title}" ${amount.toLocaleString('vi-VN')}₫`;
+    if (title && amount) return `"${title}" ${formatVND(amount)}`;
   }
 
   if (log.action === 'expense.delete' && before) {
     const title = before.title as string | undefined;
     const amount = before.amount as number | undefined;
-    if (title && amount) return `"${title}" ${amount.toLocaleString('vi-VN')}₫`;
+    if (title && amount) return `"${title}" ${formatVND(amount)}`;
   }
 
   if (log.action === 'payment.create' && after) {
@@ -37,7 +38,7 @@ function getActionDetail(log: AuditLog, members: GroupMember[]): string | undefi
     const to = after.to as string | undefined;
     const amount = after.amount as number | undefined;
     if (from && to && amount) {
-      return `${getMemberName(from, members)} → ${getMemberName(to, members)} ${amount.toLocaleString('vi-VN')}₫`;
+      return `${getMemberName(from, members)} → ${getMemberName(to, members)} ${formatVND(amount)}`;
     }
   }
 
@@ -46,7 +47,7 @@ function getActionDetail(log: AuditLog, members: GroupMember[]): string | undefi
     const to = before.to as string | undefined;
     const amount = before.amount as number | undefined;
     if (from && to && amount) {
-      return `${getMemberName(from, members)} → ${getMemberName(to, members)} ${amount.toLocaleString('vi-VN')}₫`;
+      return `${getMemberName(from, members)} → ${getMemberName(to, members)} ${formatVND(amount)}`;
     }
   }
 

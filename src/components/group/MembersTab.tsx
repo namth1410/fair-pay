@@ -1,6 +1,6 @@
-import { Button } from 'heroui-native';
 import Clock from 'lucide-react-native/dist/esm/icons/clock';
 import Share2 from 'lucide-react-native/dist/esm/icons/share-2';
+import UserPlus from 'lucide-react-native/dist/esm/icons/user-plus';
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
@@ -10,33 +10,46 @@ import type {
   GroupMember,
   JoinRequest,
 } from '../../services/group.service';
+import { hapticLight } from '../../utils/haptics';
 import { isPendingInviteCode } from '../../utils/inviteCode';
-import { AppCard, AppText, Avatar, GradientHero } from '../ui';
+import { AppText, Avatar } from '../ui';
 
-type Role = 'admin' | 'member';
-
-const ROLE_LABELS: Record<Role, string> = {
-  admin: 'Quản trị',
-  member: 'Thành viên',
-};
-
-function RolePill({ role, color }: { role: Role; color: string }) {
+// Tab Thành viên (giao diện "Hội thoại" 2026-10): danh sách hàng phẳng kiểu danh bạ chat,
+// mã mời là thẻ xanh nhạt chạm để chia sẻ.
+function Pill({ label, fg, bg }: { label: string; fg: string; bg: string }) {
   return (
-    <View style={[styles.rolePill, { backgroundColor: color + '22', borderColor: color }]}>
-      <AppText variant="meta" weight="semibold" style={{ color }}>
-        {ROLE_LABELS[role]}
+    <View style={[styles.pill, { backgroundColor: bg }]}>
+      <AppText variant="meta" weight="bold" style={{ color: fg }}>
+        {label}
       </AppText>
     </View>
   );
 }
 
-function VirtualPill({ color }: { color: string }) {
+function TextAction({
+  label,
+  tone,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  tone: 'primary' | 'danger' | 'success';
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <View style={[styles.rolePill, { backgroundColor: color + '22', borderColor: color }]}>
-      <AppText variant="meta" weight="semibold" style={{ color }}>
-        Ảo
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+      style={({ pressed }) => [pressed && { opacity: 0.5 }, disabled && { opacity: 0.5 }]}
+    >
+      <AppText variant="caption" weight="semibold" tone={tone}>
+        {label}
       </AppText>
-    </View>
+    </Pressable>
   );
 }
 
@@ -64,144 +77,106 @@ export const MembersTab = React.memo(function MembersTab({
   onShare, onKick, onRename, onApprove, onReject, onAddMember, onRevokeInvitation,
 }: MembersTabProps) {
   const c = useAppTheme();
+  const isPendingCode = isPendingInviteCode(inviteCode);
 
-  const roleColor: Record<Role, string> = {
-    admin: c.primaryStrong,
-    member: c.muted,
-  };
-
-  const renderMember = ({ item }: { item: GroupMember }) => (
-    <AppCard
-      title={item.display_name}
-      leading={<Avatar seed={item.id} label={item.display_name} size={40} />}
-      trailing={
-        <View style={styles.memberTrailing}>
-          <View style={styles.pillRow}>
-            {item.is_virtual ? <VirtualPill color={c.muted} /> : null}
-            {item.role === 'admin' ? (
-              <RolePill role="admin" color={roleColor.admin} />
-            ) : null}
-          </View>
-          {isAdmin && item.role !== 'admin' ? (
-            <View style={styles.memberActions}>
-              <Pressable
-                onPress={() => onRename(item)}
-                accessibilityRole="button"
-                accessibilityLabel="Đổi tên"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <AppText variant="meta" weight="medium" tone="primary">Đổi tên</AppText>
-              </Pressable>
-              <Pressable
-                onPress={() => onKick(item)}
-                accessibilityRole="button"
-                accessibilityLabel="Xóa"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <AppText variant="meta" weight="medium" tone="danger">Xóa</AppText>
-              </Pressable>
-            </View>
-          ) : null}
+  const header = (
+    <View>
+      {/* Mã mời — khi nhóm còn chờ đồng bộ thì hiện placeholder + vô hiệu Share để
+          tránh user chia sẻ mã giả. */}
+      <Pressable
+        onPress={isPendingCode ? undefined : () => { hapticLight(); onShare(); }}
+        disabled={isPendingCode}
+        accessibilityRole="button"
+        accessibilityLabel={isPendingCode ? 'Mã mời sẽ hiện sau khi đồng bộ' : `Chia sẻ mã mời ${inviteCode ?? ''}`}
+        style={({ pressed }) => [
+          styles.inviteCard,
+          { backgroundColor: c.brandSoft, borderColor: c.brandBorder, opacity: pressed ? 0.85 : 1 },
+        ]}
+      >
+        <View style={styles.inviteText}>
+          <AppText variant="meta" weight="semibold" tone="muted">
+            Mã mời
+          </AppText>
+          {isPendingCode ? (
+            <AppText variant="body" weight="semibold" tone="muted">
+              Sẽ hiện sau khi đồng bộ
+            </AppText>
+          ) : (
+            <AppText variant="title" weight="extrabold" style={[styles.inviteCode, { color: c.foreground }]}>
+              {inviteCode}
+            </AppText>
+          )}
+          <AppText variant="meta" tone="muted">
+            Gửi mã này cho bạn bè để họ xin vào nhóm
+          </AppText>
         </View>
-      }
-    />
-  );
-
-  return (
-    <>
-      {/* Invite banner — gradient pink. Khi nhóm còn pending sync, hiện placeholder
-          UI thay mã thật + vô hiệu Share để tránh user share code giả. */}
-      {(() => {
-        const isPending = isPendingInviteCode(inviteCode);
-        return (
-          <Pressable
-            onPress={isPending ? undefined : onShare}
-            disabled={isPending}
-            accessibilityRole="button"
-            accessibilityLabel={isPending ? 'Mã mời sẽ hiện sau khi đồng bộ' : 'Chia sẻ mã mời'}
-            style={styles.inviteBanner}
-          >
-            <GradientHero fromColor={c.accentSoft} toColor={c.tint} gradientDirection="horizontal" style={styles.inviteBannerGradient}>
-              <View style={styles.inviteInner}>
-                <View style={styles.inviteText}>
-                  <AppText variant="meta" tone="muted">Mã mời</AppText>
-                  {isPending ? (
-                    <AppText variant="body" weight="semibold" tone="muted">
-                      Sẽ hiện sau khi đồng bộ
-                    </AppText>
-                  ) : (
-                    <AppText variant="title" weight="bold" tone="primary" style={styles.inviteCode}>
-                      {inviteCode}
-                    </AppText>
-                  )}
-                </View>
-                {isPending ? (
-                  <Clock size={22} color={c.muted} />
-                ) : (
-                  <Share2 size={22} color={c.primaryStrong} />
-                )}
-              </View>
-            </GradientHero>
-          </Pressable>
-        );
-      })()}
+        <View style={[styles.inviteBtn, { backgroundColor: isPendingCode ? c.surfaceAlt : c.primary }]}>
+          {isPendingCode ? (
+            <Clock size={20} color={c.muted} />
+          ) : (
+            <Share2 size={20} color={c.inverseForeground} strokeWidth={2.2} />
+          )}
+        </View>
+      </Pressable>
 
       {/* Admin-only: thêm thành viên (mời email / thành viên ảo) */}
-      {isAdmin && (
-        <View style={styles.addVirtualSection}>
-          <Button variant="secondary" size="sm" onPress={onAddMember}>
-            <Button.Label>+ Thêm thành viên</Button.Label>
-          </Button>
-        </View>
-      )}
+      {isAdmin ? (
+        <Pressable
+          onPress={() => { hapticLight(); onAddMember(); }}
+          accessibilityRole="button"
+          accessibilityLabel="Thêm thành viên"
+          android_ripple={{ color: c.surfaceAlt }}
+          style={({ pressed }) => [styles.row, pressed && { backgroundColor: c.surfaceAlt }]}
+        >
+          <View style={[styles.addCircle, { backgroundColor: c.primarySoft }]}>
+            <UserPlus size={20} color={c.primary} strokeWidth={2.2} />
+          </View>
+          <View style={[styles.rowBody, { borderBottomColor: c.divider }]}>
+            <AppText variant="subtitle" weight="bold" style={{ color: c.primary }}>
+              Thêm thành viên
+            </AppText>
+          </View>
+        </Pressable>
+      ) : null}
 
-      {/* Pending join requests */}
-      {isAdmin && pendingRequests.length > 0 && (
-        <View style={styles.pendingSection}>
-          <AppText variant="label" tone="muted" style={styles.pendingLabel}>
-            Yêu cầu tham gia ({pendingRequests.length})
+      {/* Yêu cầu tham gia đang chờ duyệt */}
+      {isAdmin && pendingRequests.length > 0 ? (
+        <>
+          <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionLabel}>
+            Yêu cầu tham gia · {pendingRequests.length}
           </AppText>
           {pendingRequests.map((req) => {
             const claimed = req.claim_member_id
               ? members.find((m) => m.id === req.claim_member_id)
               : null;
             return (
-            <AppCard
-              key={req.id}
-              title={req.display_name}
-              subtitle={claimed ? `Muốn thay cho: ${claimed.display_name}` : 'Đang chờ duyệt'}
-              borderLeft={{ width: 3, color: c.warning }}
-              trailing={
-                <View style={styles.memberActions}>
-                  <Pressable
-                    onPress={() => onApprove(req)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Duyệt"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <AppText variant="caption" weight="semibold" tone="success">Duyệt</AppText>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => onReject(req)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Từ chối"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <AppText variant="caption" weight="medium" tone="danger">Từ chối</AppText>
-                  </Pressable>
+              <View key={req.id} style={styles.row}>
+                <Avatar seed={req.user_id} label={req.display_name} size={44} />
+                <View style={[styles.rowBody, { borderBottomColor: c.divider }]}>
+                  <View style={styles.rowTexts}>
+                    <AppText variant="subtitle" weight="bold" numberOfLines={1}>
+                      {req.display_name}
+                    </AppText>
+                    <AppText variant="caption" numberOfLines={1} style={{ color: c.warning }}>
+                      {claimed ? `Muốn thay cho: ${claimed.display_name}` : 'Đang chờ duyệt'}
+                    </AppText>
+                  </View>
+                  <View style={styles.actions}>
+                    <TextAction label="Duyệt" tone="success" onPress={() => onApprove(req)} />
+                    <TextAction label="Từ chối" tone="danger" onPress={() => onReject(req)} />
+                  </View>
                 </View>
-              }
-            />
+              </View>
             );
           })}
-        </View>
-      )}
+        </>
+      ) : null}
 
-      {/* Pending invitations (admin-initiated, đợi user accept) */}
-      {isAdmin && (pendingInvitations.length > 0 || isLoadingPendingInvitations) && (
-        <View style={styles.pendingSection}>
-          <AppText variant="label" tone="muted" style={styles.pendingLabel}>
-            Lời mời đang chờ ({pendingInvitations.length})
+      {/* Lời mời admin đã gửi, đợi người được mời chấp nhận */}
+      {isAdmin && (pendingInvitations.length > 0 || isLoadingPendingInvitations) ? (
+        <>
+          <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionLabel}>
+            Lời mời đang chờ · {pendingInvitations.length}
           </AppText>
           {isLoadingPendingInvitations && pendingInvitations.length === 0 ? (
             <View style={styles.inlineLoading}>
@@ -212,88 +187,146 @@ export const MembersTab = React.memo(function MembersTab({
               const isRevoking = revokingInvitationId === inv.id;
               const display = inv.invited_display_name?.trim() || inv.invited_email;
               return (
-                <AppCard
-                  key={inv.id}
-                  title={display}
-                  subtitle={inv.invited_email}
-                  leading={
-                    <Avatar
-                      seed={inv.invited_user_id}
-                      label={display}
-                      photoUrl={inv.invited_photo_url ?? null}
-                      size={40}
-                    />
-                  }
-                  borderLeft={{ width: 3, color: c.tint }}
-                  trailing={
-                    <Pressable
-                      onPress={() => !isRevoking && onRevokeInvitation(inv)}
-                      disabled={isRevoking}
-                      accessibilityRole="button"
-                      accessibilityLabel="Thu hồi lời mời"
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <AppText variant="caption" weight="medium" tone="danger">
-                        {isRevoking ? 'Đang thu hồi...' : 'Thu hồi'}
+                <View key={inv.id} style={styles.row}>
+                  <Avatar
+                    seed={inv.invited_user_id}
+                    label={display}
+                    photoUrl={inv.invited_photo_url ?? null}
+                    size={44}
+                  />
+                  <View style={[styles.rowBody, { borderBottomColor: c.divider }]}>
+                    <View style={styles.rowTexts}>
+                      <AppText variant="subtitle" weight="bold" numberOfLines={1}>
+                        {display}
                       </AppText>
-                    </Pressable>
-                  }
-                />
+                      <AppText variant="caption" tone="muted" numberOfLines={1}>
+                        {inv.invited_email}
+                      </AppText>
+                    </View>
+                    <TextAction
+                      label={isRevoking ? 'Đang thu hồi...' : 'Thu hồi'}
+                      tone="danger"
+                      disabled={isRevoking}
+                      onPress={() => onRevokeInvitation(inv)}
+                    />
+                  </View>
+                </View>
               );
             })
           )}
-        </View>
-      )}
+        </>
+      ) : null}
 
-      <FlatList
-        data={members}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMember}
-        contentContainerStyle={styles.list}
-      />
-    </>
+      <AppText variant="caption" weight="bold" tone="muted" style={styles.sectionLabel}>
+        Thành viên · {members.length}
+      </AppText>
+    </View>
+  );
+
+  const renderMember = ({ item, index }: { item: GroupMember; index: number }) => {
+    const isLast = index === members.length - 1;
+    return (
+      <View style={styles.row}>
+        <Avatar seed={item.id} label={item.display_name} size={44} />
+        <View
+          style={[
+            styles.rowBody,
+            isLast ? styles.noBorder : { borderBottomColor: c.divider },
+          ]}
+        >
+          <View style={styles.rowTexts}>
+            <View style={styles.nameRow}>
+              <AppText variant="subtitle" weight="bold" numberOfLines={1} style={styles.flexShrink}>
+                {item.display_name}
+              </AppText>
+              {item.role === 'admin' ? (
+                <Pill label="Quản trị" fg={c.primary} bg={c.primarySoft} />
+              ) : null}
+              {item.is_virtual ? <Pill label="Ảo" fg={c.muted} bg={c.surfaceAlt} /> : null}
+            </View>
+          </View>
+          {isAdmin && item.role !== 'admin' ? (
+            <View style={styles.actions}>
+              <TextAction label="Đổi tên" tone="primary" onPress={() => onRename(item)} />
+              <TextAction label="Xóa" tone="danger" onPress={() => onKick(item)} />
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <FlatList
+      data={members}
+      keyExtractor={(item) => item.id}
+      renderItem={renderMember}
+      ListHeaderComponent={header}
+      contentContainerStyle={styles.list}
+    />
   );
 });
 
 const styles = StyleSheet.create({
-  memberActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  memberTrailing: { alignItems: 'flex-end', gap: 6 },
-  pillRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  addVirtualSection: {
+  list: { paddingBottom: 32 },
+  inviteCard: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    alignItems: 'flex-start',
-  },
-  rolePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  inviteBanner: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  inviteBannerGradient: {
-    borderRadius: 14,
-  },
-  inviteInner: {
+    marginTop: 4,
+    marginBottom: 6,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
     gap: 12,
   },
-  inviteText: {
+  inviteText: { flex: 1, minWidth: 0, gap: 2 },
+  inviteCode: { letterSpacing: 2 },
+  inviteBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionLabel: {
+    marginTop: 16,
+    marginBottom: 2,
+    paddingHorizontal: 20,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingLeft: 16,
+    minHeight: 64,
+  },
+  addCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowBody: {
     flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingRight: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  inviteCode: {
-    letterSpacing: 2,
+  noBorder: { borderBottomWidth: 0 },
+  rowTexts: { flex: 1, minWidth: 0, gap: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  flexShrink: { flexShrink: 1 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
   },
-  pendingSection: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-  pendingLabel: { marginBottom: 8, marginTop: 4 },
-  inlineLoading: { paddingVertical: 12, alignItems: 'flex-start' },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
+  inlineLoading: { paddingVertical: 12, paddingHorizontal: 20, alignItems: 'flex-start' },
 });

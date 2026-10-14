@@ -52,10 +52,12 @@ interface SettlementTabProps {
 
 /** Một dòng đề xuất quyết toán — nhãn + tiền + 2 nút (Sửa / Ghi nhận). */
 const SettlementSuggestionRow = React.memo(function SettlementSuggestionRow({
-  label, amount, interactive, busy, onRecord, onEdit,
+  label, amount, tone, interactive, busy, onRecord, onEdit,
 }: {
   label: string;
   amount: number;
+  /** Góc nhìn "tôi": mình trả → đỏ, mình nhận → xanh, giữa người khác → màu chữ thường. */
+  tone: 'danger' | 'success' | 'default';
   interactive: boolean;
   busy: boolean;
   onRecord: () => void;
@@ -63,12 +65,12 @@ const SettlementSuggestionRow = React.memo(function SettlementSuggestionRow({
 }) {
   const c = useAppTheme();
   return (
-    <View style={[styles.suggestCard, { backgroundColor: c.surface, shadowColor: c.foreground }]}>
+    <View style={[styles.suggestCard, { backgroundColor: c.surface }]}>
       <View style={styles.suggestTop}>
         <AppText variant="body" weight="semibold" numberOfLines={1} style={styles.suggestLabel}>
           {label}
         </AppText>
-        <Money value={amount} variant="default" tone="danger" />
+        <Money value={amount} variant="default" tone={tone} />
       </View>
       {interactive ? (
         <View style={styles.suggestBtnRow}>
@@ -118,6 +120,16 @@ export const SettlementTab = React.memo(function SettlementTab({
       if (myMemberId && s.from === myMemberId) return `Bạn cần trả ${s.toName}`;
       if (myMemberId && s.to === myMemberId) return `${s.fromName} cần trả bạn`;
       return `${s.fromName} → ${s.toName}`;
+    },
+    [myMemberId],
+  );
+
+  // Cùng quy ước dấu số dư: đỏ = mình phải trả, xanh = mình được nhận.
+  const toneFor = useCallback(
+    (s: SettlementEntry): 'danger' | 'success' | 'default' => {
+      if (myMemberId && s.from === myMemberId) return 'danger';
+      if (myMemberId && s.to === myMemberId) return 'success';
+      return 'default';
     },
     [myMemberId],
   );
@@ -211,6 +223,7 @@ export const SettlementTab = React.memo(function SettlementTab({
                 key={`${s.from}-${s.to}`}
                 label={labelFor(s)}
                 amount={s.amount}
+                tone={toneFor(s)}
                 interactive={isOpen}
                 busy={busy}
                 onRecord={() => setConfirm(s)}
@@ -343,6 +356,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     marginBottom: 8,
+    // Bóng luôn đen: shadowColor theo màu chữ sẽ thành quầng sáng quanh thẻ ở chế độ tối.
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 3,

@@ -1,5 +1,6 @@
 import Bell from 'lucide-react-native/dist/esm/icons/bell';
 import CheckCircle2 from 'lucide-react-native/dist/esm/icons/circle-check';
+import XCircle from 'lucide-react-native/dist/esm/icons/circle-x';
 import CreditCard from 'lucide-react-native/dist/esm/icons/credit-card';
 import PencilLine from 'lucide-react-native/dist/esm/icons/pencil-line';
 import Receipt from 'lucide-react-native/dist/esm/icons/receipt';
@@ -8,7 +9,6 @@ import Trash2 from 'lucide-react-native/dist/esm/icons/trash-2';
 import UserMinus from 'lucide-react-native/dist/esm/icons/user-minus';
 import UserPlus from 'lucide-react-native/dist/esm/icons/user-plus';
 import Users from 'lucide-react-native/dist/esm/icons/users';
-import XCircle from 'lucide-react-native/dist/esm/icons/circle-x';
 import { memo, useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import ReanimatedSwipeable, {
@@ -141,13 +141,10 @@ function NotificationRowImpl({ notification, onPress, onDelete }: Props) {
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={notification.title}
+        // Kiểu danh sách chat: nền trắng đồng nhất; tin chưa đọc = chữ đậm + chấm xanh.
         style={({ pressed }) => [
           styles.row,
-          {
-            backgroundColor: isUnread ? c.surface : c.background,
-            borderBottomColor: c.divider,
-          },
-          pressed && { opacity: 0.7 },
+          { backgroundColor: pressed ? c.surfaceAlt : c.surface },
         ]}
       >
         <View style={styles.leading}>
@@ -156,41 +153,47 @@ function NotificationRowImpl({ notification, onPress, onDelete }: Props) {
               seed={notification.actor_id}
               label={notification.actor_name}
               photoUrl={notification.actor_photo_url}
-              size={40}
+              size={48}
             />
           ) : (
-            <View style={[styles.iconBg, { backgroundColor: c.accentSoft }]}>
-              {iconForType(notification.type, 20, c.primaryStrong)}
+            <View style={[styles.iconBg, { backgroundColor: c.primarySoft }]}>
+              {iconForType(notification.type, 22, c.primary)}
             </View>
           )}
-          <View style={[styles.typeIcon, { backgroundColor: c.background, borderColor: c.divider }]}>
+          <View style={[styles.typeIcon, { backgroundColor: c.surface, borderColor: c.divider }]}>
             {iconForType(notification.type, 12, c.muted)}
           </View>
         </View>
 
-        <View style={styles.body}>
-          <AppText
-            variant="body"
-            weight={isUnread ? 'semibold' : 'regular'}
-            numberOfLines={2}
-          >
-            {notification.title}
-          </AppText>
-          <View style={styles.meta}>
-            {notification.group_name ? (
-              <AppText variant="meta" tone="muted">
-                {notification.group_name} ·
-              </AppText>
-            ) : null}
-            <AppText variant="meta" tone="muted">
-              {relativeTime(notification.created_at)}
+        <View style={[styles.body, { borderBottomColor: c.divider }]}>
+          <View style={styles.bodyText}>
+            <AppText
+              variant="body"
+              weight={isUnread ? 'bold' : 'regular'}
+              numberOfLines={2}
+              style={{ color: isUnread ? c.foreground : c.warmAccent }}
+            >
+              {notification.title}
             </AppText>
+            <View style={styles.meta}>
+              {notification.group_name ? (
+                <AppText variant="meta" tone="muted" numberOfLines={1} style={styles.groupName}>
+                  {notification.group_name} ·
+                </AppText>
+              ) : null}
+              <AppText
+                variant="meta"
+                weight={isUnread ? 'semibold' : 'regular'}
+                style={{ color: isUnread ? c.primary : c.muted }}
+              >
+                {relativeTime(notification.created_at)}
+              </AppText>
+            </View>
           </View>
+          {isUnread ? (
+            <View style={[styles.unreadDot, { backgroundColor: c.primary }]} />
+          ) : null}
         </View>
-
-        {isUnread ? (
-          <View style={[styles.unreadDot, { backgroundColor: c.primaryStrong }]} />
-        ) : null}
       </Pressable>
     </ReanimatedSwipeable>
   );
@@ -202,16 +205,14 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingLeft: 16,
     gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  leading: { width: 44, height: 44, position: 'relative' },
+  leading: { width: 50, height: 50, position: 'relative' },
   iconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -226,9 +227,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
-  body: { flex: 1, minWidth: 0, gap: 2 },
+  body: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 13,
+    paddingRight: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  bodyText: { flex: 1, minWidth: 0, gap: 3 },
   meta: { flexDirection: 'row', gap: 4 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4 },
+  groupName: { flexShrink: 1 },
+  unreadDot: { width: 10, height: 10, borderRadius: 5 },
   rightAction: { justifyContent: 'center', alignItems: 'flex-end' },
   deleteButton: {
     justifyContent: 'center',

@@ -63,13 +63,27 @@ describe('computeMoneySuggestions', () => {
     expect(computeMoneySuggestions('3')).toEqual([30_000, 300_000, 3_000_000]);
   });
 
-  it('trailing zeros do not change the ladder (8 / 80 / 800 / 8000 / 80000)', () => {
+  it('trailing zeros do not change the ladder (8 / 80 / 800 / 8000)', () => {
     const expected = [80_000, 800_000, 8_000_000];
     expect(computeMoneySuggestions('8')).toEqual(expected);
     expect(computeMoneySuggestions('80')).toEqual(expected);
     expect(computeMoneySuggestions('800')).toEqual(expected);
     expect(computeMoneySuggestions('8000')).toEqual(expected);
-    expect(computeMoneySuggestions('80000')).toEqual(expected);
+  });
+
+  it('never re-suggests the amount already in the input', () => {
+    // Ô đang là 80.000 → bỏ chip 80.000, giữ các bậc lớn hơn.
+    expect(computeMoneySuggestions('80000')).toEqual([800_000, 8_000_000]);
+    // Bug báo 2026-10-14: ô 450.000 mà dải gợi ý vẫn có 450.000.
+    expect(computeMoneySuggestions('450000')).toEqual([4_500_000]);
+    for (const typed of ['10000', '35000', '150000', '450000', '1000000', '9999000']) {
+      expect(computeMoneySuggestions(typed)).not.toContain(parseInt(typed, 10));
+    }
+  });
+
+  it('typed amount with no larger rung below the cap → empty (dock hides)', () => {
+    // 2tr → bậc kế 20tr vượt cap, 2tr là chính số đang gõ.
+    expect(computeMoneySuggestions('2000000')).toEqual([]);
   });
 
   it('multi-digit "12" → drops 12tr above cap', () => {

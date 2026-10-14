@@ -6,37 +6,40 @@
 @source './node_modules/heroui-native/lib';
 
 /* ─────────────────────────────────────────────────────────────
-   Fair Pay — Monochrome theme (đen/trắng modern)
+   Fair Pay — theme "Hội thoại" (2026-10): xanh lá lấy từ linh vật rồng
    Override HeroUI Native CSS variables (OKLCH)
-   Base: HeroUI default neutrals; accent đen (light) / trắng (dark)
+   Đồng bộ với hex ở src/config/theme.ts — sửa 1 bên PHẢI sửa bên kia.
+   Light: accent #267A42 + chữ trắng. Dark: accent #5FCB8B + chữ tối #0F1214.
    ───────────────────────────────────────────────────────────── */
 @layer theme {
   @variant light {
-    /* Base */
-    --background: oklch(0.9702 0 0);
-    --foreground: oklch(0.2103 0.0059 285.89);
+    /* Base — #F5F6F8 / #12161A */
+    --background: oklch(0.9729 0.0029 264.54);
+    --foreground: oklch(0.1978 0.0102 248.34);
 
-    /* Surface (cards, accordions) */
+    /* Surface (cards, accordions) — #FFFFFF / #F1F3F5 / #E7EAEE */
     --surface: oklch(1 0 0);
     --surface-foreground: var(--foreground);
-    --surface-secondary: oklch(0.9524 0.0013 286.37);
+    --surface-secondary: oklch(0.9632 0.0034 247.86);
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: oklch(0.9373 0.0013 286.37);
+    --surface-tertiary: oklch(0.9359 0.0063 255.48);
     --surface-tertiary-foreground: var(--foreground);
 
     /* Overlay (dialogs, popovers) */
     --overlay: oklch(1 0 0);
     --overlay-foreground: var(--foreground);
-    --backdrop: oklch(0% 0 0 / 20%);
+    --backdrop: oklch(0% 0 0 / 35%);
 
-    --muted: oklch(0.5517 0.0138 285.94);
+    /* #5B6470 */
+    --muted: oklch(0.4998 0.0222 255.62);
 
-    --default: oklch(94% 0.001 286.375);
+    /* #EEF0F3 */
+    --default: oklch(0.9545 0.0046 258.32);
     --default-foreground: var(--foreground);
 
-    /* Accent — đen monochrome */
-    --accent: oklch(0.2103 0.0059 285.89);
-    --accent-foreground: oklch(0.9911 0 0);
+    /* Accent — xanh rồng #267A42 */
+    --accent: oklch(0.515 0.1185 150.77);
+    --accent-foreground: oklch(1 0 0);
 
     /* Form field */
     --field-background: oklch(1 0 0);
@@ -44,86 +47,85 @@
     --field-placeholder: var(--muted);
     --field-border: transparent;
 
-    /* Status — semantic giữ nguyên HeroUI default */
-    --success: oklch(0.7329 0.1935 150.81);
-    --success-foreground: var(--foreground);
+    /* Status — success #1E7A3C, danger #C2362F */
+    --success: oklch(0.5118 0.1274 149.71);
+    --success-foreground: oklch(1 0 0);
     --warning: oklch(0.7819 0.1585 72.33);
     --warning-foreground: var(--foreground);
-    --danger: oklch(0.6532 0.2328 25.74);
-    --danger-foreground: oklch(0.9911 0 0);
+    --danger: oklch(0.5442 0.1781 27.63);
+    --danger-foreground: oklch(1 0 0);
 
     /* Segment */
     --segment: oklch(1 0 0);
     --segment-foreground: var(--foreground);
 
-    /* Misc */
-    --border: oklch(90% 0.004 286.32);
-    --separator: oklch(74% 0.004 286.32);
+    /* Misc — border #E7EAEE, separator #C9CFD6 */
+    --border: oklch(0.9359 0.0063 255.48);
+    --separator: oklch(0.8519 0.0117 252.1);
     --focus: var(--accent);
-    --link: var(--foreground);
+    --link: var(--accent);
 
-    /* Shadow — neutral đen */
+    /* Shadow — rất nhẹ, kiểu app nhắn tin (phẳng, dựa vào hairline) */
     --surface-shadow:
-      0 2px 4px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.06),
-      0 0 1px 0 rgba(0, 0, 0, 0.06);
+      0 1px 2px 0 rgba(18, 22, 26, 0.05), 0 0 1px 0 rgba(18, 22, 26, 0.08);
     --overlay-shadow:
-      0 2px 8px 0 rgba(0, 0, 0, 0.02), 0 -6px 12px 0 rgba(0, 0, 0, 0.01),
-      0 14px 28px 0 rgba(0, 0, 0, 0.03);
+      0 2px 8px 0 rgba(18, 22, 26, 0.04), 0 14px 28px 0 rgba(18, 22, 26, 0.06);
     --field-shadow:
-      0 2px 4px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.06),
-      0 0 1px 0 rgba(0, 0, 0, 0.06);
+      0 1px 2px 0 rgba(18, 22, 26, 0.05), 0 0 1px 0 rgba(18, 22, 26, 0.08);
   }
 
   @variant dark {
-    /* Base */
-    --background: oklch(12% 0.005 285.823);
-    --foreground: oklch(0.9911 0 0);
+    /* Base — #0F1214 / #E8ECEF */
+    --background: oklch(0.1798 0.0063 236.96);
+    --foreground: oklch(0.9409 0.0059 239.82);
 
-    /* Surface */
-    --surface: oklch(0.2103 0.0059 285.89);
+    /* Surface — #171B1E / #1E2428 / #262C31 */
+    --surface: oklch(0.2192 0.0084 240.29);
     --surface-foreground: var(--foreground);
-    --surface-secondary: oklch(0.257 0.0037 286.14);
+    --surface-secondary: oklch(0.256 0.0115 237.13);
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: oklch(0.2721 0.0024 247.91);
+    --surface-tertiary: oklch(0.2893 0.0125 243.28);
     --surface-tertiary-foreground: var(--foreground);
 
     /* Overlay */
-    --overlay: oklch(0.2103 0.0059 285.89);
+    --overlay: oklch(0.2192 0.0084 240.29);
     --overlay-foreground: var(--foreground);
-    --backdrop: oklch(0% 0 0 / 20%);
+    --backdrop: oklch(0% 0 0 / 50%);
 
-    --muted: oklch(70.5% 0.015 286.067);
+    /* #9AA4AE */
+    --muted: oklch(0.7139 0.0185 248.09);
 
-    --default: oklch(27.4% 0.006 286.033);
+    /* #23292E */
+    --default: oklch(0.2771 0.0126 243.31);
     --default-foreground: var(--foreground);
 
-    /* Accent — trắng monochrome */
-    --accent: oklch(0.9911 0 0);
-    --accent-foreground: oklch(0.2103 0.0059 285.89);
+    /* Accent — xanh rồng sáng #5FCB8B + chữ tối */
+    --accent: oklch(0.7616 0.1369 155.2);
+    --accent-foreground: oklch(0.1798 0.0063 236.96);
 
     /* Form field */
-    --field-background: oklch(0.2103 0.0059 285.89);
+    --field-background: oklch(0.2192 0.0084 240.29);
     --field-foreground: var(--foreground);
     --field-placeholder: var(--muted);
     --field-border: transparent;
 
-    /* Status — semantic giữ nguyên HeroUI default dark */
-    --success: oklch(0.7329 0.1935 150.81);
-    --success-foreground: oklch(0.2103 0.0059 285.89);
+    /* Status — success #6FD39A, danger #FF8A80 (chữ tối trên nền) */
+    --success: oklch(0.7908 0.1257 156.89);
+    --success-foreground: oklch(0.1798 0.0063 236.96);
     --warning: oklch(0.8203 0.1388 76.34);
-    --warning-foreground: oklch(0.2103 0.0059 285.89);
-    --danger: oklch(0.594 0.1967 24.63);
-    --danger-foreground: oklch(0.9911 0 0);
+    --warning-foreground: oklch(0.1798 0.0063 236.96);
+    --danger: oklch(0.7594 0.1435 26.08);
+    --danger-foreground: oklch(0.1798 0.0063 236.96);
 
-    /* Segment */
-    --segment: oklch(0.3964 0.01 285.93);
+    /* Segment — #262C31 */
+    --segment: oklch(0.2893 0.0125 243.28);
     --segment-foreground: var(--foreground);
 
-    /* Misc */
-    --border: oklch(28% 0.006 286.033);
-    --separator: oklch(40% 0.006 286.033);
+    /* Misc — border #262C31, separator #3A424A */
+    --border: oklch(0.2893 0.0125 243.28);
+    --separator: oklch(0.3749 0.0173 248.29);
     --focus: var(--accent);
-    --link: var(--foreground);
+    --link: var(--accent);
 
     /* Shadow — dark mode minimal */
     --surface-shadow: 0 0 0 0 transparent inset;

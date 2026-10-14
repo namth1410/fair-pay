@@ -57,7 +57,7 @@ export function PinPickerSheet({ isOpen, onOpenChange }: PinPickerSheetProps) {
     const isPinned = pinnedTripIds.has(trip.id);
     if (!isPinned && pinnedCount >= MAX_PINNED_TRIPS) {
       showWarning(
-        'Đã ghim tối đa 2 chuyến đi',
+        `Đã ghim tối đa ${MAX_PINNED_TRIPS} chuyến đi`,
         'Bỏ ghim 1 chuyến trước khi thêm chuyến mới.'
       );
       return;
